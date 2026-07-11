@@ -14,10 +14,10 @@ All detailed guides for running, maintaining, and editing the system are managed
 
 ### 👥 1. 봉사자 및 운영자용 / For Operators & Volunteers
 
-* **[실시간 번역 시스템 사용 가이드 / Bilingual Volunteer Guide](how_to_use.html)**
+* **[실시간 번역 시스템 사용 가이드 / Bilingual Volunteer Guide](docs/HOW_TO_USE.md)**
   * 봉사자가 마이크 입력 확인, 시작 및 중지 조작, QR 코드 제공 등을 할 수 있는 운영 매뉴얼입니다.
   * An operator manual for volunteers to check mic inputs, start/stop translation, and share the QR code.
-  * **[📝 사용 가이드 열기 / Open Volunteer Guide →](how_to_use.html)**
+  * **[📝 사용 가이드 열기 / Open Volunteer Guide →](docs/HOW_TO_USE.md)**
 
 ### 🛠️ 2. 기술 유지보수자용 / For Technical Maintainers
 
