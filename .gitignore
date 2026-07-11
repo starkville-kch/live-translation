@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+logs/*
+!logs/.gitkeep
+!logs/sessions/
+logs/sessions/*
+!logs/sessions/.gitkeep
+*.wav
+.agent/scratch/
+.claude/
