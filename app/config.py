@@ -1,3 +1,48 @@
+"""
+app/config.py — Configuration & Environment Loader
+====================================================
+Starkville Korean Church (PCA) — Live Translation System
+---------------------------------------------------------
+Single source of truth for all runtime configuration.
+
+Startup sequence
+----------------
+1. ``load_dotenv()`` reads the ``.env`` file in the project root and injects
+   ``GEMINI_API_KEY`` (and any other overrides) into ``os.environ``.
+2. ``_load()`` parses ``config.yaml`` once and caches it in ``_cfg``.
+3. Public helper functions return sub-sections of ``_cfg`` by name.
+
+config.yaml schema (abbreviated)
+----------------------------------
+::
+
+    audio:
+      device_index: 2          # PyAudio input device index (set by --list)
+      sample_rate: 48000       # native device rate; resampled to 16kHz internally
+      chunk_ms: 100            # capture chunk size in milliseconds
+
+    network:
+      host: "0.0.0.0"          # bind address
+      port: 8000
+
+    gemini:
+      model: "gemini-3.5-live-translate-preview"   # auto-updated by resolve_live_model()
+
+    logging:
+      log_dir: "logs"
+      max_bytes: 10485760      # 10 MB per log file
+      backup_count: 5
+
+Public API
+----------
+``gemini_api_key()``   — returns GEMINI_API_KEY or raises RuntimeError
+``audio_cfg()``        — returns the ``audio`` section dict
+``network_cfg()``      — returns the ``network`` section dict
+``logging_cfg()``      — returns the ``logging`` section dict
+``gemini_model()``     — returns the currently configured Gemini model name
+``save_audio_device()``— persists a new device index back to config.yaml
+``save_gemini_model()``— persists a new model name back to config.yaml
+"""
 import os
 import yaml
 from pathlib import Path

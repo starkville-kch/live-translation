@@ -1,10 +1,53 @@
 """
-Gemini Live session manager.
-- Single persistent session for the full service
-- TEXT-only response modality with Korean→English translation prompt
-- Session resumption + context window compression (mandatory for 60-90 min services)
-- GoAway handling, exponential backoff reconnection
-- Emits English caption deltas to a broadcast queue
+app/gemini_session.py — Gemini Live API Session Manager
+========================================================
+Starkville Korean Church (PCA) — Live Translation System
+---------------------------------------------------------
+Manages a single, long-running Gemini Live API WebSocket session for the
+duration of a church service (typically 60–90 minutes).
+
+Session lifecycle
+-----------------
+1. ``resolve_live_model()`` queries the Gemini model list at startup and
+   selects the best available live-translate model, saving it to config.yaml.
+2. ``GeminiSession.start()`` spawns ``_run_with_retry()`` as an asyncio Task.
+3. ``_run_session()`` opens the WebSocket, then launches two concurrent tasks:
+     • ``_send_loop()`` — drains the audio queue and forwards PCM chunks to
+       Gemini via ``send_realtime_input()``.
+     • ``_recv_loop()`` — iterates Gemini response frames, dispatching:
+         - Audio PCM  → ``on_audio_chunk()`` callback (24 kHz PCM16)
+         - Korean transcript → ``on_source_transcript()`` + internal buffer
+         - English caption delta → ``on_caption()`` callback + internal buffer
+         - ``turn_complete`` → commit current turn to the transcript log
+         - ``session_resumption_update`` → store handle for reconnect
+         - ``go_away`` → raise RuntimeError to trigger controlled reconnect
+4. On error or GoAway, ``_run_with_retry()`` reconnects with exponential
+   backoff (up to ``MAX_RECONNECT_ATTEMPTS`` = 3 attempts).
+
+Model config decisions
+----------------------
+``gemini-3.5-live-translate-preview`` (translate model):
+  • ``response_modalities=["AUDIO"]``  — TEXT-only is not supported on this model
+  • ``translation_config`` with ``target_language_code="en"``
+  • ``voice_config`` pinned to ``"orus"`` (deep male) for voice consistency
+  • ``input_audio_transcription`` — surfaces Korean source text
+  • ``output_audio_transcription`` — surfaces English translated text
+  • ``context_window_compression`` → SlidingWindow to prevent context overflow
+    during a 90-minute service
+  • ``session_resumption`` → passes the stored handle so the model context is
+    preserved across mandatory ~10-minute GoAway reconnects
+
+Transcript export
+-----------------
+Every ``turn_complete`` frame commits a ``TranscriptEntry(timestamp, korean,
+english)`` to the in-memory list.  On ``stop()``, ``_write_session_log()``
+in server.py exports these to timestamped text files under
+``logs/sessions/YYYYMMDD_HHMMSS/``.
+
+Caption latency
+---------------
+First English token arrival relative to first audio chunk sent = ~2.2 s,
+measured as ``last_latency_ms`` and shown in the operator status monitor.
 """
 import asyncio
 import time

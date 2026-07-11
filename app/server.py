@@ -1,5 +1,60 @@
 """
-FastAPI backend: SSE caption stream, operator/admin API, QR code, static pages.
+app/server.py — FastAPI Web Server
+====================================
+Starkville Korean Church (PCA) — Live Translation System
+---------------------------------------------------------
+The central hub of the live translation system.  Wires together audio
+capture, the Gemini session manager, and the broadcast layer, then exposes
+them via HTTP/WebSocket endpoints served by Uvicorn.
+
+HTTP route table
+----------------
+GET  /                 — Operator console HTML (bilingual Korean/English)
+GET  /live             — Attendee caption page HTML (English captions + audio)
+GET  /help             — Bilingual volunteer guide (how_to_use.html)
+GET  /stream           — SSE text caption stream (event-stream MIME type)
+WS   /audio-stream     — Binary WebSocket: raw 24 kHz PCM16 audio chunks
+GET  /api/status       — JSON snapshot of audio, session, cost, and attendee state
+GET  /api/devices      — JSON list of available PyAudio input devices
+POST /api/start        — Start audio capture + Gemini session (body: {device_index})
+POST /api/stop         — Stop service, flush transcripts, export session logs
+POST /api/pause        — Pause billing & audio forwarding (mic still captured)
+POST /api/resume        — Resume forwarding after pause
+POST /api/devices/select — Persist selected device_index to config.yaml
+GET  /api/qr.png       — Dynamically generated branded QR code PNG
+GET  /logo.webp        — PCA logo asset (served from app/ directory)
+
+Global state
+------------
+``_service_running`` — bool, True between /api/start and /api/stop
+``_paused``          — bool, audio forwarded to Gemini only when False
+``_service_start_time`` — monotonic timestamp for runtime calculation
+``_billed_seconds``  — cumulative audio seconds forwarded (used for cost estimate)
+``_qr_png_cache``    — bytes, the PNG image generated once at startup lifespan
+
+Cost estimation
+---------------
+Gemini 3.5 Live Translate Paid Tier combined rate:
+  Input audio  $0.0053/min + Output audio $0.0315/min = $0.0368/min total
+  Encoded in ``_COST_PER_AUDIO_SEC`` = 0.0368 / 60.0
+
+QR code design
+--------------
+Generated via ``_build_qr()`` using the ``qrcode`` + ``Pillow`` libraries:
+  • ERROR_CORRECT_H (30 % recovery) to tolerate the central logo overlay
+  • RoundedModuleDrawer for modern rounded data dots
+  • Presbyterian Navy (#1a2a42) data modules
+  • Pixel-level gold (#b89445) recoloring of the three 7×7 finder patterns
+  • White quiet-zone ellipse → navy inner circle → white PCA logo overlay
+
+Session transcript export
+-------------------------
+On /api/stop, ``_write_session_log()`` writes four files to
+``logs/sessions/YYYYMMDD_HHMMSS/``:
+  summary.txt   — runtime, cost, model, turn count
+  ko.txt        — Korean source turns with timestamps
+  en.txt        — English translation turns with timestamps
+  aligned.txt   — Korean/English pairs interleaved for easy review
 """
 import asyncio
 import io

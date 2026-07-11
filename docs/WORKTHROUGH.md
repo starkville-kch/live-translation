@@ -65,6 +65,14 @@ This document serves as the chronological build record, verification test log, a
   * **배지 줄바꿈 현상**: `display: inline !important`가 `.badge` 고유의 `display: inline-block`을 덮어쓰지 않도록 전용 활성화 스타일을 추가하고 `white-space: nowrap;`을 부여했습니다.
   * **설치 안내 폴더화**: 매주 반복 사용하는 주일 운영 절차와 달리 일회성 설치 작업(Setup)은 평소에 가려둘 수 있도록 `<details>` 및 `<summary>`를 활용한 접이식(Foldout) UI 컴포넌트를 설계했습니다. CSS 가상 선택자(`::after`)와 `[open]` 속성을 결합하여 언어 모드에 맞춰 `(클릭하여 펼치기)` / `(클릭하여 접기)`가 완전히 동적으로 스왑되도록 구현했습니다.
 
+### 세션 8 — 고급 QR 코드 디자인 (브랜드 커스텀 스타일링)
+* **목표**: 단조로운 흑백 QR 코드를 교회 브랜드 색상이 적용된 고급 스타일로 교체.
+* **구현 내역**:
+  * **오류 복구 레벨 상향**: 중앙에 로고를 덮어씌울 경우 해당 영역의 데이터 모듈이 파괴되므로, `ERROR_CORRECT_H`(30% 복구율)를 적용해 스캐너가 로고 아래 손실된 모듈을 수학적으로 복원할 수 있도록 했습니다.
+  * **둥근 데이터 모듈**: `StyledPilImage + RoundedModuleDrawer`를 사용해 기존 딱딱한 사각형 점을 부드러운 원형으로 교체, 전체 베이스 색상은 장로교 네이비(`#1a2a42`)로 설정했습니다.
+  * **파인더 패턴 골드 재색상**: QR 코드의 세 모서리 `7×7` 파인더 패턴(스캔 기준점)을 `draw.rounded_rectangle` 레이어 페인팅 방식 대신, 픽셀 단위 색상 교체(`px[x,y] = GOLD`)를 이용해 정확히 네이비 픽셀만 골드(`#b89445`)로 바꿔 그 외 모듈에 영향을 주지 않았습니다.
+  * **중앙 로고 삽입 (Quiet Zone 버퍼 포함)**: 단순 로고 붙여넣기 대신, Pillow `ImageDraw.ellipse()`로 흰색 원형 조용 구역(Quiet Zone)을 먼저 그린 뒤 그 안에 네이비 내부 원을 그려 흰색 PCA 로고를 시각적으로 띄웁니다. 로고 크기는 QR 폭의 최대 20% 이내로 제한했습니다.
+
 ---
 
 ## 2. 검증 프로토콜 결과 (V0–V6)
@@ -146,6 +154,14 @@ This document serves as the chronological build record, verification test log, a
   * **Table Alignment**: Refactored the multi-language tables to have a static set of 3 columns (`<th>`/`<td>` cells) regardless of language. Moved translation toggling inside child `<span>` tags, which aligns column headers perfectly.
   * **Badge Wrapping**: Prevented `.badge` elements from being distorted by the global `display: inline !important` rule by defining specific `display: inline-block !important` rules for active language badges, combined with `white-space: nowrap;`.
   * **Setup Foldout**: Since volunteers do not need to see installation steps every Sunday, wrapped the "One-Time Setup" section inside a styled `<details>`/`<summary>` tag to keep it collapsed by default. Combined the `[open]` selector with CSS virtual elements (`::after`) to dynamically update the action sub-headers between `(클릭하여 펼치기)` / `(클릭하여 접기)` (and English counterparts) entirely without JS overhead.
+
+### Session 8 — Branded QR Code Redesign
+* **Goal:** Replace the plain black-and-white QR code with a fully styled, brand-accurate version matching the church's visual identity.
+* **Changes:**
+  * **High Error Correction (`ERROR_CORRECT_H`):** Embedding a central logo physically destroys the QR modules it covers. Enabling H-level error correction (~30% recovery) gives the scanner's Reed-Solomon decoder enough redundancy to mathematically reconstruct the masked modules, ensuring reliable scannability.
+  * **Rounded Data Modules:** Swapped the harsh square pixels for smooth round dots using `StyledPilImage + RoundedModuleDrawer`. Base module color set to Presbyterian Navy (`#1a2a42`).
+  * **Pixel-Level Gold Finder Pattern Recoloring:** Rather than drawing rounded rectangles over the finder patterns (which can bleed into surrounding modules), the implementation iterates over every pixel within each 7×7 finder bounding box and swaps navy pixels to gold (`#b89445`) in-place via `px[x, y] = GOLD`. This scalpel approach preserves the rounded module shapes while precisely recoloring only the target pixels.
+  * **Logo with Quiet-Zone Buffer:** A solid white `ellipse` (the "quiet zone") is drawn first in the center to create a clean, scanner-safe gap between the logo and surrounding data modules. A smaller navy inner circle is drawn inside the white ring to provide contrast for the white PCA logo. The logo is capped at exactly 20% of QR width per spec.
 
 ---
 

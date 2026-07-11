@@ -1,7 +1,41 @@
 """
-In-process SSE broadcast to all connected attendee clients.
-Maintains a "current line" that gets refined as Gemini streams tokens,
-appending to scrollback only after a natural pause (~1.5s of no new tokens).
+app/broadcast.py — Real-Time Caption & Audio Broadcaster
+=========================================================
+Starkville Korean Church (PCA) — Live Translation System
+---------------------------------------------------------
+Thread-safe, in-process fan-out layer that delivers caption events and raw
+PCM audio chunks to every connected attendee simultaneously.
+
+Architecture overview
+---------------------
+                    ┌─────────────────┐
+  GeminiSession ──▶ │ CaptionBroadcaster │ ──▶ SSE queue (per attendee)
+                    │                    │ ──▶ WS audio queue (per listener)
+                    └────────────────────┘
+
+Caption streaming (SSE)
+-----------------------
+Gemini streams English translation tokens incrementally.  The broadcaster
+accumulates them into a ``_current_line`` string and immediately sends an
+``"update"`` event to all SSE clients so captions appear word-by-word.
+
+After ``PAUSE_THRESHOLD_S`` seconds of silence (no new tokens), a
+``"commit"`` event finalises the line and ``_current_line`` is cleared.
+This debounce approach prevents flickering on the attendee screen while
+still feeling real-time.
+
+Audio streaming (WebSocket)
+---------------------------
+Raw 24 kHz PCM16 mono bytes arrive from the Gemini translate model and are
+put into per-client ``asyncio.Queue`` objects.  Clients that fall behind
+(queue full) are silently evicted to avoid back-pressure on the main loop.
+
+Special events
+--------------
+``"ping"``        — keepalive, sent every 15 s by the server lifespan loop
+``"unavailable"`` — Gemini session failed; show warning banner to attendees
+``"paused"``      — operator clicked Pause; attendees see a pause indicator
+``"resumed"``     — operator clicked Resume
 """
 import asyncio
 import time

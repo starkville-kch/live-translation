@@ -1,6 +1,45 @@
 """
-Audio capture: enumerates devices, streams 16kHz mono PCM16 chunks,
-computes RMS level, detects disconnection.
+app/audio.py — USB Mixer Audio Capture Pipeline
+================================================
+Starkville Korean Church (PCA) — Live Translation System
+---------------------------------------------------------
+Captures mono 16 kHz PCM16 audio from the church USB mixer and puts it into
+an asyncio queue for downstream consumption by ``GeminiSession``.
+
+Pipeline
+--------
+  USB Mixer ──USB──▶ PyAudio stream ──▶ _capture_loop() thread
+                                              │
+                               ┌──────────────┴─────────────────┐
+                               ▼                                 ▼
+                         downmix to mono              resample to 16 kHz
+                         (audioop.tomono)              (audioop.ratecv)
+                               │
+                               ▼
+                    asyncio.Queue[bytes]  ──▶  GeminiSession.send_audio()
+
+Audio format contract
+---------------------
+The Gemini Live API expects ``audio/pcm;rate=16000``:
+  • Sample rate : 16,000 Hz
+  • Channels    : 1 (mono)
+  • Bit depth   : 16-bit signed integer (PCM16 / ``paInt16``)
+  • Chunk size  : ``chunk_ms`` ms (default 100 ms = 1,600 samples = 3,200 bytes)
+
+The mixer may present audio at 44.1 kHz, 48 kHz, or 96 kHz in stereo;
+downmixing and resampling are handled entirely with the stdlib ``audioop``
+module so no NumPy/SciPy dependency is required.
+
+Silence detection
+-----------------
+RMS below ``SILENCE_FLOOR_RMS`` for ``SILENCE_TIMEOUT_S`` consecutive seconds
+transitions the status to ``NO_SIGNAL``.  This triggers a warning in the
+operator console level meter without stopping the capture loop.
+
+CLI helpers
+-----------
+  python -m app.audio --list            # print all input device indices + names
+  python -m app.audio --test <idx> <s>  # record <s> seconds → test_capture_<idx>.wav
 """
 import asyncio
 import audioop
