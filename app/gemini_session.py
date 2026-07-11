@@ -18,35 +18,33 @@ from google.genai import types
 from app.config import gemini_api_key, gemini_model, save_gemini_model
 from app.logger import session_log
 
-# Preference order — verified against the API on 2026-07-10.
-# All live-preview models return 1007 for TEXT modality EXCEPT the translate-preview,
-# which accepts TEXT and delivers translation via output_audio_transcription.text.
-# Update this list whenever Google releases a stable non-preview live model.
-_PREFERRED = [
-    "gemini-3.5-live-translate-preview",  # only live model confirmed to support TEXT
-    # audio-only for now; keep for future TEXT support
-    "gemini-3.1-flash-live-preview",
-]
+def _model_rank(name: str) -> tuple:
+    """Sort key: translate models first, then by version number descending, stable > preview."""
+    is_translate = "translate" in name
+    is_preview = "preview" in name
+    # Extract leading version digits (e.g. "3.5" → (3, 5), "3.1" → (3, 1))
+    import re
+    nums = tuple(int(x) for x in re.findall(r"\d+", name.split("live")[0]))
+    return (is_translate, nums, not is_preview)
 
 
 def resolve_live_model() -> str:
-    """Pick the best available Live API model, update config, and return it."""
+    """Pick the best available Live API model at startup, update config, and return it.
+
+    Selection order: translate models first (highest version), then other live
+    models. Re-runs on every server start so upgrades are picked up automatically.
+    """
     try:
         client = genai.Client(api_key=gemini_api_key())
-        available = {m.name.removeprefix("models/")
-                     for m in client.models.list()}
-        for candidate in _PREFERRED:
-            if candidate in available:
-                save_gemini_model(candidate)
-                session_log.info("Auto-selected Gemini model: %s", candidate)
-                return candidate
-        # Last-resort fallback: any live model
-        live_models = sorted(m for m in available if "live" in m)
+        live_models = [
+            m.name.removeprefix("models/")
+            for m in client.models.list()
+            if "live" in m.name
+        ]
         if live_models:
-            chosen = live_models[-1]
+            chosen = max(live_models, key=_model_rank)
             save_gemini_model(chosen)
-            session_log.info(
-                "Auto-selected Gemini model (fallback): %s", chosen)
+            session_log.info("Auto-selected Gemini model: %s", chosen)
             return chosen
     except Exception as e:
         session_log.warning(
