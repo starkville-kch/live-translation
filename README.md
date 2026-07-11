@@ -72,4 +72,26 @@ python -m app.audio --test 2 30
 python main.py
 ```
 
+## 💰 서비스 운영 비용 분석 / Service Operational Cost Analysis
+
+이 시스템은 Google Gemini 3.5 Live Translate API 유료 티어(Paid Tier) 요금을 기준으로 작동합니다. 아래는 일반적인 교회 주일 예배 운영 시 예상되는 비용 예시입니다:  
+This system operates under the Google Gemini 3.5 Live Translate Paid Tier. Below is a cost estimation for a typical Sunday service operation:
+
+### 1. API 요금 기준 / Pricing Basis
+* **입력 오디오 (Input Audio)**: $3.50 / 1M tokens (약 $0.0053 / 분 / min)
+* **출력 오디오 (Output Audio)**: $21.00 / 1M tokens (약 $0.0315 / 분 / min)
+* **합산 분당 요율 (Combined Rate)**: **약 $0.0368 / 분 (min)**
+
+### 2. 예배당 예상 비용 계산 예시 / Typical Cost Scenario
+* **1회 예배 기준 (60분 가동 시 / 60-Minute Service)**:
+  * $0.0368/분 × 60분 = **약 $2.21** / 회 (per service)
+* **월간 기준 (4주 예배 가동 시 / Monthly Estimate - 4 Sundays)**:
+  * $2.21 × 4주 = **약 $8.84** / 월 (per month)
+
+> [!NOTE]
+> * 서버에서 하나의 API 세션만 열어 오디오/자막을 팬아웃(broadcast)하므로, **동시 접속한 참석자 수가 늘어나도 API 비용은 동일하게 유지됩니다.**
+> * Because the server broadcasts captions and audio from a single central API session, **API costs remain constant regardless of the number of connected attendee devices.**
+
+---
+
 교회 번역 시스템이 특정 개인에게 종속되지 않고 영속성을 갖도록 모든 변경사항 및 권한 양도는 기술 지침과 운영 원칙을 엄격하게 준수하여 주십시오. Please strictly adhere to the guidelines in the Technical Maintainer Guide and Governance rules for all modifications and handoffs to ensure the long-term continuity of the translation system.
