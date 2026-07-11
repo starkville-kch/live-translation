@@ -292,6 +292,50 @@
     color: #7c2d12;
   }
 
+  /* Tooltips */
+  .tooltip {
+    position: relative;
+    display: inline-block;
+    border-bottom: 1px dotted var(--color-gold);
+    cursor: help;
+  }
+  .tooltip .tooltiptext {
+    visibility: hidden;
+    width: 260px;
+    background-color: var(--color-navy);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 12px;
+    position: absolute;
+    z-index: 100;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -130px;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    font-size: 13px;
+    line-height: 1.4;
+    font-weight: normal;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    border: 1px solid var(--color-gold);
+    white-space: normal;
+  }
+  .tooltip .tooltiptext::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--color-navy) transparent transparent transparent;
+  }
+  .tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 1;
+  }
+
   /* Language toggle mechanism */
   [data-lang] {
     display: none !important;
@@ -407,10 +451,10 @@
   <h2 data-lang="en">How the System Works</h2>
   
   <p data-lang="ko">
-    목사님용 무선 핀마이크와 단상 마이크 등의 소리를 믹서에서 받아 PC가 캡처합니다. 이후 구글 제미나이 Live API를 통해 실시간으로 번역하고, 번역된 텍스트와 오디오(24kHz PCM)를 교회 내부 와이파이(WiFi)를 통해 참석자들의 폰으로 전송합니다. 참석자는 QR 코드를 스캔하여 브라우저에서 편리하게 자막과 오디오(선택 가능)를 이용할 수 있습니다.
+    목사님용 무선 핀마이크와 단상 마이크 등의 소리를 믹서에서 받아 PC가 캡처합니다. 이후 구글 <span class="tooltip">제미나이 Live API<span class="tooltiptext"><span data-lang="ko">구글의 실시간 인공지능 번역 및 음성 합성 모델 서비스</span><span data-lang="en">Google's real-time AI translation and speech synthesis model service</span></span></span>를 통해 실시간으로 번역하고, 번역된 텍스트와 오디오(24kHz <span class="tooltip">PCM<span class="tooltiptext"><span data-lang="ko">압축되지 않은 디지털 오디오 원음 포맷</span><span data-lang="en">Uncompressed raw digital audio format</span></span></span>)를 교회 내부 와이파이(WiFi)를 통해 참석자들의 폰으로 전송합니다. 참석자는 QR 코드를 스캔하여 브라우저에서 편리하게 자막과 오디오(선택 가능)를 이용할 수 있습니다.
   </p>
   <p data-lang="en">
-    Audio from independent wireless lapel mics (pastor & podium) is captured on this local Windows PC, streamed to Google Gemini Live API for real-time translation, and broadcasted as live text captions (SSE) and audio streams (WebSocket) to attendee phones over the church WiFi. Attendees scan a QR code to connect instantly.
+    Audio from independent wireless lapel mics (pastor & podium) is captured on this local Windows PC, streamed to Google <span class="tooltip">Gemini Live API<span class="tooltiptext"><span data-lang="ko">구글의 실시간 인공지능 번역 및 음성 합성 모델 서비스</span><span data-lang="en">Google's real-time AI translation and speech synthesis model service</span></span></span> for real-time translation, and broadcasted as live text captions (<span class="tooltip">SSE<span class="tooltiptext"><span data-lang="ko">서버가 클라이언트로 자막을 실시간 전송하는 프로토콜</span><span data-lang="en">Lightweight unidirectional server-push caption streaming protocol</span></span></span>) and audio streams (WebSocket) to attendee phones over the church WiFi. Attendees scan a QR code to connect instantly.
   </p>
 
   <div class="grid">
@@ -418,22 +462,22 @@
       <div class="icon">🎙️</div>
       <h4 data-lang="ko">오디오 캡처 (Mixer)</h4>
       <h4 data-lang="en">Audio Capture</h4>
-      <p data-lang="ko">두 개의 독립된 무선 핀마이크 소리를 믹서 및 USB 단자를 통해 PC에서 캡처합니다.</p>
+      <p data-lang="ko">두 개의 독립된 무선 핀마이크 소리를 <span class="tooltip">믹서<span class="tooltiptext"><span data-lang="ko">마이크 입력을 혼합하여 PC로 보내는 오디오 장치</span><span data-lang="en">Audio device combining mic inputs to send to the PC</span></span></span> 및 USB 단자를 통해 PC에서 캡처합니다.</p>
       <p data-lang="en">Captures high-quality audio from lapel mics via the USB mixer input.</p>
     </div>
     <div class="card">
       <div class="icon">🤖</div>
       <h4 data-lang="ko">제미나이 Live API</h4>
       <h4 data-lang="en">Gemini Live API</h4>
-      <p data-lang="ko">구글의 실시간 통역 모델을 활용해 지연 시간(Latency) 없이 고품질 한영 번역을 제공합니다.</p>
-      <p data-lang="en">Streams audio to Gemini for instant translations with pinned deep voice playback.</p>
+      <p data-lang="ko">구글의 실시간 통역 모델을 활용해 <span class="tooltip">지연 시간(Latency)<span class="tooltiptext"><span data-lang="ko">입력 오디오가 번역된 후 자막/음성으로 출력될 때까지 걸리는 지체 시간 (본 시스템은 약 2.2초 내외)</span><span data-lang="en">Time lag between microphone input and translation output (~2.2 seconds)</span></span></span> 없이 고품질 한영 번역을 제공합니다.</p>
+      <p data-lang="en">Streams audio to Gemini for instant translations with pinned deep voice playback to minimize <span class="tooltip">latency<span class="tooltiptext"><span data-lang="ko">입력 오디오가 번역된 후 자막/음성으로 출력될 때까지 걸리는 지체 시간 (본 시스템은 약 2.2초 내외)</span><span data-lang="en">Time lag between microphone input and translation output (~2.2 seconds)</span></span></span>.</p>
     </div>
     <div class="card">
       <div class="icon">📱</div>
       <h4 data-lang="ko">폰 자막 & 오디오</h4>
       <h4 data-lang="en">Phone Broadcast</h4>
-      <p data-lang="ko">브라우저 자막 및 이어폰 착용자를 위한 24kHz PCM16 실시간 영어 음성 합성을 지원합니다.</p>
-      <p data-lang="en">Displays live captions and routes translation audio directly to phones without any app install.</p>
+      <p data-lang="ko">브라우저 자막 및 이어폰 착용자를 위한 <span class="tooltip">24kHz PCM16<span class="tooltiptext"><span data-lang="ko">헤드폰 청취에 이상적인 무손실 고품질 디지털 오디오 규격</span><span data-lang="en">Lossless digital audio format optimal for high-quality listening</span></span></span> 실시간 영어 음성 합성을 지원합니다.</p>
+      <p data-lang="en">Displays live captions and routes translation audio directly to phones without any app install using <span class="tooltip">24kHz PCM16<span class="tooltiptext"><span data-lang="ko">헤드폰 청취에 이상적인 무손실 고품질 디지털 오디오 규격</span><span data-lang="en">Lossless digital audio format optimal for high-quality listening</span></span></span> streams.</p>
     </div>
 
   </div>

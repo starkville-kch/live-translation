@@ -57,6 +57,7 @@ This page acts as the central control room for volunteers to generate attendee Q
   * **제어 스위치 (Start / Pause / Stop)**: 
     * `Start`를 눌러 AI 번역 세션을 열고, 예배 도중 잠시 멈출 때는 `Pause`를, 예배 종료 시엔 `Stop`을 눌러 자막 텍스트 저장을 수행합니다.
   * **레벨 미터 & 상태 표시 (Level Meter & Status Logs)**: 마이크 입력 감도를 측정하는 실시간 데시벨(dB) 게이지와 Gemini API 통신 상태를 실시간 콘솔 로그로 모니터링합니다.
+  * **음성 통역 모니터 (Audio Monitor)**: 관리자가 헤드폰이나 이어폰을 착용하고 실제 참석자들에게 송출되는 실시간 영어 번역 음성 스트림을 서버 PC에서 실시간으로 모니터링하고 볼륨을 제어할 수 있는 채널입니다. (Allows the operator to listen to the real-time translated voice via headphones to audit output quality.)
   * **QR 코드 & 스트림 URL (QR Share Panel)**: 예배당 참석자들이 스마트폰으로 즉시 자막 주소에 접속할 수 있도록 QR 코드를 화면에 크게 송출합니다.
 
 ### 2. 참석자 자막 및 오디오 수신 페이지 / Attendee Caption Page (`/live`)

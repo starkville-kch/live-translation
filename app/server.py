@@ -1131,6 +1131,50 @@ _OPERATOR_HTML = """<!DOCTYPE html>
   .stat-val.err  { color: var(--color-error); }
   .stat-val.cost { color: var(--color-navy-700); font-weight: bold; }
 
+  /* Tooltips */
+  .tooltip {
+    position: relative;
+    display: inline-block;
+    border-bottom: 1px dotted var(--color-gold-500);
+    cursor: help;
+  }
+  .tooltip .tooltiptext {
+    visibility: hidden;
+    width: 240px;
+    background-color: var(--color-navy-900);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 6px 10px;
+    position: absolute;
+    z-index: 100;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -120px;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: normal;
+    box-shadow: 0 4px 10px rgba(15, 27, 45, 0.2);
+    border: 1px solid var(--color-gold-500);
+    white-space: normal;
+  }
+  .tooltip .tooltiptext::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--color-navy-900) transparent transparent transparent;
+  }
+  .tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 1;
+  }
+
   /* Caption preview */
   #preview-wrap {
     height: 180px;
@@ -1268,15 +1312,60 @@ _OPERATOR_HTML = """<!DOCTYPE html>
     <!-- Status -->
     <div class="card">
       <h2>상태 모니터 (Status)</h2>
-      <div class="stat-row"><span class="stat-label">오디오 입력 (Audio in)</span><span class="stat-val" id="stat-audio">—</span></div>
-      <div class="stat-row"><span class="stat-label">Gemini 세션 (Gemini)</span><span class="stat-val" id="stat-session">—</span></div>
-      <div class="stat-row"><span class="stat-label">지연 속도 (Latency)</span><span class="stat-val" id="stat-latency">—</span></div>
-      <div class="stat-row"><span class="stat-label">접속자 수 (Attendees)</span><span class="stat-val" id="stat-attendees">0</span></div>
-      <div class="stat-row"><span class="stat-label">재연결 횟수 (Reconnects)</span><span class="stat-val" id="stat-reconnects">0</span></div>
-      <div class="stat-row"><span class="stat-label">자막 생성 수 (Captions)</span><span class="stat-val" id="stat-captions">0</span></div>
-      <div class="stat-row"><span class="stat-label">진행 시간 (Runtime)</span><span class="stat-val" id="stat-runtime">—</span></div>
-      <div class="stat-row"><span class="stat-label">예상 비용 (Est. cost)</span><span class="stat-val cost" id="stat-cost">—</span></div>
-      <div class="stat-row"><span class="stat-label">사용 모델 (Model)</span><span class="stat-val" id="stat-model" style="font-size:12px;color:var(--color-text-muted)">—</span></div>
+      <div class="stat-row">
+        <span class="stat-label tooltip">오디오 입력 (Audio in)
+          <span class="tooltiptext">Windows PC의 마이크/오디오 신호가 서버에 정상 수신되고 있는지 나타냅니다. (Indicates if the mic audio is being captured properly.)</span>
+        </span>
+        <span class="stat-val" id="stat-audio">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tooltip">Gemini 세션 (Gemini)
+          <span class="tooltiptext">구글 Gemini Live API 서버와의 실시간 웹소켓 번역 연결 상태입니다. (WebSocket connection status to Google Gemini Live API.)</span>
+        </span>
+        <span class="stat-val" id="stat-session">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tooltip">지연 속도 (Latency)
+          <span class="tooltiptext">입력된 음성이 번역되어 폰 화면에 표시될 때까지 소요되는 지체 시간입니다. (Time lag from audio capture to caption output.)</span>
+        </span>
+        <span class="stat-val" id="stat-latency">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tooltip">접속자 수 (Attendees)
+          <span class="tooltiptext">현재 와이파이를 통해 자막(/live) 페이지에 접속해 있는 실시간 기기 수입니다. (Number of devices currently viewing the live captions.)</span>
+        </span>
+        <span class="stat-val" id="stat-attendees">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tooltip">재연결 횟수 (Reconnects)
+          <span class="tooltiptext">Gemini Live API의 연결 불안정 혹은 10분 만료로 인해 재설정된 자동 복구 횟수입니다. (Auto-recovery count due to Gemini API connection drops.)</span>
+        </span>
+        <span class="stat-val" id="stat-reconnects">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tooltip">자막 생성 수 (Captions)
+          <span class="tooltiptext">현재 세션 동안 번역되어 전송 완료된 자막 라인의 총 개수입니다. (Total translated caption paragraphs sent in this session.)</span>
+        </span>
+        <span class="stat-val" id="stat-captions">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tooltip">진행 시간 (Runtime)
+          <span class="tooltiptext">예배 번역 시스템이 시작된 이후 총 가동 시간입니다. (Total active runtime of the translation server.)</span>
+        </span>
+        <span class="stat-val" id="stat-runtime">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tooltip">예상 비용 (Est. cost)
+          <span class="tooltiptext">구글 제미나이 Live API의 유료 실시간 가격(분당 $0.0368) 기준으로 계산된 추정 요금입니다. (Estimated API cost based on Gemini Paid Tier.)</span>
+        </span>
+        <span class="stat-val cost" id="stat-cost">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label tooltip">사용 모델 (Model)
+          <span class="tooltiptext">번역과 음성 스트리밍을 수행하고 있는 구글 제미나이 인공지능 모델 번호입니다. (Gemini model ID performing the live translation.)</span>
+        </span>
+        <span class="stat-val" id="stat-model" style="font-size:12px;color:var(--color-text-muted)">—</span>
+      </div>
     </div>
 
     <!-- Caption preview -->
@@ -1308,7 +1397,11 @@ _OPERATOR_HTML = """<!DOCTYPE html>
 
     <!-- Audio playback -->
     <div class="card">
-      <h2>음성 통역 모니터 (Audio)</h2>
+      <h2>
+        <span class="tooltip">음성 통역 모니터 (Audio)
+          <span class="tooltiptext">관리자가 이어폰을 꽂고 번역된 실시간 영어 음성 스트림을 모니터링하기 위한 볼륨 조절 영역입니다. (Volume control for checking English voice outputs using headphones.)</span>
+        </span>
+      </h2>
       <div class="card-body">
         <div class="audio-row">
           <button id="btn-audio" class="secondary">🔇 Playback Muted</button>
