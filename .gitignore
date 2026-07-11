@@ -8,5 +8,5 @@ logs/*
 logs/sessions/*
 !logs/sessions/.gitkeep
 *.wav
-.agent/scratch/
+.agent/
 .claude/

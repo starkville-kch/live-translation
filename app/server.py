@@ -70,9 +70,9 @@ import qrcode
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 
-from app.audio import AudioCapture, list_input_devices
+from app.audio import AudioCapture, AudioStatus, list_input_devices
 from app.broadcast import CaptionBroadcaster, CaptionEvent
-from app.config import logging_cfg, network_cfg, save_audio_device
+from app.config import logging_cfg, network_cfg, save_audio_device, audio_cfg, save_auto_stop_timeout
 from app.gemini_session import GEMINI_MODEL
 from app.gemini_session import GeminiSession, SessionStatus
 from app.logger import server_log
@@ -343,6 +343,36 @@ async def audio_stream(ws: WebSocket):
 
 
 # ── Operator control API ───────────────────────────────────────────────────────
+async def _auto_stop_check():
+    """Periodically checks if the mic status remains silent or disconnected.
+    Stops the service if no signal is detected for the configured duration.
+    """
+    silence_start = None
+    while _service_running:
+        await asyncio.sleep(5.0)
+        if not _service_running:
+            break
+
+        timeout_min = audio_cfg().get("auto_stop_timeout_min", 10)
+        if timeout_min <= 0:
+            silence_start = None
+            continue
+
+        current_status = audio.state.status
+        if current_status in (AudioStatus.NO_SIGNAL, AudioStatus.DISCONNECTED) and not _paused:
+            if silence_start is None:
+                silence_start = time.monotonic()
+            elif time.monotonic() - silence_start >= (timeout_min * 60.0):
+                server_log.info(
+                    "No mic signal detected for %d minutes. Stopping service automatically.",
+                    timeout_min
+                )
+                await stop_service()
+                break
+        else:
+            silence_start = None
+
+
 @app.post("/api/start")
 async def start_service(body: dict = {}):
     global _service_running, _paused, _service_start_time, _billed_seconds, _pause_start
@@ -364,6 +394,7 @@ async def start_service(body: dict = {}):
                 _billed_seconds += CHUNK_MS / 1000.0
 
     asyncio.create_task(_pipe())
+    asyncio.create_task(_auto_stop_check())
     await session.start()
     _service_running = True
     server_log.info("Service started")
@@ -405,6 +436,13 @@ async def resume_service():
     return {"ok": True, "paused": _paused}
 
 
+@app.post("/api/config/auto-stop")
+async def set_auto_stop(body: dict):
+    minutes = int(body["minutes"])
+    save_auto_stop_timeout(minutes)
+    return {"ok": True, "minutes": minutes}
+
+
 @app.get("/api/status")
 async def get_status():
     a = audio.state
@@ -417,6 +455,7 @@ async def get_status():
         "runtime_s": round(runtime, 1),
         "cost_usd": round(cost, 4),
         "billed_audio_s": round(_billed_seconds, 1),
+        "auto_stop_timeout_min": audio_cfg().get("auto_stop_timeout_min", 10),
         "audio": {
             "status": a.status,
             "level": round(a.level_rms, 1),
@@ -1444,6 +1483,20 @@ _OPERATOR_HTML = """<!DOCTYPE html>
       <select id="device-select"><option>Loading…</option></select>
       <div class="meter-wrap"><div class="meter-bar" id="level-bar"></div></div>
       <div class="meter-label" id="level-label">입력 레벨 (Input level)</div>
+      <div style="margin-top: 16px; border-top: 1px solid var(--color-warm-100); padding-top: 12px;">
+        <label for="auto-stop-select" style="font-size: 12px; font-weight: 600; color: var(--color-text-secondary); display: block; margin-bottom: 6px;">
+          자동 종료 대기 시간 (Auto-Stop Timeout)
+        </label>
+        <select id="auto-stop-select">
+          <option value="0">비활성화 (Disabled)</option>
+          <option value="1">1분 (1 Minute) — 테스트용</option>
+          <option value="5">5분 (5 Minutes)</option>
+          <option value="10">10분 (10 Minutes)</option>
+          <option value="15">15분 (15 Minutes)</option>
+          <option value="20">20분 (20 Minutes)</option>
+          <option value="30">30분 (30 Minutes)</option>
+        </select>
+      </div>
     </div>
 
     <!-- Status -->
@@ -1570,6 +1623,7 @@ let polling = null;
 let captionEs = null;
 let previewLines = [];
 let lastEvent = '';
+let hasInitializedAutoStop = false;
 
 const btnStart = document.getElementById('btn-start');
 const btnPause = document.getElementById('btn-pause');
@@ -1745,6 +1799,11 @@ function startStatusPoll() {
     let st;
     try { st = await fetch('/api/status').then(r => r.json()); } catch { return; }
 
+    if (!hasInitializedAutoStop && st.auto_stop_timeout_min !== undefined) {
+      document.getElementById('auto-stop-select').value = st.auto_stop_timeout_min;
+      hasInitializedAutoStop = true;
+    }
+
     document.getElementById('level-bar').style.width = st.audio.level + '%';
     document.getElementById('level-label').textContent =
       st.audio.level > 0 ? '레벨: ' + Math.round(st.audio.level) + '%' : '입력 레벨 — 신호 없음';
@@ -1816,6 +1875,20 @@ function connectSSE() {
     previewWrap.scrollTop = previewWrap.scrollHeight;
   };
 }
+
+document.getElementById('auto-stop-select').addEventListener('change', async (e) => {
+  const mins = parseInt(e.target.value);
+  try {
+    await fetch('/api/config/auto-stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minutes: mins })
+    });
+    addLog(`Auto-Stop Timeout updated to ${mins === 0 ? 'Disabled' : mins + ' min'}`);
+  } catch (err) {
+    addLog('Failed to update Auto-Stop Timeout');
+  }
+});
 
 loadDevices();
 startStatusPoll();

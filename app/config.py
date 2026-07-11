@@ -91,6 +91,14 @@ def save_audio_device(index: int) -> None:
         yaml.dump(_cfg, f, default_flow_style=False, allow_unicode=True)
 
 
+def save_auto_stop_timeout(minutes: int) -> None:
+    if "audio" not in _cfg:
+        _cfg["audio"] = {}
+    _cfg["audio"]["auto_stop_timeout_min"] = minutes
+    with open(_CONFIG_PATH, "w") as f:
+        yaml.dump(_cfg, f, default_flow_style=False, allow_unicode=True)
+
+
 def save_gemini_model(model: str) -> None:
     if "gemini" not in _cfg:
         _cfg["gemini"] = {}
