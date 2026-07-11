@@ -59,10 +59,92 @@ def _local_ip() -> str:
 
 
 def _build_qr(url: str) -> bytes:
-    qr = qrcode.QRCode(box_size=8, border=2)
+    from PIL import Image, ImageDraw
+    from qrcode.image.styledpil import StyledPilImage
+    from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
+    from qrcode.image.styles.colormasks import SolidFillColorMask
+
+    # ERROR_CORRECT_H gives ~30% module recovery — required for a central logo overlay
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,
+        border=2,
+    )
     qr.add_data(url)
     qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
+
+    # 1. Base: dark-blue rounded modules on white
+    img = qr.make_image(
+        image_factory=StyledPilImage,
+        module_drawer=RoundedModuleDrawer(),
+        color_mask=SolidFillColorMask(
+            back_color=(255, 255, 255),
+            front_color=(26, 42, 66),   # Presbyterian Navy
+        ),
+    ).convert("RGB")
+
+    # 2. Pixel-level recolor: replace navy with gold (#b89445) in the three
+    #    7×7 finder-pattern squares (top-left, top-right, bottom-left).
+    #    We iterate each pixel in those rectangular areas and swap navy → gold.
+    NAVY  = (26, 42, 66)
+    GOLD  = (184, 148, 69)   # #b89445
+    px    = img.load()
+    bs    = qr.box_size
+    border = qr.border
+    n     = qr.modules_count   # total module count per side
+
+    finder_origins = [
+        (0, 0),            # top-left
+        (n - 7, 0),        # top-right
+        (0, n - 7),        # bottom-left
+    ]
+
+    for col, row in finder_origins:
+        # pixel bounding box of this 7×7 finder pattern
+        px1 = (col + border) * bs
+        py1 = (row + border) * bs
+        px2 = px1 + 7 * bs
+        py2 = py1 + 7 * bs
+        for x in range(px1, px2):
+            for y in range(py1, py2):
+                if px[x, y] == NAVY:
+                    px[x, y] = GOLD
+
+    # 3. Embed central PCA logo with a mandatory white quiet-zone circle buffer
+    logo_path = Path(__file__).parent / "pca-logo-white-small.webp"
+    if logo_path.exists():
+        img = img.convert("RGBA")
+        logo = Image.open(logo_path).convert("RGBA")
+
+        total_w, total_h = img.size
+        # Logo must not exceed 20 % of the QR width (per spec)
+        logo_size = int(total_w * 0.20)
+        logo = logo.resize((logo_size, logo_size), Image.Resampling.LANCZOS)
+
+        cx, cy = total_w // 2, total_h // 2
+        draw = ImageDraw.Draw(img)
+
+        # Draw a solid white circle as a quiet-zone buffer *before* pasting logo
+        buf_margin = int(logo_size * 0.20)   # 20 % padding around logo
+        buf_r      = logo_size // 2 + buf_margin
+        draw.ellipse(
+            [cx - buf_r, cy - buf_r, cx + buf_r, cy + buf_r],
+            fill=(255, 255, 255, 255),
+        )
+
+        # Draw navy inner circle so the white logo is visible against it
+        inner_r = logo_size // 2 + int(logo_size * 0.06)
+        draw.ellipse(
+            [cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r],
+            fill=(26, 42, 66, 255),
+        )
+
+        # Paste the logo precisely centred inside the navy circle
+        logo_x = cx - logo_size // 2
+        logo_y = cy - logo_size // 2
+        img.paste(logo, (logo_x, logo_y), logo)
+
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()

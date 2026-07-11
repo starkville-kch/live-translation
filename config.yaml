@@ -1,33 +1,14 @@
-# SKC Live Translation — Runtime Configuration
-#
-# OPERATOR-EDITABLE fields are marked with [OPERATOR].
-# Everything else is auto-managed or developer-only — leave it as-is.
-
 audio:
-  # [OPERATOR] Device index of the USB mixer / audio interface.
-  # Run:  python -m app.audio --list   to find the correct index.
+  channels: 1
+  chunk_ms: 100
   device_index: 0
-
-  # Audio capture settings — do not change.
-  sample_rate: 16000  # Hz — Gemini Live requires 16kHz
-  channels: 1         # mono
-  chunk_ms: 100       # PCM chunk size sent to Gemini (100ms)
-
+  sample_rate: 16000
 gemini:
-  # Auto-updated on every server startup — do not edit manually.
-  # resolve_live_model() queries the API and writes the best available model here.
-  # Falls back to this value only if the API is unreachable at startup.
   model: gemini-3.5-live-translate-preview
-
 logging:
-  log_dir: logs       # relative to project root
-  max_bytes: 10485760 # 10 MB per log file before rotation
-  backup_count: 5     # number of rotated files to keep (5 × 10MB = 50MB max)
-
+  backup_count: 5
+  log_dir: logs
+  max_bytes: 10485760
 network:
-  host: 0.0.0.0  # listen on all interfaces (required for phone access over WiFi)
-
-  # [OPERATOR] Port the web server listens on.
-  # Attendees connect to http://<this-pc-ip>:<port>/live
-  # Change only if port 8000 is already in use on this machine.
+  host: 0.0.0.0
   port: 8000
