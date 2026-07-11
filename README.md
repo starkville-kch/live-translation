@@ -32,9 +32,15 @@ All detailed guides for running, maintaining, and editing the system are managed
 
 ### 🔐 3. 운영 및 소유권 관리 / Site Governance & API Key Registry
 
-* **사이트 운영 및 비밀키 관리**
-  * GitHub 리포지토리 권한 설정, Google AI Studio API 키 보안 관리(`.env`), 로컬 오디오 장치 설정(`config.yaml`) 및 재난 복구(Disaster Recovery) 가이드를 포함합니다.
-  * Access credentials, API key security (`.env`), local audio configuration (`config.yaml`), and disaster recovery guides.
+* **사이트 운영 및 비밀키 관리 / System Governance & Credentials**
+  * **API 키 발급 및 등록 / API Key Procurement**: [Google AI Studio](https://aistudio.google.com/)에서 API 키를 발급받고 결제 정보(Billing)를 등록해야 합니다. 무료 키는 60분 연속 가동 시 분당 한도 초과로 자막 중단이 발생할 수 있습니다.
+  * **환경 변수 파일 설정 / Environment Configuration**: 발급받은 키는 프로젝트 루트 디렉토리의 `.env` 파일에 `GEMINI_API_KEY=your_key` 형태로 저장하여 보안을 관리합니다.
+  * **로컬 인프라 제어 / Local Device Binding**: `config.yaml` 파일을 통해 로컬 PC의 입력 믹서 인덱스 등을 지정합니다.
+  * **소유권 이양 / Governance & Handoff**: 교회 시스템의 영속성을 위해 GitHub 권한과 Google Billing 소유권을 다음 유지보수자에게 안전하게 인계하는 원칙을 정의합니다.
+  * **API Key Procurement**: API keys must be generated via [Google AI Studio](https://aistudio.google.com/) with **Billing enabled (Paid Tier)**. Free keys will hit rate limits and fail during standard 60+ minute church services.
+  * **Environment Configuration**: Keys are secured locally in a `.env` file (`GEMINI_API_KEY=your_key`) at the root directory.
+  * **Local Device Binding**: Local mixer device configurations are bound via the local `config.yaml` file.
+  * **Governance & Handoff**: Outlines access rights transfer, repository delegation, and billing ownership handover rules for future church volunteers.
 
 ---
 

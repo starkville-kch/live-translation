@@ -455,6 +455,26 @@
 pip install -r requirements.txt</pre>
         </div>
       </div>
+
+      <div class="step">
+        <div class="step-body">
+          <h3 data-lang="ko">Gemini API 키 발급 및 등록</h3>
+          <h3 data-lang="en">Obtain & Configure Gemini API Key</h3>
+          <p data-lang="ko">
+            1. <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a>에 접속하여 구글 계정으로 로그인합니다.<br>
+            2. <strong>Get API Key</strong> 버튼을 눌러 새 API 키를 생성합니다.<br>
+            3. <strong style="color: var(--color-warning-text);">중요 (유료 카드 등록 필수)</strong>: 60분 이상 연속으로 번역을 가동하기 위해 반드시 <strong>결제 계정(Billing/Paid Tier)이 연동된 유료 키</strong>를 사용해야 합니다. 무료 티어 키는 엄격한 분당 요청 제한(Rate Limit)으로 인해 예배 도중 통신이 끊어집니다.<br>
+            4. 프로젝트 폴더 루트에 <code>.env</code> 파일을 새로 생성하고, 다음과 같이 발급받은 API 키를 적어줍니다:
+          </p>
+          <p data-lang="en">
+            1. Sign in to <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a>.<br>
+            2. Click <strong>Get API Key</strong> and generate a new key.<br>
+            3. <strong style="color: var(--color-warning-text);">Important (Enable Billing)</strong>: To support unbroken streaming for 60+ minute church services, you must link a credit card to enable <strong>Billing (Paid Tier)</strong>. Free-tier keys will hit rate limits and disconnect mid-service.<br>
+            4. Create a <code>.env</code> file in the root of the project and insert your API key:
+          </p>
+          <pre>GEMINI_API_KEY=발급받은_API_키_입력 (your_api_key_here)</pre>
+        </div>
+      </div>
       
       <div class="step">
         <div class="step-body">
