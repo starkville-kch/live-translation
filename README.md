@@ -44,6 +44,35 @@ All detailed guides for running, maintaining, and editing the system are managed
 
 ---
 
+## 🖥️ 사용자 및 관리자 화면 구성 / User & Operator Interfaces
+
+### 1. 관리자 제어 콘솔 / Operator Control Console (`/`)
+참석자용 QR 코드 생성, 오디오 입력 기기 설정 및 제미나이 번역 엔진의 시작/일시정지/종료 제어 등을 담당하는 중앙 관리 화면입니다.  
+This page acts as the central control room for volunteers to generate attendee QR codes, bind local audio devices, and start/mute/stop the Gemini Live session.
+
+![Operator Console](app/operator_screen.png)
+
+* **주요 요소 설명 / Element Explanations**:
+  * **오디오 장치 설정 (Audio Device Index)**: 현재 Windows PC에 연결된 오디오 입력 장치 번호를 입력하고 저장합니다.
+  * **제어 스위치 (Start / Pause / Stop)**: 
+    * `Start`를 눌러 AI 번역 세션을 열고, 예배 도중 잠시 멈출 때는 `Pause`를, 예배 종료 시엔 `Stop`을 눌러 자막 텍스트 저장을 수행합니다.
+  * **레벨 미터 & 상태 표시 (Level Meter & Status Logs)**: 마이크 입력 감도를 측정하는 실시간 데시벨(dB) 게이지와 Gemini API 통신 상태를 실시간 콘솔 로그로 모니터링합니다.
+  * **QR 코드 & 스트림 URL (QR Share Panel)**: 예배당 참석자들이 스마트폰으로 즉시 자막 주소에 접속할 수 있도록 QR 코드를 화면에 크게 송출합니다.
+
+### 2. 참석자 자막 및 오디오 수신 페이지 / Attendee Caption Page (`/live`)
+예배당 내 영어권 참석자들이 스마트폰 브라우저를 통해 실시간 번역 자막을 읽고 음성을 청취하는 페이지입니다.  
+This layout serves real-time English text captions and live translation audio directly to attendees' mobile web browsers.
+
+![Attendee Caption Page](app/user_screen.png)
+
+* **주요 요소 설명 / Element Explanations**:
+  * **하단 정렬 자막 스트림 (Bottom-aligned Captions)**: 새로 추가되는 자막 텍스트 라인이 화면 하단에 차례대로 흘러나오며 자연스러운 눈높이를 제공합니다.
+  * **글꼴 크기 슬라이더 (Font Size Slider)**: 시력에 맞춰 실시간으로 자막 크기를 세밀하게 조절합니다.
+  * **오디오 활성화 버튼 (Audio Playback Control)**: 이어폰을 소지한 사용자가 실시간 AI 통역 오디오(Orus 보이스)를 들을 수 있도록 실시간 웹소켓 PCM 버퍼링 오디오 채널을 키고 끕니다.
+  * **상태 인디케이터 (Status Badge)**: `● Live` 혹은 `● Reconnecting` 배지를 통해 연결 상태를 실시간으로 확인합니다.
+
+---
+
 ## 💻 로컬 개발 환경 실행 / Local Development Setup
 
 로컬 개발 환경 설정에 관한 자세한 사양은 기술 유지보수 가이드를 참고하시기 바라며, 아래 핵심 명령어로 즉시 시작할 수 있습니다.  
