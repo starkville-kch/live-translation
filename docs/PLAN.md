@@ -87,6 +87,16 @@ Windows PC (본 애플리케이션)
 ### 오디오 보이스 고정 (Voice Pinning)
 * 번역 음성을 남성 목소리인 **`orus`**로 강제 고정합니다. 고정하지 않으면 세션이 재설정되거나 네트워크가 끊겨 재접속될 때마다 모델 보이스가 무작위로 바뀌어 청취자에게 혼란을 줍니다.
 
+### 시각적 디자인 및 UX 시스템 (Branding & UX UI Design)
+* **예배 주보 메타포 테마**: 따뜻한 크림 배경색(`#faf8f5`), 고급스러운 네이비 블루 헤더(`#1a2a42`), 골드 데코레이션 선(`#b8923e`)을 조합하여 실제 종이 주보 같은 정갈하고 학구적인 디자인 톤앤매너를 일관되게 적용했습니다.
+* **하단 정렬 자막 레이아웃**: 자막 페이지(`/live`) 하단에 자막 영역을 고정하고 텍스트가 아래에서 위로(bottom-up) 밀려 올라가는 레이아웃으로 설계했습니다. 기존 상단 자막 대비 빈 영역이 생기는 문제를 없애 시선 이동을 최소화하고 가독성을 높였습니다.
+* **타이포그래피 및 서체 체계**: 다국어 가독성을 최우선으로 고려해 구글 웹 폰트인 `Source Serif 4`(영문 헤더), `Inter`(영문 본문), `Noto Serif KR`(한글 헤더), `Noto Sans KR`(한글 본문)을 혼합 사용하여 단어 간격과 가독성을 극대화했습니다.
+* **교회 브랜딩 요소 통합**: 공식 PCA(미국장로교) 로고 자산(`logo.webp`)을 탑재하고 교회의 존엄한 시각 정체성을 반영했습니다.
+* **통합 제어 및 일관된 상태 배지**:
+  * 참석자용 페이지에는 `● Live`, `● Reconnecting` 등 한눈에 상태를 확인 가능한 명확한 상태 배지를 도입했습니다.
+  * 관리자용 페이지는 스피커 아이콘과 볼륨 슬라이더가 상태에 따라 유동적으로 노출되는 스마트 통합 볼륨 컨트롤을 도입하여 복잡도를 낮추었습니다.
+* **도움말 가이드 접이식(Foldout) 설계**: 매주 참고할 필요가 없는 1회성 최초 설정 안내는 `<details>`와 `<summary>` 태그를 활용해 접어두어, 일상적인 예배 운용 시의 시각적 노이즈를 최소화했습니다.
+
 ---
 
 ## 3. 기술 스택 선정 및 대안 비교
@@ -262,6 +272,16 @@ Windows PC (this app)
   - Output (Audio): $21.00/1M tokens or $0.0315/min
   - Total combined audio stream billing rate: $0.0368/min (~$0.00061333/sec).
 - Audio output PCM chunks (24kHz PCM16 mono) arrive in `model_turn.inline_data` and are **broadcast to audio-enabled clients** via `broadcaster.on_audio_chunk()` → `WS /audio-stream`. The session is billed at audio input/output rates regardless of whether the client plays the audio.
+
+### Visual Design & UX System
+* **Presbyterian Bulletin Theme**: Applied a warm cream background (`#faf8f5`), dignified navy blue headers (`#1a2a42`), and gold accent borders (`#b8923e`) to match the style of traditional printed church bulletins.
+* **Bottom-Aligned Caption Flow**: Captions on `/live` align to the bottom of the screen, scrolling upwards. This eliminates empty whitespace gaps and minimizes the reader's eye travel distance.
+* **Typography System**: Loaded specialized Google Fonts—`Source Serif 4` for serif headers, `Inter` for clean sans-serif caption bodies, `Noto Serif KR` for Korean headings, and `Noto Sans KR` for Korean body elements—to maximize readability.
+* **Church Branding**: Embedded the official PCA logo (`logo.webp`) to preserve visual integrity.
+* **Unified Control Console & Status Badges**:
+  * Attendee views feature clear pill-shaped status status badges (`● Live`, `● Reconnecting`).
+  * The operator console hides/reveals volume sliders dynamically within a single, unified audio button (`🔇 Audio Off` / `🔊 Audio On`) to reduce visual clutter.
+* **Setup Guide Foldout**: Wrapped the one-time installation guide inside a collapsible `<details>`/`<summary>` tag to keep it out of sight for routine weekly operations, focusing attention entirely on the Sunday workflow.
 
 ---
 

@@ -1,11 +1,9 @@
 # Live Translation System / 실시간 예배 번역 시스템
 
-Python FastAPI PyAudio Google Gemini Live API Web Audio API Server-Sent Events
+[🐍 Python](https://www.python.org/) | [⚡ FastAPI](https://fastapi.tiangolo.com/) | [🎙️ PyAudio](https://people.csail.mit.edu/hubert/pyaudio/) | [♊ Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api) | [🔊 Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API) | [💬 Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
 
 This is a real-time Korean to English translation system for church services. It captures audio from a microphone input, translates it using the Google Gemini Live API, and streams captions and audio to attendees' mobile web browsers over a local WiFi network. It was originally created for Starkville Korean Church (PCA) but can be set up for other churches.  
 예배용 실시간 한영 번역 시스템입니다. 마이크 오디오 입력을 캡처하고 Google Gemini Live API를 통해 번역하여 로컬 WiFi 네트워크 내의 참석자 모바일 브라우저로 자막과 오디오를 스트리밍합니다. 스탁빌 한인 교회(PCA)를 위해 제작되었으나 다른 교회에서도 설정하여 사용할 수 있습니다.
-
-🌐 공식 자막 사이트 / Official Caption Page: `http://<local-ip>:8000/live` (로컬 WiFi 연결 필요 / Local WiFi connection required)
 
 ---
 
@@ -31,9 +29,6 @@ All detailed guides for running, maintaining, and editing the system are managed
   * 모델 선정, 검증 테스트, 요금 정보 업데이트 및 다국어 지원에 대한 개발 일지입니다.
   * A chronological build log documenting model selections, verification testing, pricing updates, and multi-language support implementation.
 
-* **[UX/UI 디자인 및 개선안 / UX Design & Improvement Plan](docs/ux_improvement_plan.md)**
-  * 예배 주보 스타일의 테마 설정(Warm Cream, Navy, Gold) 및 레이아웃 제안서입니다.
-  * Theme configuration (Warm Cream, Navy, Gold) mirroring Presbyterian bulletins, typography styling, and layout recommendations.
 
 ### 🔐 3. 운영 및 소유권 관리 / Site Governance & API Key Registry
 
