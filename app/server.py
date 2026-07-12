@@ -414,6 +414,30 @@ async def stop_service():
     return {"ok": True}
 
 
+@app.post("/api/shutdown")
+async def shutdown_service(request: Request):
+    client_host = request.client.host
+    if client_host not in ("127.0.0.1", "localhost", "::1"):
+        return Response("Unauthorized", status_code=403)
+
+    import os
+    import signal
+    server_log.info("Shutdown requested via web interface")
+    
+    global _service_running
+    if _service_running:
+        await stop_service()
+
+    async def _graceful():
+        await asyncio.sleep(1.0)
+        server_log.info("Sending SIGINT to exit process gracefully")
+        os.kill(os.getpid(), signal.SIGINT)
+
+    asyncio.create_task(_graceful())
+    return {"ok": True}
+
+
+
 @app.post("/api/pause")
 async def pause_service():
     global _paused, _pause_start
@@ -1571,6 +1595,13 @@ _OPERATOR_HTML = """<!DOCTYPE html>
       <button class="danger"   id="btn-stop"  disabled>■ Stop</button>
     </div>
 
+    <!-- System Shutdown Button -->
+    <div style="margin-top: 16px;">
+      <button id="btn-shutdown" class="secondary" style="border-color: var(--color-error); color: var(--color-error); font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        🔴 프로그램 완전 종료 (Exit System)
+      </button>
+    </div>
+
   </div><!-- /col-left -->
 
   <div class="col-right">
@@ -1628,6 +1659,7 @@ let hasInitializedAutoStop = false;
 const btnStart = document.getElementById('btn-start');
 const btnPause = document.getElementById('btn-pause');
 const btnStop  = document.getElementById('btn-stop');
+const btnShutdown = document.getElementById('btn-shutdown');
 const preview  = document.getElementById('preview');
 const previewWrap = document.getElementById('preview-wrap');
 const logEl    = document.getElementById('log');
@@ -1776,6 +1808,40 @@ btnStop.addEventListener('click', async () => {
     if (captionEs) { captionEs.close(); captionEs = null; }
   }
 });
+
+// ── Shutdown ──────────────────────────────────────────────────────────────────
+btnShutdown.addEventListener('click', async () => {
+  const ok = confirm(
+    "전체 번역 시스템을 완전히 종료하시겠습니까?\\n" +
+    "이 작업은 서버 프로그램을 닫으므로 다시 사용하려면 바탕화면의 시작 파일을 실행해야 합니다.\\n\\n" +
+    "Are you sure you want to completely exit the system?\\n" +
+    "This will close the server program."
+  );
+  if (!ok) return;
+
+  btnShutdown.disabled = true;
+  btnShutdown.textContent = '⏳ 종료 중 (Shutting down…)';
+  try {
+    await fetch('/api/shutdown', { method: 'POST' });
+    document.body.innerHTML = `
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; background: #faf8f5; color: #1a1a1a; padding: 20px; text-align: center;">
+        <div style="font-size: 60px; margin-bottom: 20px;">🔌</div>
+        <h1 style="font-family: serif; font-size: 24px; margin-bottom: 12px;">시스템이 안전하게 종료되었습니다</h1>
+        <p style="color: #4a4a4a; font-size: 15px; max-width: 450px; line-height: 1.6; margin-bottom: 24px;">
+          번역 서버 프로그램이 정상 종료되었습니다. 이제 실행 중인 검은색 터미널 창을 닫으셔도 됩니다. 나중에 다시 시작하려면 바탕화면의 시작 배치 파일을 실행하세요.
+        </p>
+        <h1 style="font-family: serif; font-size: 20px; margin-bottom: 12px; color: #7a7a7a;">System Successfully Terminated</h1>
+        <p style="color: #7a7a7a; font-size: 14px; max-width: 450px; line-height: 1.6;">
+          The translation server has shut down gracefully. You may now close any remaining terminal windows.
+        </p>
+      </div>
+    `;
+  } catch {
+    btnShutdown.disabled = false;
+    btnShutdown.textContent = '🔴 프로그램 완전 종료 (Exit System)';
+  }
+});
+
 
 // ── Status poll ───────────────────────────────────────────────────────────────
 const SESSION_COLOR = { connected:'ok', reconnecting:'warn', failed:'err', connecting:'warn', stopped:'' };

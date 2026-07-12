@@ -96,8 +96,11 @@ python main.py
 *Attendees scan the QR code to open the English captioning and audio page. You can print the QR code or display it on a sanctuary screen. Attendees can see the live text and enable translation voice playback (earphones recommended).*
 
 ### Step 5: 예배 종료 후 중지 / Stop Service
-예배가 끝나면 관리자 페이지에서 **■ Stop** 버튼을 눌러 연결을 정상 종료합니다. 종료 시 자동으로 해당 세션의 한영 대조 전사록(`.txt` 포맷)이 `logs/sessions/현재날짜_시간/` 디렉토리에 저장되어 예배 기록 검증에 유용하게 쓸 수 있습니다.  
-*When the service finishes, click the **■ Stop** button. The system will automatically write session transcript export files under `logs/sessions/YYYYMMDD_HHMMSS/` for pastoral review.*
+예배가 끝나면 관리자 페이지에서 **■ Stop** 버튼을 눌러 연결을 정상 종료합니다. 종료 시 자동으로 해당 세션의 한영 대조 전사록(`.txt` 포맷)이 `logs/sessions/현재날짜_시간/` 디렉토리에 저장되어 예배 기록 검증에 유용하게 쓸 수 있습니다. **저장 완료를 확인한 후, 화면 하단에 있는 [🔴 프로그램 완전 종료 (Exit System)] 버튼을 누르면 서버가 안전하게 종료됩니다. (이후 남은 검은색 터미널 창은 그냥 닫아주시면 됩니다.)**  
+*When the service finishes, click the **■ Stop** button. The system will automatically write session transcript export files under `logs/sessions/YYYYMMDD_HHMMSS/` for pastoral review. **Once saved, simply click the [🔴 프로그램 완전 종료 (Exit System)] button at the bottom of the page to shut down the server gracefully. You can then safely close the remaining black Command Prompt window.***
+
+
+
 
 ---
 
@@ -122,6 +125,44 @@ python main.py
 | :--- | :--- | :--- |
 | `http://<ip>:8000/` | 운영 봉사자 (Operator) | 마이크 입력 장치 변경, 시작/중지, 일시정지, 실시간 자막 모니터링, 비용/오디오 레벨 확인 <br> *Start/stop translation, pause billing, adjust volumes, level meters, event log.* |
 | `http://<ip>:8000/live` | 예배 참석자 (Attendees) | 실시간 대형 영어 자막, 폰 크기 조정, 이어폰 착용자를 위한 실시간 인-브라우저 영어 음성 통역 <br> *Large typography live captions, font size, active Web Audio playback.* |
+
+---
+
+<details>
+<summary><b>⚙️ 설정 파일 가이드 / Configuration File Guide (클릭하여 펼치기 / Click to expand)</b></summary>
+
+<br>
+
+`config.yaml` 파일은 시스템의 핵심 작동 설정을 보관하는 텍스트 파일입니다. 대부분의 경우 수정할 필요가 없으나, 서버 포트 충돌 해결이나 오디오 장치 디버깅 등의 상황에서 참조 및 편집할 수 있습니다.
+*The `config.yaml` file holds the core runtime parameters of the system. While editing it is rarely needed in day-to-day operations, it serves as a critical reference for addressing network port conflicts or diagnosing audio input issues.*
+
+> [!WARNING]
+> **주석 관련 주의사항 (Comment Preservation Warning)**:  
+> 시스템 구동 시 모델명을 감지하여 자동 업데이트하거나, 브라우저 관리자 페이지에서 입력 마이크 장치를 변경하면 `config.yaml` 파일이 프로그램에 의해 새로 덮어쓰기 됩니다. 이 과정에서 파일 내부에 직접 작성한 **YAML 주석(#)은 모두 삭제되므로**, 각 설정값에 대한 상세 설명은 이 가이드나 `app/config.py` 소스코드의 주석을 참고하십시오.  
+> *When the system starts up or when you modify the audio input device from the operator dashboard, the program rewrites `config.yaml`. This process **strips all inline comments (#) from the file**. Refer to this guide or the docstring in `app/config.py` for parameter explanations rather than writing inline comments inside the file.*
+
+### 설정 항목 설명 / Configuration Parameters
+
+*   **`audio`** (오디오 입력 설정 / Audio Capture Settings)
+    *   **`device_index`**: Windows PC가 마이크를 캡처할 오디오 입력 장치 번호입니다. `python -m app.audio --list` 결과에 맞추어 기입합니다. (*The target input audio device index. Run `python -m app.audio --list` to identify the correct value.*)
+    *   **`auto_stop_timeout_min`**: 무음 감지 시 자동 종료 시간(분)입니다. 마이크 입력이 끊어지거나 소리가 나지 않을 때 이 시간이 지나면 리소스 절약을 위해 시스템을 자동으로 종료합니다. `0`으로 지정하면 자동 종료 기능이 꺼집니다. (*Silence auto-stop timeout in minutes. The system automatically stops when no signal is detected for this duration to conserve resources. Set to `0` to disable.*)
+    *   **`sample_rate`**: 오디오 샘플링 속도 (기본 `16000` Hz, 제미나이 Live API 전용 규격으로 변경을 권장하지 않습니다). (*Input sampling rate in Hz. Set to `16000` by default as required by the Gemini Live API. Do not change.*)
+    *   **`channels`**: 오디오 채널 수 (기본 `1` - 모노). (*Audio input channels. Set to `1` (mono) by default. Do not change.*)
+    *   **`chunk_ms`**: 전송되는 오디오 버퍼 조각 크기 (기본 `100`ms). (*Buffer chunk duration sent to Gemini. Set to `100`ms. Do not change.*)
+
+*   **`gemini`** (제미나이 API 설정 / Gemini Engine Configuration)
+    *   **`model`**: 사용 중인 제미나이 번역 모델 이름입니다. 서버가 구동될 때마다 API를 통해 자동으로 최신 모델을 검색하여 변경하므로 수동으로 편집할 필요가 없습니다. (*The active model name. Auto-detected and updated by the server at boot; no manual configuration is required.*)
+
+*   **`logging`** (로그 기록 방식 설정 / System Logging Preferences)
+    *   **`log_dir`**: 로그 파일이 저장될 상대 또는 절대 경로입니다 (기본 `logs`). (*Directory where operational logs are saved. Defaults to `logs`.*)
+    *   **`max_bytes`**: 하나의 로그 파일이 가질 수 있는 최대 바이트 크기입니다 (기본 `10485760` - 10MB). (*Maximum size in bytes of a single log file before rotation. Defaults to 10MB.*)
+    *   **`backup_count`**: 보관할 백업 로그 파일 개수입니다 (기본 `5`). (*Number of rotated log backup files to preserve. Defaults to `5`.*)
+
+*   **`network`** (네트워크 포트 바인딩 설정 / Server Network Configurations)
+    *   **`host`**: 서버가 수신 대기할 IP 주소입니다. WiFi를 통한 참석자 폰 접속을 위해 기본값 `0.0.0.0` (모든 대역 수신)을 유지해야 합니다. (*The binding host address. Keep `0.0.0.0` to allow phones to connect over WiFi.*)
+    *   **`port`**: FastAPI 웹 서버의 포트입니다 (기본 `8000`). PC 내에 다른 웹 프로그램과 포트 충돌이 생기면 이 값을 `8080` 등으로 변경해 문제를 피합니다. (*The server listener port. Change from `8000` to an alternate port if conflict occurs.*)
+
+</details>
 
 ---
 

@@ -36,7 +36,7 @@
     color: var(--color-text-primary);
     line-height: 1.7;
   }
-  
+
   /* Header / Hero */
   .hero {
     background: var(--color-navy);
@@ -55,7 +55,8 @@
   }
   .hero p {
     font-size: 16px;
-    opacity: .9;
+    color: #ffffff;
+    opacity: 1;
     max-width: 600px;
     margin: 0 auto;
   }
@@ -278,7 +279,7 @@
   .note strong {
     color: #2a4365;
   }
-  
+
   .warn {
     background: var(--color-warning-bg);
     border-left: 4px solid var(--color-warning-border);
@@ -340,11 +341,11 @@
   [data-lang] {
     display: none !important;
   }
-  
+
   html[lang="ko"] [data-lang="ko"] {
     display: block !important;
   }
-  html[lang="ko"] span[data-lang="ko"], 
+  html[lang="ko"] span[data-lang="ko"],
   html[lang="ko"] strong[data-lang="ko"] {
     display: inline !important;
   }
@@ -358,7 +359,7 @@
   html[lang="en"] [data-lang="en"] {
     display: block !important;
   }
-  html[lang="en"] span[data-lang="en"], 
+  html[lang="en"] span[data-lang="en"],
   html[lang="en"] strong[data-lang="en"] {
     display: inline !important;
   }
@@ -386,16 +387,30 @@
     cursor: pointer;
     outline: none;
     user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    list-style: none;
   }
   .setup-details summary::-webkit-details-marker {
+    display: none;
+  }
+  .setup-details summary::before {
+    content: "▶";
     color: var(--color-gold);
+    font-size: 13px;
+    transition: transform 0.2s ease;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .setup-details[open] summary::before {
+    transform: rotate(90deg);
   }
   .setup-details summary h2 {
     display: inline-block;
     border-bottom: none;
     margin: 12px 0;
     padding-bottom: 0;
-    vertical-align: middle;
   }
   .setup-details summary h2 .action-text {
     font-size: 13.5px;
@@ -404,7 +419,7 @@
     margin-left: 10px;
     font-family: var(--font-sans);
   }
-  
+
   /* Dynamic action text content */
   .setup-details summary h2[data-lang="ko"] .action-text::after {
     content: "(클릭하여 펼치기)";
@@ -433,7 +448,7 @@
 <div class="hero">
   <h1 data-lang="ko">SKC 실시간 번역 자막 시스템 가이드</h1>
   <h1 data-lang="en">SKC Live Translation — Volunteer Guide</h1>
-  <p data-lang="ko">예배의 모든 은혜로운 순서를 실시간 한영 번역 자막으로 온전히 전달하기 위한 봉사자 안내서입니다. 오디오 입력 설정부터 AI 번역 구동, 그리고 자막 방송 운영 절차까지 필요한 모든 내용을 안내합니다.</p>
+  <p data-lang="ko">예배의 모든 순서를 실시간 한영 번역 자막으로 전달하기 위한 안내서입니다. 오디오 입력 설정부터 AI 번역 구동, 그리고 자막 방송 운영 절차까지 필요한 모든 내용을 안내합니다.</p>
   <p data-lang="en">This volunteer guide serves to ensure every grace-filled moment of the service is beautifully conveyed through real-time Korean-to-English translation. Find everything you need to configure audio capture, launch the Gemini AI translator, and manage live caption streams.</p>
 </div>
 
@@ -449,7 +464,7 @@
   <!-- 작동 원리 / How the system works -->
   <h2 data-lang="ko">시스템 작동 원리</h2>
   <h2 data-lang="en">How the System Works</h2>
-  
+
   <p data-lang="ko">
     목사님용 무선 핀마이크와 단상 마이크 등의 소리를 믹서에서 받아 PC가 캡처합니다. 이후 구글 <span class="tooltip">제미나이 Live API<span class="tooltiptext"><span data-lang="ko">구글의 실시간 인공지능 번역 및 음성 합성 모델 서비스</span><span data-lang="en">Google's real-time AI translation and speech synthesis model service</span></span></span>를 통해 실시간으로 번역하고, 번역된 텍스트와 오디오(24kHz <span class="tooltip">PCM<span class="tooltiptext"><span data-lang="ko">압축되지 않은 디지털 오디오 원음 포맷</span><span data-lang="en">Uncompressed raw digital audio format</span></span></span>)를 교회 내부 와이파이(WiFi)를 통해 참석자들의 폰으로 전송합니다. 참석자는 QR 코드를 스캔하여 브라우저에서 편리하게 자막과 오디오(선택 가능)를 이용할 수 있습니다.
   </p>
@@ -519,7 +534,7 @@ pip install -r requirements.txt</pre>
           <pre>GEMINI_API_KEY=발급받은_API_키_입력 (your_api_key_here)</pre>
         </div>
       </div>
-      
+
       <div class="step">
         <div class="step-body">
           <h3 data-lang="ko">USB 믹서 장치 인덱스 확인</h3>
@@ -551,7 +566,7 @@ python -m app.audio --list</pre>
           <p data-lang="ko">오디오 신호가 깨끗하게 잡히는지 테스트 모드로 먼저 검증합니다:</p>
           <p data-lang="en">Record a brief sample locally to verify the audio signal is clean and clear:</p>
           <pre>python -m app.audio --test 2 30
-# 30초간 오디오를 녹음한 뒤 test_capture_2.wav 파일로 저장합니다. 
+# 30초간 오디오를 녹음한 뒤 test_capture_2.wav 파일로 저장합니다.
 # 미디어 플레이어로 열어서 마이크 소리가 노이즈 없이 잘 들리는지 확인하세요.</pre>
         </div>
       </div>
@@ -561,7 +576,7 @@ python -m app.audio --list</pre>
   <!-- 주일 workflow / Every-service workflow -->
   <h2 data-lang="ko">주일 예배 운용 절차 (Workflow)</h2>
   <h2 data-lang="en">Every-Service Workflow</h2>
-  
+
   <div class="steps">
     <div class="step">
       <div class="step-body">
@@ -588,13 +603,13 @@ python main.py</pre>
         <h3 data-lang="ko">마이크 장치 선택 및 서비스 시작</h3>
         <h3 data-lang="en">Select Device and Click Start</h3>
         <p data-lang="ko">
-          화면의 마이크 입력 드롭다운에서 예배 마이크와 연결된 USB 오디오 코덱을 확인하고, 
-          <strong>▶ Start</strong> 버튼을 누릅니다. 마이크 입력 레벨 미터(Level Meter)가 
+          화면의 마이크 입력 드롭다운에서 예배 마이크와 연결된 USB 오디오 코덱을 확인하고,
+          <strong>▶ Start</strong> 버튼을 누릅니다. 마이크 입력 레벨 미터(Level Meter)가
           소리에 따라 올라가고, 상태 표시 등이 수 초 내로 <span class="badge badge-green">Live</span> 상태로 바뀝니다.
         </p>
         <p data-lang="en">
-          Select your USB Audio Codec from the dropdown list, then click <strong>▶ Start</strong>. 
-          The level meter should respond to microphone audio, and the status badge will change to 
+          Select your USB Audio Codec from the dropdown list, then click <strong>▶ Start</strong>.
+          The level meter should respond to microphone audio, and the status badge will change to
           <span class="badge badge-green">Live</span> within a few seconds.
         </p>
       </div>
@@ -605,12 +620,12 @@ python main.py</pre>
         <h3 data-lang="ko">참석자들에게 QR 코드 공유</h3>
         <h3 data-lang="en">Share QR Code</h3>
         <p data-lang="ko">
-          관리자 페이지 상단에 띄워진 QR 코드는 참석자들이 자막과 통역 오디오를 볼 수 있는 웹 페이지 주소입니다. 
-          이 QR 코드를 인쇄하거나 예배당 입구 또는 스크린에 띄워 공유해 주세요. 
+          관리자 페이지 상단에 띄워진 QR 코드는 참석자들이 자막과 통역 오디오를 볼 수 있는 웹 페이지 주소입니다.
+          이 QR 코드를 인쇄하거나 예배당 입구 또는 스크린에 띄워 공유해 주세요.
           참석자들은 스캔 후 영어 자막 및 실시간 영어 음성 통역(이어폰 착용 필수)을 선택하여 이용할 수 있습니다.
         </p>
         <p data-lang="en">
-          Attendees scan the QR code to open the English captioning and audio page. 
+          Attendees scan the QR code to open the English captioning and audio page.
           You can print the QR code or display it on a sanctuary screen.
           Attendees can see the live text and enable translation voice playback (earphones recommended).
         </p>
@@ -625,11 +640,13 @@ python main.py</pre>
           예배가 끝나면 관리자 페이지에서 <strong>■ Stop</strong> 버튼을 눌러 연결을 정상 종료합니다.
           종료 시 자동으로 해당 세션의 한영 대조 전사록(`.txt` 포맷)이 
           <code>logs/sessions/현재날짜_시간/</code> 디렉토리에 저장되어 예배 기록 검증에 유용하게 쓸 수 있습니다.
+          <strong>저장 완료를 확인한 후, 화면 하단에 있는 [🔴 프로그램 완전 종료 (Exit System)] 버튼을 누르면 서버가 안전하게 종료됩니다. (이후 남은 검은색 터미널 창은 그냥 닫아주시면 됩니다.)</strong>
         </p>
         <p data-lang="en">
           When the service finishes, click the <strong>■ Stop</strong> button. 
           The system will automatically write session transcript export files (`ko.txt`, `en.txt`, `aligned.txt`, and logs) 
           under <code>logs/sessions/YYYYMMDD_HHMMSS/</code> for pastoral review.
+          <strong>Once saved, simply click the [🔴 프로그램 완전 종료 (Exit System)] button at the bottom of the page to shut down the server gracefully. You can then safely close the remaining black Command Prompt window.</strong>
         </p>
       </div>
     </div>
@@ -638,7 +655,7 @@ python main.py</pre>
   <!-- 상태 표시등 / Status indicators -->
   <h2 data-lang="ko">상태 표시등 설명</h2>
   <h2 data-lang="en">Status Badge Explanations</h2>
-  
+
   <table>
     <thead>
       <tr>
@@ -726,7 +743,7 @@ python main.py</pre>
   <!-- 페이지 종류 / Pages mapping -->
   <h2 data-lang="ko">웹 페이지 주소 종류</h2>
   <h2 data-lang="en">System Pages</h2>
-  
+
   <table>
     <thead>
       <tr>
@@ -767,6 +784,144 @@ python main.py</pre>
     </tbody>
   </table>
 
+  <!-- 설정 파일 가이드 / Configuration File Guide -->
+  <details class="setup-details">
+    <summary>
+      <h2 data-lang="ko">⚙️ 설정 파일 가이드 (config.yaml) <span class="action-text"></span></h2>
+      <h2 data-lang="en">⚙️ Configuration File Guide (config.yaml) <span class="action-text"></span></h2>
+    </summary>
+    <div style="margin-top: 15px;">
+      <p data-lang="ko">
+        <code>config.yaml</code> 파일은 시스템의 핵심 작동 설정을 보관하는 텍스트 파일입니다. 대부분의 경우 수정할 필요가 없으나, 서버 포트 충돌 해결이나 오디오 장치 디버깅 등의 상황에서 참조 및 편집할 수 있습니다.
+      </p>
+      <p data-lang="en">
+        The <code>config.yaml</code> file holds the core runtime parameters of the system. While editing it is rarely needed in day-to-day operations, it serves as a critical reference for addressing network port conflicts or diagnosing audio input issues.
+      </p>
+
+      <div class="warn">
+        <strong data-lang="ko">주석 관련 주의사항:</strong>
+        <span data-lang="ko">
+          시스템 구동 시 모델명을 감지하여 자동 업데이트하거나, 브라우저 관리자 페이지에서 입력 마이크 장치를 변경하면 <code>config.yaml</code> 파일이 프로그램에 의해 새로 덮어쓰기 됩니다. 이 과정에서 파일 내부에 직접 작성한 <strong>YAML 주석(#)은 모두 삭제되므로</strong>, 각 설정값에 대한 상세 설명은 이 가이드나 <code>app/config.py</code> 소스코드의 주석을 참고하십시오.
+        </span>
+      </div>
+      <div class="warn" data-lang="en">
+        <strong>Comment Preservation Warning:</strong>
+        <span>
+          When the system starts up or when you modify the audio input device from the operator dashboard, the program rewrites <code>config.yaml</code>. This process <strong>strips all inline comments (#) from the file</strong>. Refer to this guide or the docstring in <code>app/config.py</code> for parameter explanations rather than writing inline comments inside the file.
+        </span>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <span data-lang="ko">설정 키</span>
+              <span data-lang="en">Setting Key</span>
+            </th>
+            <th>
+              <span data-lang="ko">기본값</span>
+              <span data-lang="en">Default Value</span>
+            </th>
+            <th>
+              <span data-lang="ko">상세 설명</span>
+              <span data-lang="en">Description</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>audio.device_index</code></td>
+            <td><code>0</code></td>
+            <td>
+              <span data-lang="ko">마이크를 캡처할 오디오 입력 장치 번호입니다. 믹서 환경이 변경되었을 때 <code>python -m app.audio --list</code> 결과에 맞추어 기입합니다.</span>
+              <span data-lang="en">Target input audio device index. Run <code>python -m app.audio --list</code> to identify the correct value when the mixer hardware changes.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>audio.auto_stop_timeout_min</code></td>
+            <td><code>10</code></td>
+            <td>
+              <span data-lang="ko">무음 감지 시 자동 종료 시간(분)입니다. 마이크 입력이 없거나 소리가 나지 않을 때 이 시간이 지나면 리소스 절약을 위해 시스템을 자동으로 종료합니다. <code>0</code>으로 지정하면 자동 종료 기능이 꺼집니다.</span>
+              <span data-lang="en">Silence auto-stop timeout in minutes. The system automatically stops when no signal is detected for this duration to conserve resources. Set to <code>0</code> to disable.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>audio.sample_rate</code></td>
+            <td><code>16000</code></td>
+            <td>
+              <span data-lang="ko">오디오 샘플링 속도(Hz). 제미나이 Live API 전용 규격으로 변경을 권장하지 않습니다.</span>
+              <span data-lang="en">Input sampling rate in Hz. Required to be 16000 Hz by the Gemini Live API. Do not change.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>audio.channels</code></td>
+            <td><code>1</code></td>
+            <td>
+              <span data-lang="ko">오디오 입력 채널 수 (1 = 모노). 변경을 권장하지 않습니다.</span>
+              <span data-lang="en">Audio input channels. Set to 1 (mono). Do not change.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>audio.chunk_ms</code></td>
+            <td><code>100</code></td>
+            <td>
+              <span data-lang="ko">전송되는 오디오 버퍼 조각 크기(ms). 변경을 권장하지 않습니다.</span>
+              <span data-lang="en">Buffer chunk duration sent to Gemini in milliseconds. Defaults to 100ms. Do not change.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>gemini.model</code></td>
+            <td><code>gemini-3.5-live-translate-preview</code></td>
+            <td>
+              <span data-lang="ko">사용 중인 제미나이 번역 모델명입니다. 서버 구동 시 자동으로 최신 라이브 번역 모델을 찾아 저장하므로 편집할 필요가 없습니다.</span>
+              <span data-lang="en">The active Gemini Live model. Automatically updated by the server at boot; no manual configuration is required.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>logging.log_dir</code></td>
+            <td><code>logs</code></td>
+            <td>
+              <span data-lang="ko">로그 파일이 저장되는 디렉토리 경로입니다.</span>
+              <span data-lang="en">Directory where operational and session logs are saved.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>logging.max_bytes</code></td>
+            <td><code>10485760</code> (10MB)</td>
+            <td>
+              <span data-lang="ko">하나의 로그 파일이 가질 수 있는 최대 바이트 크기입니다. 이 크기에 도달하면 이전 로그 파일이 백업 보관됩니다.</span>
+              <span data-lang="en">Maximum size in bytes of a single log file before it rotates.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>logging.backup_count</code></td>
+            <td><code>5</code></td>
+            <td>
+              <span data-lang="ko">보관할 백업 로그 파일의 최대 개수입니다.</span>
+              <span data-lang="en">Number of rotated log backup files to keep.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>network.host</code></td>
+            <td><code>0.0.0.0</code></td>
+            <td>
+              <span data-lang="ko">서버 바인딩 IP 주소입니다. WiFi 환경에서 스마트폰 접속을 지원하기 위해 반드시 모든 대역 수신(<code>0.0.0.0</code>)으로 유지해야 합니다.</span>
+              <span data-lang="en">The binding host IP address. Must remain <code>0.0.0.0</code> to allow attendee phone access over the local WiFi network.</span>
+            </td>
+          </tr>
+          <tr>
+            <td><code>network.port</code></td>
+            <td><code>8000</code></td>
+            <td>
+              <span data-lang="ko">FastAPI 웹 서버 포트입니다. 다른 프로그램과 포트 충돌이 발생하는 경우 <code>8080</code> 등으로 변경하십시오.</span>
+              <span data-lang="en">The server listener port. Change only if port 8000 is already in use by another program on this computer.</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+
   <!-- 문제 해결 / Troubleshooting -->
   <h2 data-lang="ko">오류 및 문제 해결 가이드</h2>
   <h2 data-lang="en">Troubleshooting Guide</h2>
@@ -774,75 +929,75 @@ python main.py</pre>
   <h3 data-lang="ko">상태창에 "No signal"이 뜨는데 마이크 소리가 전달되지 않는 경우</h3>
   <h3 data-lang="en">Level Meter reads "No signal" but mixer is on</h3>
   <p data-lang="ko">
-    관리자 콘솔 화면에서 장치 드롭다운이 올바른 USB 오디오 코덱으로 잡혀 있는지 검토해 주세요. 
-    장치 순서가 바뀌었을 수 있으므로 <code>python -m app.audio --list</code> 명령어로 장치 번호를 재확인하고 
+    관리자 콘솔 화면에서 장치 드롭다운이 올바른 USB 오디오 코덱으로 잡혀 있는지 검토해 주세요.
+    장치 순서가 바뀌었을 수 있으므로 <code>python -m app.audio --list</code> 명령어로 장치 번호를 재확인하고
     <code>config.yaml</code>에 올바른 인덱스를 반영한 뒤 서버를 재시작해 주세요.
   </p>
   <p data-lang="en">
-    Verify the USB mixer is selected in the device selector dropdown. If the mixer's hardware ordering index changed, 
+    Verify the USB mixer is selected in the device selector dropdown. If the mixer's hardware ordering index changed,
     run <code>python -m app.audio --list</code> to identify the new index, write it to `config.yaml`, and restart.
   </p>
 
   <h3 data-lang="ko">예배 도중 자막이나 번역이 멈추는 경우</h3>
   <h3 data-lang="en">Captions stop mid-service</h3>
   <p data-lang="ko">
-    관리자 창 상단의 상태 등을 확인하세요. <span class="badge badge-amber">Reconnecting</span> 상태라면 
-    자동으로 재연결 중이니 잠시 대기하세요. <span class="badge badge-red">Error</span> 표시 등 상태로 
+    관리자 창 상단의 상태 등을 확인하세요. <span class="badge badge-amber">Reconnecting</span> 상태라면
+    자동으로 재연결 중이니 잠시 대기하세요. <span class="badge badge-red">Error</span> 표시 등 상태로
     유지되는 경우엔 인터넷 공유기 연결 상태를 확인하고 관리자 페이지에서 Stop 버튼을 누른 다음 다시 Start 버튼을 누르세요.
   </p>
   <p data-lang="en">
-    Check the status badge on the operator dashboard. If it displays <span class="badge badge-amber">Reconnecting</span>, 
-    the system is recovering. If it is stuck on <span class="badge badge-red">Error</span>, verify internet availability and cycle 
+    Check the status badge on the operator dashboard. If it displays <span class="badge badge-amber">Reconnecting</span>,
+    the system is recovering. If it is stuck on <span class="badge badge-red">Error</span>, verify internet availability and cycle
     the service by clicking Stop and then Start.
   </p>
 
   <h3 data-lang="ko">참석자 스마트폰이 자막 페이지에 전혀 접속되지 않는 경우</h3>
   <h3 data-lang="en">Attendees cannot load the caption page</h3>
   <p data-lang="ko">
-    자막 페이지는 로컬 공유기 IP를 주소로 사용합니다. 반드시 모든 참석자의 스마트폰이 **교회 전용 내부 WiFi**망에 
-    접속되어 있어야 합니다. 외부 셀룰러 데이터(5G/LTE)망이나 다른 와이파이망에 접속된 상태에서는 보안 및 
-    공유기 IP 특성상 로컬 서버 주소로 들어올 수 없습니다. 
+    자막 페이지는 로컬 공유기 IP를 주소로 사용합니다. 반드시 모든 참석자의 스마트폰이 **교회 전용 내부 WiFi**망에
+    접속되어 있어야 합니다. 외부 셀룰러 데이터(5G/LTE)망이나 다른 와이파이망에 접속된 상태에서는 보안 및
+    공유기 IP 특성상 로컬 서버 주소로 들어올 수 없습니다.
   </p>
   <p data-lang="en">
-    Ensure attendee devices are connected to the **same church WiFi network** as the host PC. 
+    Ensure attendee devices are connected to the **same church WiFi network** as the host PC.
     The QR code points to the host's local network IP, which is inaccessible from cellular data networks or external routers.
   </p>
 
   <h3 data-lang="ko">참석자 페이지에 "Translation unavailable" 경고 문구가 뜨는 경우</h3>
   <h3 data-lang="en">"Translation unavailable" banner shown to attendees</h3>
   <p data-lang="ko">
-    구글 제미나이 API 라이브 서버 연결에 실패한 상태입니다. PC의 유선/무선 인터넷 연결 상태를 우선 점검하고, 
-    관리자 콘솔에서 Stop 후 Start를 다시 눌러 연결을 재설정해 줍니다. 
+    구글 제미나이 API 라이브 서버 연결에 실패한 상태입니다. PC의 유선/무선 인터넷 연결 상태를 우선 점검하고,
+    관리자 콘솔에서 Stop 후 Start를 다시 눌러 연결을 재설정해 줍니다.
     서버가 정상 연결 상태로 복구되면 참석자 페이지도 새로고침 없이 자동으로 활성화됩니다.
   </p>
   <p data-lang="en">
-    The server was unable to establish a connection to the Gemini Live server after multiple retry attempts. 
-    Check internet access, then click Stop and Start again. Attendees do not need to refresh; they will resume 
+    The server was unable to establish a connection to the Gemini Live server after multiple retry attempts.
+    Check internet access, then click Stop and Start again. Attendees do not need to refresh; they will resume
     captions automatically once translation starts.
   </p>
 
   <div class="warn">
-    <strong data-lang="ko">보안 주의:</strong> 절대 외부로 <code>.env</code> 설정 파일을 공유하거나 커밋하지 마세요. 
+    <strong data-lang="ko">보안 주의:</strong> 절대 외부로 <code>.env</code> 설정 파일을 공유하거나 커밋하지 마세요.
     해당 파일은 교회 고유의 제미나이 API 비밀 키를 보관하고 있으므로 유출 시 원치 않는 API 요금이 발생할 수 있습니다.
   </div>
   <div class="warn" data-lang="en">
-    <strong>Security Warning:</strong> Never share or upload the <code>.env</code> file. 
+    <strong>Security Warning:</strong> Never share or upload the <code>.env</code> file.
     It holds your private Gemini API Key. Keep it safe on the host server to prevent unauthorized usage charges.
   </div>
 
   <h2 data-lang="ko">예배 전사록 보관 및 로그 파일</h2>
   <h2 data-lang="en">Export Transcripts & Session Logs</h2>
   <p data-lang="ko">
-    이전 예배의 통역 기록을 열람하거나 한영 통역 대조 스크립트가 필요한 경우, 
-    서버 구동 폴더 안의 <code>logs/sessions/</code> 폴더로 이동합니다. 
-    각 세션마다 예배를 중지한 시간에 맞추어 텍스트 파일들이 저장되며, 
-    <code>aligned.txt</code> 파일을 열어 보시면 시간별로 매치된 한국어 원래 소리와 
+    이전 예배의 통역 기록을 열람하거나 한영 통역 대조 스크립트가 필요한 경우,
+    서버 구동 폴더 안의 <code>logs/sessions/</code> 폴더로 이동합니다.
+    각 세션마다 예배를 중지한 시간에 맞추어 텍스트 파일들이 저장되며,
+    <code>aligned.txt</code> 파일을 열어 보시면 시간별로 매치된 한국어 원래 소리와
     번역된 영어 스크립트가 대조되어 있습니다.
   </p>
   <p data-lang="en">
-    To review previous sermon scripts or export study materials, navigate to the 
-    <code>logs/sessions/</code> directory in the project directory. 
-    Every stop triggers an export of <code>ko.txt</code> (Korean source), 
+    To review previous sermon scripts or export study materials, navigate to the
+    <code>logs/sessions/</code> directory in the project directory.
+    Every stop triggers an export of <code>ko.txt</code> (Korean source),
     <code>en.txt</code> (English translation), and <code>aligned.txt</code> (interleaved, human-readable).
   </p>
 
@@ -853,11 +1008,11 @@ python main.py</pre>
 <script>
   function setLang(lang) {
     document.documentElement.setAttribute('lang', lang);
-    
+
     // Manage active tab highlight
     const btnKo = document.getElementById('btn-ko');
     const btnEn = document.getElementById('btn-en');
-    
+
     if (lang === 'ko') {
       btnKo.classList.add('active');
       btnEn.classList.remove('active');
@@ -866,7 +1021,7 @@ python main.py</pre>
       btnKo.classList.remove('active');
     }
   }
-  
+
   // Set default language dynamically or fall back to 'ko'
   setLang('ko');
 </script>
