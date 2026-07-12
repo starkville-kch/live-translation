@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-07-12
+
+### Added
+- **Graceful Web Shutdown:**
+  - Implemented a secure localhost-only endpoint `/api/shutdown` that stops active sessions and terminates the Python server process via `SIGINT`.
+  - Added a distinct red `🔴 프로그램 완전 종료 (Exit System)` button on the operator console with a bilingual confirmation dialog to prevent accidental triggers.
+  - Replaces the console page with a clean, friendly "System Successfully Terminated" guidance screen once the server goes offline.
+- **Collapsible Configuration Guide:**
+  - Added a comprehensive, bilingual guide explaining all `config.yaml` options (audio devices, Gemini settings, network, and logging defaults) inside `docs/HOW_TO_USE.md` and the browser helper page (`/help`).
+  - Wrapped the guide in a collapsible `<details>` panel to keep day-to-day documentation clean.
+
+### Changed
+- **Operator Guidance Updates:**
+  - Updated the Stop Service workflow documentation to prioritize the Web Shutdown button over command-line key combos (reducing the risk of orphaned background zombie processes locking port 8000).
+- **UI & Alignment Enhancements:**
+  - Fixed vertical alignment of the collapsible details arrow marker using a custom flexbox-based CSS pseudo-element in `how_to_use.html`.
+  - Brightened the helper page hero description text to pure white (#ffffff) to maximize readability against the dark navy background.
+
+---
+
 ## [1.2.0] - 2026-07-11
 
 ### Added
