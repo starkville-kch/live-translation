@@ -1,5 +1,5 @@
 audio:
-  auto_stop_timeout_min: 1
+  auto_stop_timeout_min: 10
   channels: 1
   chunk_ms: 100
   device_index: 0
