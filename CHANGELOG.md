@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-07-13
+
+### Added
+- **Concurrency Hardening:**
+  - Implemented `ServiceState` state machine (`STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `FAILED`) and a global async lock `_state_lock` in `app/server.py` to prevent duplicate concurrent audio/session threads.
+  - Added unified `_teardown()` function to handle all thread joining, queue draining, and session termination cleanup.
+  - Added automatic shutdown/recovery `_auto_stop_on_failure` callback when the connection enters the `FAILED` state.
+- **Button and Badge Synchronization:**
+  - Synchronized operator dashboard controls (`btnStart`, `btnPause`, `btnStop`) and badge state indicators in real-time across multiple tabs.
+
+### Changed
+- **Retry Loop Safety:**
+  - Cleanly handle and re-raise `asyncio.CancelledError` inside `_run_with_retry` to prevent orphan tasks.
+  - Reset reconnection attempt counter on successful runs and capped backoff delay at 60s.
+- **Turn-Onset Latency Tracking:**
+  - Replaced continuously growing latency calculation with turn-onset latency computed once at the start of each spoken turn.
+
 ## [1.3.0] - 2026-07-12
 
 ### Added

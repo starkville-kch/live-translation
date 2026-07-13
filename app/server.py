@@ -84,18 +84,25 @@ from app.logger import server_log
 _COST_PER_AUDIO_SEC = 0.0368 / 60.0
 
 # ── Singletons ────────────────────────────────────────────────────────────────
+from enum import Enum
+
+class ServiceState(str, Enum):
+    STOPPED = "stopped"
+    STARTING = "starting"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    FAILED = "failed"
+
 broadcaster = CaptionBroadcaster()
 audio = AudioCapture()
 session = GeminiSession(
     on_caption=broadcaster.on_caption_delta,
-    on_state_change=lambda s: (
-        broadcaster.set_unavailable() if s.status == SessionStatus.FAILED else None
-    ),
     on_audio_chunk=broadcaster.on_audio_chunk,
 )
 
+_state_lock = asyncio.Lock()
+_state = ServiceState.STOPPED
 _qr_png_cache: bytes | None = None
-_service_running = False
 _paused = False
 _service_start_time: float | None = None   # monotonic, set when service starts
 _billed_seconds: float = 0.0               # audio seconds sent to Gemini
@@ -343,14 +350,34 @@ async def audio_stream(ws: WebSocket):
 
 
 # ── Operator control API ───────────────────────────────────────────────────────
+async def _teardown():
+    global _state
+    audio.stop()
+    if audio._thread and audio._thread.is_alive():
+        await asyncio.get_event_loop().run_in_executor(None, audio._thread.join, 1.5)
+    await session.stop()
+    _write_session_log()
+    while not audio._queue.empty():
+        try:
+            audio._queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+    while not session._audio_queue.empty():
+        try:
+            session._audio_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+    _state = ServiceState.STOPPED
+
+
 async def _auto_stop_check():
     """Periodically checks if the mic status remains silent or disconnected.
     Stops the service if no signal is detected for the configured duration.
     """
     silence_start = None
-    while _service_running:
+    while _state == ServiceState.RUNNING:
         await asyncio.sleep(5.0)
-        if not _service_running:
+        if _state != ServiceState.RUNNING:
             break
 
         timeout_min = audio_cfg().get("auto_stop_timeout_min", 10)
@@ -375,42 +402,58 @@ async def _auto_stop_check():
 
 @app.post("/api/start")
 async def start_service(body: dict = {}):
-    global _service_running, _paused, _service_start_time, _billed_seconds, _pause_start
-    device_index = body.get("device_index")
-    audio.start(device_index=device_index)
-    _service_start_time = time.monotonic()
-    _billed_seconds = 0.0
-    _paused = False
-    _pause_start = None
-    broadcaster.reset()
-    session.reset_transcript()
+    global _state, _paused, _service_start_time, _billed_seconds, _pause_start
+    async with _state_lock:
+        if _state in (ServiceState.RUNNING, ServiceState.STARTING):
+            server_log.warning("start_service called while service is already running. Ignoring.")
+            return {"ok": True, "info": "Service already running"}
+        _state = ServiceState.STARTING
+        try:
+            await _teardown()
+            device_index = body.get("device_index")
+            audio.start(device_index=device_index)
+            _service_start_time = time.monotonic()
+            _billed_seconds = 0.0
+            _paused = False
+            _pause_start = None
+            broadcaster.reset()
+            session.reset_transcript()
 
-    async def _pipe():
-        global _billed_seconds
-        CHUNK_MS = 100  # matches config default
-        async for chunk in audio.chunks():
-            if not _paused:
-                await session.send_audio(chunk)
-                _billed_seconds += CHUNK_MS / 1000.0
+            async def _pipe():
+                global _billed_seconds
+                CHUNK_MS = 100
+                try:
+                    async for chunk in audio.chunks():
+                        if not _paused:
+                            await session.send_audio(chunk)
+                            _billed_seconds += CHUNK_MS / 1000.0
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    server_log.error("Audio pipe error: %s", e)
 
-    asyncio.create_task(_pipe())
-    asyncio.create_task(_auto_stop_check())
-    await session.start()
-    _service_running = True
-    server_log.info("Service started")
+            asyncio.create_task(_pipe())
+            asyncio.create_task(_auto_stop_check())
+            await session.start()
+            _state = ServiceState.RUNNING
+            server_log.info("Service started")
+        except Exception as e:
+            server_log.error("Failed to start service: %s", e)
+            await _teardown()
+            _state = ServiceState.STOPPED
+            raise e
     return {"ok": True}
 
 
 @app.post("/api/stop")
 async def stop_service():
-    global _service_running, _paused, _pause_start
-    await session.stop()
-    audio.stop()
-    _write_session_log()
-    _service_running = False
-    _paused = False
-    _pause_start = None
-    server_log.info("Service stopped")
+    global _state
+    async with _state_lock:
+        if _state in (ServiceState.STOPPED, ServiceState.STOPPING):
+            return {"ok": True, "info": "Service already stopped"}
+        _state = ServiceState.STOPPING
+        await _teardown()
+        server_log.info("Service stopped")
     return {"ok": True}
 
 
@@ -424,8 +467,7 @@ async def shutdown_service(request: Request):
     import signal
     server_log.info("Shutdown requested via web interface")
     
-    global _service_running
-    if _service_running:
+    if _state != ServiceState.STOPPED:
         await stop_service()
 
     async def _graceful():
@@ -437,11 +479,10 @@ async def shutdown_service(request: Request):
     return {"ok": True}
 
 
-
 @app.post("/api/pause")
 async def pause_service():
     global _paused, _pause_start
-    if _service_running and not _paused:
+    if _state == ServiceState.RUNNING and not _paused:
         _paused = True
         _pause_start = time.monotonic()
         broadcaster._push(CaptionEvent(kind="paused"))
@@ -452,12 +493,30 @@ async def pause_service():
 @app.post("/api/resume")
 async def resume_service():
     global _paused, _pause_start
-    if _service_running and _paused:
+    if _state == ServiceState.RUNNING and _paused:
         _paused = False
         _pause_start = None
         broadcaster._push(CaptionEvent(kind="resumed"))
         server_log.info("Service resumed")
     return {"ok": True, "paused": _paused}
+
+
+async def _auto_stop_on_failure():
+    global _state
+    async with _state_lock:
+        if _state == ServiceState.RUNNING:
+            _state = ServiceState.STOPPING
+            await _teardown()
+            server_log.info("Service automatically stopped after session failure")
+
+
+def _handle_session_state_change(s):
+    if s.status == SessionStatus.FAILED:
+        broadcaster.set_unavailable()
+        asyncio.create_task(_auto_stop_on_failure())
+
+session._on_state = _handle_session_state_change
+
 
 
 @app.post("/api/config/auto-stop")
@@ -474,7 +533,8 @@ async def get_status():
     runtime = _runtime_seconds()
     cost = _billed_seconds * _COST_PER_AUDIO_SEC
     return {
-        "service_running": _service_running,
+        "service_running": _state != ServiceState.STOPPED,
+        "state": _state.value,
         "paused": _paused,
         "runtime_s": round(runtime, 1),
         "cost_usd": round(cost, 4),
@@ -1900,19 +1960,29 @@ function startStatusPoll() {
     const badge = document.getElementById('hdr-badge');
     if (!st.service_running) {
       badge.textContent = 'Stopped'; badge.className = 'badge badge-gray';
-      if (!btnStop.disabled) {
-        btnStart.disabled = false; btnStart.textContent = '▶ Start';
-        btnPause.disabled = true;
-        btnStop.disabled = true; btnStop.textContent = '■ Stop';
-      }
-    } else if (st.paused) {
-      badge.textContent = 'Paused'; badge.className = 'badge badge-blue';
-    } else if (st.session.status === 'connected') {
-      badge.textContent = 'Live'; badge.className = 'badge badge-green';
-    } else if (st.session.status === 'failed') {
-      badge.textContent = 'Error'; badge.className = 'badge badge-red';
+      btnStart.disabled = false; btnStart.textContent = '▶ Start';
+      btnPause.disabled = true; btnPause.textContent = '⏸ Pause'; btnPause.className = 'warning';
+      btnStop.disabled = true; btnStop.textContent = '■ Stop';
+      _paused = false;
     } else {
-      badge.textContent = 'Starting'; badge.className = 'badge badge-amber';
+      btnStart.disabled = true; btnStart.textContent = '▶ Running';
+      btnStop.disabled = false;
+      btnPause.disabled = false;
+
+      _paused = st.paused;
+      if (_paused) {
+        btnPause.textContent = '▶ Resume'; btnPause.className = 'primary';
+        badge.textContent = 'Paused'; badge.className = 'badge badge-blue';
+      } else {
+        btnPause.textContent = '⏸ Pause'; btnPause.className = 'warning';
+        if (st.session.status === 'connected') {
+          badge.textContent = 'Live'; badge.className = 'badge badge-green';
+        } else if (st.session.status === 'failed') {
+          badge.textContent = 'Error'; badge.className = 'badge badge-red';
+        } else {
+          badge.textContent = 'Starting'; badge.className = 'badge badge-amber';
+        }
+      }
     }
   }, 1000);
 }
