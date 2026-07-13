@@ -240,7 +240,7 @@ def _write_session_log() -> None:
         runtime = _runtime_seconds()
         cost = _billed_seconds * _COST_PER_AUDIO_SEC
         entries = session.transcript
-        t0 = entries[0].timestamp if entries else 0
+        t0 = _service_start_time if _service_start_time is not None else (entries[0].timestamp if entries else 0.0)
 
         def ts_tag(t: float) -> str:
             m, s = divmod(int(t - t0), 60)
@@ -315,6 +315,10 @@ async def _sse_generator(request: Request, q: asyncio.Queue) -> AsyncIterator[st
             try:
                 event = await asyncio.wait_for(q.get(), timeout=20.0)
                 payload = {"kind": event.kind, "text": event.text}
+                if event.kind == "commit":
+                    runtime = _runtime_seconds()
+                    m, s = divmod(int(runtime), 60)
+                    payload["time_str"] = f"{m:02d}:{s:02d}"
                 yield f"data: {json.dumps(payload)}\n\n"
             except asyncio.TimeoutError:
                 yield ": keepalive\n\n"
@@ -540,6 +544,7 @@ async def get_status():
         "cost_usd": round(cost, 4),
         "billed_audio_s": round(_billed_seconds, 1),
         "auto_stop_timeout_min": audio_cfg().get("auto_stop_timeout_min", 10),
+        "device_index": audio_cfg().get("device_index", 0),
         "audio": {
             "status": a.status,
             "level": round(a.level_rms, 1),
@@ -808,6 +813,13 @@ _ATTENDEE_HTML = """<!DOCTYPE html>
     color: var(--color-text-secondary);
     animation: slideUp 0.4s ease-out;
   }
+  .timestamp {
+    color: var(--color-gold-500);
+    font-size: 0.75em;
+    font-family: 'Inter', sans-serif;
+    margin-right: 12px;
+    font-weight: 500;
+  }
   
   #current-wrapper {
     background: var(--color-warm-50);
@@ -1065,7 +1077,15 @@ function connect() {
       if (msg.text.trim()) {
         const div = document.createElement('div');
         div.className = 'line';
-        div.textContent = msg.text;
+        if (msg.time_str) {
+          const span = document.createElement('span');
+          span.className = 'timestamp';
+          span.textContent = `[${msg.time_str}] `;
+          div.appendChild(span);
+        }
+        const textSpan = document.createElement('span');
+        textSpan.textContent = msg.text;
+        div.appendChild(textSpan);
         historyInner.appendChild(div);
         historyEl.scrollTop = historyEl.scrollHeight;
         while (historyInner.children.length > 25) historyInner.removeChild(historyInner.firstChild);
@@ -1823,8 +1843,21 @@ volSlider.addEventListener('input', () => {
 // ── Device list ──────────────────────────────────────────────────────────────
 async function loadDevices() {
   const devices = await fetch('/api/devices').then(r => r.json());
+  const status = await fetch('/api/status').then(r => r.json());
   const sel = document.getElementById('device-select');
   sel.innerHTML = devices.map(d => `<option value="${d.index}">[${d.index}] ${d.name}</option>`).join('');
+  if (status && status.device_index !== undefined) {
+    sel.value = status.device_index;
+  }
+  // Hook up change event to persist select index immediately
+  sel.addEventListener('change', async () => {
+    const idx = parseInt(sel.value);
+    await fetch('/api/devices/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index: idx })
+    });
+  });
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
@@ -1999,6 +2032,10 @@ function connectSSE() {
       previewLines[previewLines.length - 1] = msg.text;
     } else if (msg.kind === 'commit') {
       if (previewLines.length > 50) previewLines.shift();
+      const ts = msg.time_str ? `[${msg.time_str}] ` : '';
+      if (previewLines.length > 0) {
+        previewLines[previewLines.length - 1] = ts + previewLines[previewLines.length - 1];
+      }
       previewLines.push('');
     } else if (msg.kind === 'unavailable') {
       previewLines.push('[Translation unavailable]');

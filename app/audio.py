@@ -13,8 +13,8 @@ Pipeline
                                ┌──────────────┴─────────────────┐
                                ▼                                 ▼
                          downmix to mono              resample to 16 kHz
-                         (audioop.tomono)              (audioop.ratecv)
-                               │
+                        (numpy average)         (scipy Butterworth LPF +
+                               │                 phase-tracking interpolator)
                                ▼
                     asyncio.Queue[bytes]  ──▶  GeminiSession.send_audio()
 
@@ -26,15 +26,19 @@ The Gemini Live API expects ``audio/pcm;rate=16000``:
   • Bit depth   : 16-bit signed integer (PCM16 / ``paInt16``)
   • Chunk size  : ``chunk_ms`` ms (default 100 ms = 1,600 samples = 3,200 bytes)
 
-The mixer may present audio at 44.1 kHz, 48 kHz, or 96 kHz in stereo;
-downmixing and resampling are handled entirely with the stdlib ``audioop``
-module so no NumPy/SciPy dependency is required.
+If the device supports 16 kHz mono natively (e.g. MME devices on Windows),
+the stream is opened directly at that format and no software resampling
+occurs.  Otherwise, numpy handles stereo-to-mono downmixing and a
+``Resampler`` class applies a 4th-order Butterworth anti-aliasing filter
+before decimating to 16 kHz.
 
-Silence detection
------------------
-RMS below ``SILENCE_FLOOR_RMS`` for ``SILENCE_TIMEOUT_S`` consecutive seconds
-transitions the status to ``NO_SIGNAL``.  This triggers a warning in the
-operator console level meter without stopping the capture loop.
+Resilience
+----------
+- **DirectSound rejection:** Devices under the Windows DirectSound host API
+  are refused at startup (known non-blocking ``stream.read()`` driver bug).
+- **USB hot-plug reconnection:** If the USB device disconnects mid-capture,
+  the loop retries with exponential backoff (2 s → 30 s cap) until the
+  device reappears or ``stop()`` is called.
 
 CLI helpers
 -----------
@@ -42,7 +46,6 @@ CLI helpers
   python -m app.audio --test <idx> <s>  # record <s> seconds → test_capture_<idx>.wav
 """
 import asyncio
-import audioop
 import math
 import struct
 import threading
@@ -52,6 +55,8 @@ from enum import Enum
 from typing import AsyncIterator, Callable
 
 import numpy as np
+from scipy import signal
+
 import pyaudio
 
 from app.config import audio_cfg, save_audio_device
@@ -62,6 +67,10 @@ TARGET_CHANNELS = 1
 TARGET_WIDTH = 2  # PCM16 = 2 bytes per sample
 SILENCE_FLOOR_RMS = 50  # below this = silence (for disconnection detection)
 SILENCE_TIMEOUT_S = 10  # seconds of near-silence before "no signal" state
+
+
+class _DirectSoundError(Exception):
+    """Raised when a DirectSound device is detected — non-retryable."""
 
 
 class AudioStatus(str, Enum):
@@ -95,13 +104,70 @@ def list_input_devices() -> list[DeviceInfo]:
     for i in range(_pa.get_device_count()):
         info = _pa.get_device_info_by_index(i)
         if info["maxInputChannels"] > 0:
+            try:
+                api_info = _pa.get_host_api_info_by_index(info["hostApi"])
+                api_name = api_info["name"]
+                name_with_api = f"{info['name']} [{api_name}]"
+            except Exception:
+                name_with_api = info["name"]
             devices.append(DeviceInfo(
                 index=i,
-                name=info["name"],
+                name=name_with_api,
                 max_input_channels=info["maxInputChannels"],
                 default_sample_rate=info["defaultSampleRate"],
             ))
     return devices
+
+
+class Resampler:
+    def __init__(self, src_rate: int, target_rate: int = 16000):
+        self.src_rate = src_rate
+        self.target_rate = target_rate
+        self.ratio = src_rate / target_rate
+        self.input_samples_count = 0
+        
+        # Design lowpass filter to prevent aliasing (cutoff at 7.5 kHz or 0.45 * target_rate)
+        cutoff = min(7500.0, target_rate * 0.45)
+        nyq = src_rate / 2.0
+        normalized_cutoff = cutoff / nyq
+        self.b, self.a = signal.butter(4, normalized_cutoff, btype='low')
+        self.zi = signal.lfilter_zi(self.b, self.a)
+        
+    def process(self, samples: np.ndarray) -> np.ndarray:
+        # Apply anti-aliasing filter
+        filtered, self.zi = signal.lfilter(self.b, self.a, samples, zi=self.zi)
+        
+        n_in = len(filtered)
+        if n_in == 0:
+            return np.array([], dtype=np.int16)
+            
+        # Determine output sample range using exact integer math
+        m_start = (self.input_samples_count * self.target_rate + self.src_rate - 1) // self.src_rate
+        m_end = ((self.input_samples_count + n_in) * self.target_rate + self.src_rate - 1) // self.src_rate
+        
+        self.input_samples_count += n_in
+        
+        if m_start >= m_end:
+            return np.array([], dtype=np.int16)
+            
+        m_indices = np.arange(m_start, m_end)
+        # Convert output indices back to fractional input indices relative to current chunk
+        out_indices = m_indices * self.ratio - (self.input_samples_count - n_in)
+        
+        # Linear interpolation
+        idx_floor = out_indices.astype(np.int32)
+        idx_ceil = np.minimum(idx_floor + 1, n_in - 1)
+        frac = out_indices - idx_floor
+        
+        resampled = (1.0 - frac) * filtered[idx_floor] + frac * filtered[idx_ceil]
+        return resampled.astype(np.int16)
+
+
+def compute_rms(samples: np.ndarray) -> float:
+    if len(samples) == 0:
+        return 0.0
+    mean_square = np.mean(samples.astype(np.float64) ** 2)
+    return np.sqrt(mean_square)
 
 
 def _rms_to_level(rms: float) -> float:
@@ -159,27 +225,109 @@ class AudioCapture:
 
     def _capture_loop(self) -> None:
         chunk_ms = self._cfg.get("chunk_ms", 100)
-        src_rate = int(self._cfg.get("sample_rate", TARGET_RATE))
-        frames_per_chunk = int(src_rate * chunk_ms / 1000)
-        last_nonsilent = time.monotonic()
+        backoff = 2.0
+        max_backoff = 30.0
 
-        stream = None
+        while not self._stop_event.is_set():
+            stream = None
+            try:
+                self._open_and_read(chunk_ms)
+                # If _open_and_read returns normally, the inner loop broke
+                # due to a stream read error — fall through to retry.
+                backoff = 2.0  # Reset on any successful connection period
+            except _DirectSoundError:
+                # Fatal — don't retry, DirectSound will never work correctly
+                return
+            except Exception as e:
+                audio_log.warning("Audio capture error: %s — retrying in %.0fs", e, backoff)
+                self._emit(status=AudioStatus.DISCONNECTED, level_rms=0.0)
+
+            # Wait before retry (interruptible by stop_event)
+            if self._stop_event.wait(timeout=backoff):
+                break
+            backoff = min(backoff * 2, max_backoff)
+
+            # Re-initialize PyAudio so re-plugged USB devices are discoverable
+            self._reinit_pyaudio()
+
+        audio_log.info("Audio capture stopped")
+
+    def _reinit_pyaudio(self) -> None:
+        """Terminate and re-create the global PyAudio instance.
+
+        After a USB device is unplugged and re-plugged, PortAudio's cached
+        device list is stale.  Terminating and re-creating forces a fresh
+        enumeration so the device index becomes valid again.
+        """
+        global _pa
         try:
-            device_info = (_pa.get_device_info_by_index(self._device_index)
-                           if self._device_index is not None
-                           else _pa.get_default_input_device_info())
+            _pa.terminate()
+        except Exception:
+            pass
+        _pa = pyaudio.PyAudio()
+        audio_log.info("PyAudio re-initialized (device list refreshed)")
+
+    def _open_and_read(self, chunk_ms: int) -> None:
+        """Open the audio stream and run the read loop.
+
+        Returns normally when the stream breaks (e.g. USB disconnect).
+        Raises _DirectSoundError if the device uses DirectSound.
+        Raises Exception for any other open/setup failure.
+        """
+        device_info = (_pa.get_device_info_by_index(self._device_index)
+                       if self._device_index is not None
+                       else _pa.get_default_input_device_info())
+
+        # ── DirectSound rejection ───────────────────────────────────
+        try:
+            api_info = _pa.get_host_api_info_by_index(device_info["hostApi"])
+            if "DirectSound" in api_info.get("name", ""):
+                audio_log.error(
+                    "Device '%s' uses the DirectSound host API, which has a "
+                    "known non-blocking read bug. Please select the [MME] or "
+                    "[Windows WASAPI] version of this device instead.",
+                    device_info["name"]
+                )
+                self._emit(status=AudioStatus.DISCONNECTED, level_rms=0.0)
+                raise _DirectSoundError()
+        except _DirectSoundError:
+            raise
+        except Exception:
+            pass  # Can't determine host API — proceed cautiously
+
+        # ── Native 16kHz mono detection ─────────────────────────────
+        native_16k = False
+        try:
+            native_16k = _pa.is_format_supported(
+                rate=TARGET_RATE,
+                input_device=self._device_index if self._device_index is not None
+                    else device_info["index"],
+                input_channels=1,
+                input_format=pyaudio.paInt16,
+            )
+        except Exception:
+            pass
+
+        if native_16k:
+            src_rate = TARGET_RATE
+            src_channels = 1
+            audio_log.info("Device supports native 16kHz mono — bypassing resampler")
+        else:
             src_channels = min(int(device_info["maxInputChannels"]), 2)
             src_rate = int(device_info["defaultSampleRate"])
-            frames_per_chunk = int(src_rate * chunk_ms / 1000)
 
-            stream = _pa.open(
-                format=pyaudio.paInt16,
-                channels=src_channels,
-                rate=src_rate,
-                input=True,
-                input_device_index=self._device_index,
-                frames_per_buffer=frames_per_chunk,
-            )
+        frames_per_chunk = int(src_rate * chunk_ms / 1000)
+
+        stream = _pa.open(
+            format=pyaudio.paInt16,
+            channels=src_channels,
+            rate=src_rate,
+            input=True,
+            input_device_index=self._device_index,
+            frames_per_buffer=frames_per_chunk,
+        )
+
+        try:
             self._emit(
                 status=AudioStatus.CONNECTED,
                 device_name=device_info["name"],
@@ -187,28 +335,57 @@ class AudioCapture:
             audio_log.info("Audio capture started: %s @ %dHz %dch",
                            device_info["name"], src_rate, src_channels)
 
-            resample_state = None
+            resampler = None
+            if src_rate != TARGET_RATE:
+                resampler = Resampler(src_rate, TARGET_RATE)
+
+            needs_downmix = src_channels > 1
+            last_nonsilent = time.monotonic()
+            non_blocking_warned = False
 
             while not self._stop_event.is_set():
+                t_start = time.monotonic()
                 try:
                     raw = stream.read(frames_per_chunk, exception_on_overflow=False)
                 except OSError as e:
-                    audio_log.warning("Stream read error: %s", e)
+                    audio_log.warning("Stream read error (device likely disconnected): %s", e)
                     self._emit(status=AudioStatus.DISCONNECTED, level_rms=0.0)
-                    break
+                    return  # Return to outer retry loop
+
+                t_end = time.monotonic()
+                read_duration = t_end - t_start
+                expected_duration = chunk_ms / 1000.0
+
+                # Rate-limit safety net for non-blocking driver bugs
+                if read_duration < expected_duration * 0.5:
+                    if not non_blocking_warned:
+                        audio_log.warning(
+                            "Audio device read returned instantly (took %.6fs for "
+                            "expected %.3fs). Throttling to real-time.",
+                            read_duration, expected_duration
+                        )
+                        non_blocking_warned = True
+                    sleep_time = expected_duration - read_duration
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+
+                # Convert to numpy array
+                samples = np.frombuffer(raw, dtype=np.int16)
 
                 # Downmix to mono if needed
-                if src_channels > 1:
-                    raw = audioop.tomono(raw, TARGET_WIDTH, 0.5, 0.5)
+                if needs_downmix:
+                    samples = samples.reshape(-1, src_channels)
+                    samples = (samples.sum(axis=1) // src_channels).astype(np.int16)
 
                 # Resample to 16kHz if needed
-                if src_rate != TARGET_RATE:
-                    raw, resample_state = audioop.ratecv(
-                        raw, TARGET_WIDTH, 1, src_rate, TARGET_RATE, resample_state
-                    )
+                if resampler is not None:
+                    samples = resampler.process(samples)
 
-                rms = audioop.rms(raw, TARGET_WIDTH)
+                rms = compute_rms(samples)
                 level = _rms_to_level(rms)
+
+                # Convert back to bytes for queue/SSE/Gemini
+                raw = samples.tobytes()
 
                 now = time.monotonic()
                 if rms > SILENCE_FLOOR_RMS:
@@ -225,21 +402,22 @@ class AudioCapture:
                     asyncio.run_coroutine_threadsafe(
                         self._enqueue(raw), self._loop
                     )
-
-        except Exception as e:
-            audio_log.error("Audio capture fatal error: %s", e)
-            self._emit(status=AudioStatus.DISCONNECTED, level_rms=0.0)
         finally:
-            if stream:
+            try:
                 stream.stop_stream()
                 stream.close()
-            audio_log.info("Audio capture stopped")
+            except Exception:
+                pass
 
     async def _enqueue(self, data: bytes) -> None:
         try:
             self._queue.put_nowait(data)
         except asyncio.QueueFull:
-            pass  # drop oldest-implied by put_nowait skip; acceptable under backpressure
+            try:
+                self._queue.get_nowait()  # Drop oldest chunk to maintain recency
+                self._queue.put_nowait(data)
+            except Exception:
+                pass
 
 
 # CLI helper: python -m app.audio --list  or  --test <index> <seconds>

@@ -73,6 +73,14 @@ This document serves as the chronological build record, verification test log, a
   * **파인더 패턴 골드 재색상**: QR 코드의 세 모서리 `7×7` 파인더 패턴(스캔 기준점)을 `draw.rounded_rectangle` 레이어 페인팅 방식 대신, 픽셀 단위 색상 교체(`px[x,y] = GOLD`)를 이용해 정확히 네이비 픽셀만 골드(`#b89445`)로 바꿔 그 외 모듈에 영향을 주지 않았습니다.
   * **중앙 로고 삽입 (Quiet Zone 버퍼 포함)**: 단순 로고 붙여넣기 대신, Pillow `ImageDraw.ellipse()`로 흰색 원형 조용 구역(Quiet Zone)을 먼저 그린 뒤 그 안에 네이비 내부 원을 그려 흰색 PCA 로고를 시각적으로 띄웁니다. 로고 크기는 QR 폭의 최대 20% 이내로 제한했습니다.
 
+### 세션 9 — 오디오 파이프라인 디버깅 및 마이크 선택 자동화
+* **목표**: 일시적인 오디오 지연 및 깨짐 현상 진단 후 임시 WAV 덤프 비활성화, 웹 UI 마이크 장치 선택 동기화 및 config.yaml 자동 저장 기능 구현.
+* **구현 내역**:
+  * 디버깅을 위해 도입했던 임시 WAV 파일 자동 덤프 코드(`pre_resample.wav`, `post_resample.wav`)와 `numpy` 라이브러리 임포트를 제거하여 오디오 파이프라인을 복구했습니다.
+  * 기존 웹 UI에서 새로고침 시 저장된 마이크 설정값과 무관하게 항상 첫 번째 마이크(0번: Microsoft Sound Mapper)가 자동 선택되어 봉사자가 클릭할 시 오설정되던 오류를 해결했습니다.
+  * `/api/status` API에 `device_index` 값을 추가하고, 페이지 로드 시 `loadDevices()` 자바스크립트가 해당 저장된 장치 인덱스를 기반으로 드롭다운을 pre-select 하도록 개선했습니다.
+  * 드롭다운 값이 변경될 때마다 비동기로 즉시 `/api/devices/select`에 POST 요청을 전송해 `config.yaml`에 실시간 반영하도록 연동했습니다.
+
 ---
 
 ## 2. 검증 프로토콜 결과 (V0–V6)
@@ -162,6 +170,14 @@ This document serves as the chronological build record, verification test log, a
   * **Rounded Data Modules:** Swapped the harsh square pixels for smooth round dots using `StyledPilImage + RoundedModuleDrawer`. Base module color set to Presbyterian Navy (`#1a2a42`).
   * **Pixel-Level Gold Finder Pattern Recoloring:** Rather than drawing rounded rectangles over the finder patterns (which can bleed into surrounding modules), the implementation iterates over every pixel within each 7×7 finder bounding box and swaps navy pixels to gold (`#b89445`) in-place via `px[x, y] = GOLD`. This scalpel approach preserves the rounded module shapes while precisely recoloring only the target pixels.
   * **Logo with Quiet-Zone Buffer:** A solid white `ellipse` (the "quiet zone") is drawn first in the center to create a clean, scanner-safe gap between the logo and surrounding data modules. A smaller navy inner circle is drawn inside the white ring to provide contrast for the white PCA logo. The logo is capped at exactly 20% of QR width per spec.
+
+### Session 9 — Audio Pipeline Diagnostics & Mic Selection Automation
+* **Goal:** Diagnostic cleanup of the temporary WAV capture, automatic selection of the saved microphone in the web console, and instant configuration updates.
+* **Changes:**
+  * Cleaned up the temporary WAV dumping logic (`pre_resample.wav` and `post_resample.wav`) and unneeded `numpy` imports from `app/audio.py` to restore the clean capture pipeline.
+  * Fixed an operator console UX bug where refreshing the web page always defaulted the input device dropdown selection to index `0` (Microsoft Sound Mapper), causing volunteers to accidentally override the saved DJI Mic Mini configuration upon starting the service.
+  * Exposed the saved `device_index` in the `/api/status` payload and updated `loadDevices()` in the frontend javascript to automatically pre-select the configured microphone on page load.
+  * Bound a `change` event listener to the `device-select` dropdown to automatically POST selection updates to `/api/devices/select` and persist them to `config.yaml` in real-time.
 
 ---
 

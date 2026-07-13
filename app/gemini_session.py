@@ -158,6 +158,7 @@ class GeminiSession:
         self._current_en: str = ""
         self._turn_start: float | None = None
         self._first_audio_in_turn_sent_at: float | None = None
+        self._last_token_at: float = 0.0
 
     @property
     def transcript(self) -> list[TranscriptEntry]:
@@ -172,210 +173,37 @@ class GeminiSession:
 
     def flush_current_turn(self) -> None:
         """Commit any in-progress turn to the transcript (called on stop)."""
-        if self._current_ko or self._current_en:
+        self._commit_current_turn()
+
+    def _commit_current_turn(self) -> None:
+        if self._current_ko.strip() or self._current_en.strip():
             self._transcript.append(TranscriptEntry(
                 timestamp=self._turn_start or time.monotonic(),
                 korean=self._current_ko.strip(),
                 english=self._current_en.strip(),
             ))
-            self._current_ko = ""
-            self._current_en = ""
-            self._turn_start = None
-
-    def _emit(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self._state, k, v)
-        self._state.last_update = time.monotonic()
-        if self._on_state:
-            self._on_state(SessionState(**vars(self._state)))
-
-    @property
-    def state(self) -> SessionState:
-        return SessionState(**vars(self._state))
-
-    async def start(self) -> None:
-        self._stop_event.clear()
-        self._task = asyncio.create_task(self._run_with_retry())
-
-    async def stop(self) -> None:
-        self._stop_event.set()
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        self._emit(status=SessionStatus.STOPPED,
-                   last_event="Stopped by operator")
-
-    async def send_audio(self, chunk: bytes) -> None:
-        try:
-            self._audio_queue.put_nowait(chunk)
-        except asyncio.QueueFull:
-            pass  # drop under backpressure rather than stall
-
-    async def _run_with_retry(self) -> None:
-        attempt = 0
-        MAX_BACKOFF_SECONDS = 60.0
-        while not self._stop_event.is_set():
-            try:
-                is_resume = self._resumption_handle is not None
-                if attempt > 0 or is_resume:
-                    status = SessionStatus.RECONNECTING
-                    event_msg = f"Reconnecting (attempt {attempt})" if attempt > 0 else "Reconnecting (resuming session)"
-                else:
-                    status = SessionStatus.CONNECTING
-                    event_msg = "Connecting to Gemini"
-                self._emit(status=status, last_event=event_msg)
-                session_log.info(event_msg)
-
-                await self._run_session()
-                attempt = 0  # reset on clean run completion
-                if self._stop_event.is_set():
-                    return
-
-            except asyncio.CancelledError:
-                session_log.info("Retry loop cancelled — exiting cleanly")
-                raise  # must re-raise, never swallow
-
-            except Exception as e:
-                # 1000 = clean WebSocket close (triggered by our own stop()); not a real error
-                if "1000" in str(e) and self._stop_event.is_set():
-                    return
-                attempt += 1
-                if attempt >= MAX_RECONNECT_ATTEMPTS:
-                    session_log.error(
-                        "Max reconnect attempts reached — translation unavailable")
-                    self._emit(
-                        status=SessionStatus.FAILED,
-                        last_event=f"Translation unavailable: {e}",
-                    )
-                    return
-                delay = min(RECONNECT_BASE_DELAY * (2 ** (attempt - 1)), MAX_BACKOFF_SECONDS)
-                session_log.warning(
-                    "Session error (attempt %d): %s — retrying in %.1fs",
-                    attempt, e, delay
-                )
-                try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
-                except asyncio.TimeoutError:
-                    pass
-
-    def _build_config(self) -> types.LiveConnectConfig:
-        is_translate_model = "translate" in GEMINI_MODEL
-        if is_translate_model:
-            # gemini-3.5-live-translate-preview: use translation_config.
-            # Korean source: server_content.input_transcription.text  (enabled by input_audio_transcription)
-            # English output: server_content.output_transcription.text (enabled by output_audio_transcription)
-            # Audio PCM also arrives in model_turn inline_data — we discard it (text captions only).
-            return types.LiveConnectConfig(
-                response_modalities=["AUDIO"],
-                translation_config=types.TranslationConfig(
-                    target_language_code="en",
-                    echo_target_language=True,
-                ),
-                speech_config=types.SpeechConfig(
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name="orus",  # deep male voice — consistent across sessions
-                        )
-                    )
-                ),
-                input_audio_transcription=types.AudioTranscriptionConfig(),
-                output_audio_transcription=types.AudioTranscriptionConfig(),
-                context_window_compression=types.ContextWindowCompressionConfig(
-                    sliding_window=types.SlidingWindow(),
-                ),
-                session_resumption=types.SessionResumptionConfig(
-                    handle=self._resumption_handle,
-                ),
+            session_log.info(
+                "[Turn committed] KO: %s | EN: %s",
+                self._current_ko.strip(),
+                self._current_en.strip(),
             )
-        else:
-            # General live model: TEXT modality with system prompt translation.
-            return types.LiveConnectConfig(
-                response_modalities=["TEXT"],
-                system_instruction=SYSTEM_PROMPT,
-    "Output ONLY the English translation, as a continuous stream, matching "
-    "the pacing of the speaker. Do not wait for sentence completion if a "
-    "clause's meaning is already clear — begin translating as soon as possible "
-    "and revise if needed. Do not add commentary, labels, speaker names, or "
-    "explanations. Do not translate filler words or false starts literally; "
-    "smooth them naturally. If audio is silent or unintelligible, output nothing."
-)
-
-MAX_RECONNECT_ATTEMPTS = 3
-RECONNECT_BASE_DELAY = 2.0  # seconds, doubled each attempt
-
-
-class SessionStatus(str, Enum):
-    STOPPED = "stopped"
-    CONNECTING = "connecting"
-    CONNECTED = "connected"
-    RECONNECTING = "reconnecting"
-    FAILED = "failed"  # sustained failure after max retries
-
-
-@dataclass
-class SessionState:
-    status: SessionStatus = SessionStatus.STOPPED
-    reconnect_count: int = 0
-    last_event: str = ""
-    last_latency_ms: float = 0.0
-    last_update: float = field(default_factory=time.monotonic)
-
-
-class TranscriptEntry(NamedTuple):
-    timestamp: float   # time.monotonic() of turn start
-    korean: str
-    english: str
-
-
-class GeminiSession:
-    def __init__(
-        self,
-        on_caption: Callable[[str], None],
-        on_state_change: Callable[[SessionState], None] | None = None,
-        on_source_transcript: Callable[[str], None] | None = None,
-        on_audio_chunk: Callable[[bytes], None] | None = None,
-    ):
-        self._on_caption = on_caption
-        self._on_state = on_state_change
-        self._on_source = on_source_transcript
-        self._on_audio = on_audio_chunk
-        self._state = SessionState()
-        self._stop_event = asyncio.Event()
-        self._resumption_handle: str | None = None
-        self._audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=500)
-        self._task: asyncio.Task | None = None
-        self._client = genai.Client(api_key=gemini_api_key())
-        self._transcript: list[TranscriptEntry] = []
-        self._current_ko: str = ""
-        self._current_en: str = ""
-        self._turn_start: float | None = None
-        self._first_audio_in_turn_sent_at: float | None = None
-
-    @property
-    def transcript(self) -> list[TranscriptEntry]:
-        return list(self._transcript)
-
-    def reset_transcript(self) -> None:
-        self._transcript.clear()
         self._current_ko = ""
         self._current_en = ""
         self._turn_start = None
         self._first_audio_in_turn_sent_at = None
 
-    def flush_current_turn(self) -> None:
-        """Commit any in-progress turn to the transcript (called on stop)."""
-        if self._current_ko or self._current_en:
-            self._transcript.append(TranscriptEntry(
-                timestamp=self._turn_start or time.monotonic(),
-                korean=self._current_ko.strip(),
-                english=self._current_en.strip(),
-            ))
-            self._current_ko = ""
-            self._current_en = ""
-            self._turn_start = None
+    async def _auto_commit_loop(self) -> None:
+        try:
+            while not self._stop_event.is_set():
+                await asyncio.sleep(0.5)
+                if self._turn_start is not None and (self._current_ko or self._current_en):
+                    silence_duration = time.monotonic() - self._last_token_at
+                    if silence_duration >= 1.5:  # matches PAUSE_THRESHOLD_S
+                        self._commit_current_turn()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            session_log.error("Error in auto-commit loop: %s", e)
 
     def _emit(self, **kwargs):
         for k, v in kwargs.items():
@@ -513,12 +341,13 @@ class GeminiSession:
 
             send_task = asyncio.create_task(self._send_loop(session))
             recv_task = asyncio.create_task(self._recv_loop(session))
+            commit_task = asyncio.create_task(self._auto_commit_loop())
             stop_task = asyncio.create_task(self._stop_event.wait())
 
             done: set = set()
             try:
                 done, pending = await asyncio.wait(
-                    [send_task, recv_task, stop_task],
+                    [send_task, recv_task, commit_task, stop_task],
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 for t in pending:
@@ -528,7 +357,7 @@ class GeminiSession:
                     except (asyncio.CancelledError, Exception):
                         pass
             finally:
-                for t in [send_task, recv_task, stop_task]:
+                for t in [send_task, recv_task, commit_task, stop_task]:
                     if not t.done():
                         t.cancel()
 
@@ -591,6 +420,7 @@ class GeminiSession:
                     it = getattr(sc, "input_transcription", None)
                     if it and getattr(it, "text", None):
                         self._current_ko += it.text
+                        self._last_token_at = time.monotonic()
                         session_log.info("[KO] %s", it.text)
                         if self._on_source:
                             self._on_source(it.text)
@@ -611,23 +441,13 @@ class GeminiSession:
                             latency_ms = (self._turn_start - self._first_audio_in_turn_sent_at) * 1000
                             self._emit(last_latency_ms=latency_ms)
                     self._current_en += en_text
+                    self._last_token_at = time.monotonic()
                     self._on_caption(en_text)
                     session_log.debug("[EN delta] %s", en_text)
 
                 # Turn complete — commit to transcript, reset buffers
                 if sc and getattr(sc, "turn_complete", False):
-                    if self._current_en or self._current_ko:
-                        self._transcript.append(TranscriptEntry(
-                            timestamp=self._turn_start or time.monotonic(),
-                            korean=self._current_ko.strip(),
-                            english=self._current_en.strip(),
-                        ))
-                        session_log.info(
-                            "[EN turn] %s", self._current_en.strip())
-                    self._current_ko = ""
-                    self._current_en = ""
-                    self._turn_start = None
-                    self._first_audio_in_turn_sent_at = None
+                    self._commit_current_turn()
 
         except Exception as e:
             if "1000" in str(e) and self._stop_event.is_set():
