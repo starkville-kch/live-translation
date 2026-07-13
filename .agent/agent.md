@@ -51,10 +51,12 @@ Audio captured from USB mixer → streamed to Gemini Live API → English captio
 | `app/logger.py` | Two rotating handlers: `ops.log` and `session.log` |
 | `app/audio.py` | PyAudio capture, PCM16 resampling, RMS level metering, disconnect detection |
 | `app/gemini_session.py` | Gemini Live session, reconnection, GoAway, transcript buffers, `flush_current_turn()` |
-| `app/broadcast.py` | SSE caption fanout + binary PCM audio fanout |
+| `app/broadcast.py` | SSE caption fanout + binary PCM audio fanout; accumulates `_current_ko` for glossary |
 | `app/server.py` | FastAPI routes + embedded HTML + transcript export |
 | `logs/ops.log` | Server/audio operational log (INFO+) |
 | `logs/session.log` | Gemini session log with `[KO]`, `[EN delta]`, `[EN turn]` entries (DEBUG+) |
+| `app/glossary.py` | `GlossaryCorrector` — loads `config/glossary.yaml`, corrects committed lines |
+| `config/glossary.yaml` | Terminology glossary: direct (auto-apply) + review_only (log only) tiers |
 | `logs/sessions/YYYYMMDD_HHMMSS/` | Per-session transcript: `summary.txt`, `ko.txt`, `en.txt`, `aligned.txt` |
 
 ## Running
@@ -91,4 +93,5 @@ Then open `http://localhost:8000` in a browser.
 - [x] Phase 8: Post-service transcript export (per-session folder, ko/en/aligned files)
 - [x] Phase 9: Audio pipeline hardening, auto-commit silence segmentation, timestamp injection, concurrency state machine, button sync (v1.4.0)
 - [x] Phase 10: Caption overflow protection, Korean language hint fix, turn_complete revert, Korean+English paired operator preview, operator console UX overhaul (v1.5.0)
+- [x] Phase 11: Terminology glossary correction pass + Part A context-seed probe (v1.6.0)
 - [x] V0–V6 verification protocol passed

@@ -58,14 +58,16 @@ class CaptionEvent:
 
 
 class CaptionBroadcaster:
-    def __init__(self):
+    def __init__(self, glossary=None):  # glossary: GlossaryCorrector | None
         self._clients: list[asyncio.Queue] = []       # SSE caption subscribers
         self._audio_clients: list[asyncio.Queue] = [] # WebSocket audio subscribers
         self._current_line = ""
+        self._current_ko = ""   # Korean source accumulated for this turn (for glossary)
         self._last_token_at: float = 0.0
         self._commit_task: asyncio.Task | None = None
         self._unavailable = False
         self._caption_count = 0
+        self._glossary = glossary
 
     @property
     def caption_count(self) -> int:
@@ -73,6 +75,7 @@ class CaptionBroadcaster:
 
     def reset(self) -> None:
         self._current_line = ""
+        self._current_ko = ""
         self._caption_count = 0
         if self._commit_task and not self._commit_task.done():
             self._commit_task.cancel()
@@ -91,6 +94,7 @@ class CaptionBroadcaster:
 
     def on_source_delta(self, delta: str) -> None:
         """Korean source text delta — pushed to all SSE clients (attendee page ignores it)."""
+        self._current_ko += delta
         self._push(CaptionEvent(kind="source", text=delta))
 
     def on_caption_delta(self, delta: str) -> None:
@@ -106,10 +110,13 @@ class CaptionBroadcaster:
             cut = self._find_split(self._current_line)
             to_commit = self._current_line[:cut].rstrip()
             remainder = self._current_line[cut:].lstrip()
+            if self._glossary and self._current_ko:
+                to_commit = self._glossary.correct(self._current_ko, to_commit)
             if self._commit_task and not self._commit_task.done():
                 self._commit_task.cancel()
             self._push(CaptionEvent(kind="commit", text=to_commit))
             self._current_line = remainder
+            self._current_ko = ""  # reset KO buffer after commit
             if remainder:
                 self._push(CaptionEvent(kind="update", text=remainder))
                 loop = asyncio.get_event_loop()
@@ -151,8 +158,12 @@ class CaptionBroadcaster:
         try:
             await asyncio.sleep(PAUSE_THRESHOLD_S)
             if self._current_line:
-                self._push(CaptionEvent(kind="commit", text=self._current_line))
+                text = self._current_line
+                if self._glossary and self._current_ko:
+                    text = self._glossary.correct(self._current_ko, text)
+                self._push(CaptionEvent(kind="commit", text=text))
                 self._current_line = ""
+                self._current_ko = ""
         except asyncio.CancelledError:
             pass
 

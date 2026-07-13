@@ -142,11 +142,13 @@ class GeminiSession:
         on_state_change: Callable[[SessionState], None] | None = None,
         on_source_transcript: Callable[[str], None] | None = None,
         on_audio_chunk: Callable[[bytes], None] | None = None,
+        glossary=None,  # GlossaryCorrector | None
     ):
         self._on_caption = on_caption
         self._on_state = on_state_change
         self._on_source = on_source_transcript
         self._on_audio = on_audio_chunk
+        self._glossary = glossary
         self._state = SessionState()
         self._stop_event = asyncio.Event()
         self._resumption_handle: str | None = None
@@ -177,15 +179,19 @@ class GeminiSession:
 
     def _commit_current_turn(self) -> None:
         if self._current_ko.strip() or self._current_en.strip():
+            ko = self._current_ko.strip()
+            en = self._current_en.strip()
+            if self._glossary and ko:
+                en = self._glossary.correct(ko, en)
             self._transcript.append(TranscriptEntry(
                 timestamp=self._turn_start or time.monotonic(),
-                korean=self._current_ko.strip(),
-                english=self._current_en.strip(),
+                korean=ko,
+                english=en,
             ))
             session_log.info(
                 "[Turn committed] KO: %s | EN: %s",
-                self._current_ko.strip(),
-                self._current_en.strip(),
+                ko,
+                en,
             )
         self._current_ko = ""
         self._current_en = ""

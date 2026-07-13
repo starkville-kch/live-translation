@@ -2,9 +2,10 @@ audio:
   auto_stop_timeout_min: 10
   channels: 1
   chunk_ms: 100
-  device_index: 1
+  device_index: 2
   sample_rate: 16000
 gemini:
+  context_seed: true
   model: gemini-3.5-live-translate-preview
 logging:
   backup_count: 5

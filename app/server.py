@@ -75,6 +75,7 @@ from app.broadcast import CaptionBroadcaster, CaptionEvent
 from app.config import logging_cfg, network_cfg, save_audio_device, audio_cfg, save_auto_stop_timeout
 from app.gemini_session import GEMINI_MODEL
 from app.gemini_session import GeminiSession, SessionStatus
+from app.glossary import GlossaryCorrector
 from app.logger import server_log
 
 # Gemini 3.5 Live Translate pricing (Paid Tier):
@@ -93,12 +94,14 @@ class ServiceState(str, Enum):
     STOPPING = "stopping"
     FAILED = "failed"
 
-broadcaster = CaptionBroadcaster()
+_glossary = GlossaryCorrector()
+broadcaster = CaptionBroadcaster(glossary=_glossary)
 audio = AudioCapture()
 session = GeminiSession(
     on_caption=broadcaster.on_caption_delta,
     on_source_transcript=broadcaster.on_source_delta,
     on_audio_chunk=broadcaster.on_audio_chunk,
+    glossary=_glossary,
 )
 
 _state_lock = asyncio.Lock()

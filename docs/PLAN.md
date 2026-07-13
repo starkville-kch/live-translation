@@ -74,8 +74,8 @@ Windows PC (본 애플리케이션)
 
 ### 모델 선정 (Model Selection)
 * **`gemini-3.5-live-translate-preview`**를 사용합니다. 서버 시작 시 API를 조회하여 최신 버전을 자동으로 탐색합니다.
-* `gemini-3.1-flash-live-preview` 모델은 Live API에서 `TEXT` 모달리티 출력을 지원하지 않아 (에러코드 1007) 제외되었습니다.
 * API 연동 시 `response_modalities=["AUDIO"]` 설정과 `translation_config`를 결합하여 텍스트 자막(`output_transcription.text`)과 합성 오디오를 한 번에 가져옵니다.
+* `gemini-3.1-flash-live-preview`는 `response_modalities=["TEXT"]`로 동작하며 `system_instruction`을 지원합니다. 현재 `_build_config()`의 `else` 브랜치로 구현되어 있으나, 전용 번역 모델 대비 번역 품질이 낮아 기본값으로 사용하지 않습니다. 비용 절감 목적의 대안으로 Phase 12에서 검토합니다.
 
 ### 자막용 SSE & 오디오용 이진 웹소켓 분리
 * 실시간 자막 이벤트는 HTTP SSE(Server-Sent Events) 프로토콜(`/stream`)을 사용하여 전송합니다. SSE는 모바일 브라우저(특히 iOS Safari)가 백그라운드로 전환되거나 WiFi 신호가 끊어졌을 때 브라우저 수준에서 자동으로 재연결을 시도하므로 네트워크 불안정을 메워줍니다.
@@ -168,6 +168,7 @@ network:
 
 * **Phase 10 — 다국어 동시 통역**: 하나의 마이크 신호를 분기하여 중국어 등 타 언어 세션을 동시 가동하는 설계 구조 구현.
 * **Phase 11 — 원격 참석자용 클라우드 브리지**: 로컬 믹서 오디오 신호를 경량 프로토콜로 클라우드 가상 서버에 쏘고, 클라우드가 전세계 온라인 시청자폰으로 번역 자막을 전송하는 클라우드 연동 구현.
+* **Phase 12 — 번역 모델 비용/품질 최적화**: `gemini-3.1-flash-live-preview` + `system_instruction`(TEXT 모달리티) 전환 시 오디오 출력 비용이 약 80% 절감됩니다. 단, 전용 번역 모델 대비 PCA 용어 및 한국어 특수 표현 번역 품질을 실제 설교 오디오로 비교 검증한 후 전환 여부를 결정합니다.
 * **Phase 13 — 무설치 Windows 실행 파일 생성**: PyInstaller를 활용해 Python이 없는 PC에서도 더블 클릭하여 실행할 수 있는 독립형 `.exe` 런처 팩킹.
 
 </details>
@@ -236,11 +237,9 @@ Windows PC (this app)
 
 ### Model selection
 - **`gemini-3.5-live-translate-preview`** — selected at startup by querying the API.
-- Preference list in `gemini_session.py` (`_PREFERRED`) is updated as Google releases new models.
-- NOT `gemini-3.1-flash-live-preview`: that model returns error 1007 (TEXT modality not supported).
-- NOT `gemini-3.5-live-translate-preview` with TEXT modality: use `AUDIO` + `translation_config` instead.
-- Translation text arrives via `server_content.output_transcription.text` (not `response.text`).
+- Uses `response_modalities=["AUDIO"]` + `translation_config`; translation text arrives via `server_content.output_transcription.text`.
 - Korean source arrives via `server_content.input_transcription.text` (log only, never shown to attendees).
+- `gemini-3.1-flash-live-preview` supports `response_modalities=["TEXT"]` with `system_instruction`; implemented as the `else` branch in `_build_config()`. Not the default — translation quality is lower than the dedicated translate model. Evaluated as a cost-reduction option in Phase 12.
 
 ### SSE for captions, binary WebSocket for audio
 - Caption events (update, commit, unavailable, ping, paused, resumed) travel over SSE (`/stream`).
@@ -387,6 +386,13 @@ logging:
 - The Gemini Live translate model currently exposes one `target_language_code` per session. To support two simultaneous output languages, two parallel `GeminiSession` instances would be needed — one targeting `"en"`, one targeting `"zh"`.
 - Each session would get the same microphone audio (duplicate the `_pipe` coroutine).
 - The attendee page (`/live`) would need a language selector that switches which SSE stream it subscribes to (e.g. `/stream?lang=en` vs `/stream?lang=zh`).
+
+### Phase 12 — Translation model cost/quality evaluation
+- **Candidate**: `gemini-3.1-flash-live-preview` with `response_modalities=["TEXT"]` + `system_instruction` (already implemented as the `else` branch in `_build_config()`).
+- **Cost benefit**: Audio output billing (~$0.0315/min) is eliminated; only text output applies. Estimated **~80% cost reduction** vs the current translate model.
+- **Trade-off**: The general flash model does not use `translation_config`; translation quality — especially PCA polity terminology, Korean honorifics, and sermon-register phrasing — must be validated against real sermon audio before switching.
+- **Activation**: Set `resolve_live_model()` preference to rank `gemini-3.1-flash-live-preview` above the translate model; `_build_config()` else branch already handles TEXT + `system_instruction`.
+- **Decision gate**: Side-by-side caption quality comparison over at least one full Sunday service recording.
 
 ### Phase 11 — Cloud deployment for remote attendees
 1. Deploy `main.py` to a small cloud VM (e.g. Google Cloud Run, Railway, or a VPS).

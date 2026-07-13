@@ -1,0 +1,415 @@
+# SKC Live Translation — Terminology Glossary
+# ============================================
+# Gemini's translate model knows English theology but may use generic equivalents
+# for PCA-specific polity and confessional terms. This file provides a correction
+# pass that runs on *committed* (settled) caption lines, never on streaming drafts.
+#
+# Tiers:
+#   direct      — unambiguous, always correct; auto-applied as corrections
+#   review_only — context-dependent; logged when detected but never auto-replaced
+#
+# Enabled categories (auto-applied on day one):
+#   A — Polity / office titles         (enabled: true)
+#   C — Confessional document names    (enabled: true)
+#
+# Disabled categories (set enabled: true when you've confirmed real misses in logs):
+#   B — Worship / sacrament vocabulary (enabled: false)
+#   D — Reformed doctrinal vocabulary  (enabled: false)
+#   E — Scripture / OT proper nouns    (enabled: false)
+#   F — Korean-American community vocabulary / Konglish (enabled: false)
+#
+# Matching: applied against the Korean input_transcription text, not the English
+# output. Each entry may include `variants` — alternate Korean spellings of the
+# same word — so phonetic variation doesn't cause a silent miss.
+#
+# If the model already used the correct English term, no substitution is made.
+
+direct:
+
+  # ── Category A: Polity / office titles ────────────────────────────────────
+  - category: A
+    enabled: true
+    ko: "당회"
+    en: "Session"
+    # "당회" = the local church's ruling council; correct PCA term is "Session"
+
+  - category: A
+    enabled: true
+    ko: "노회"
+    en: "Presbytery"
+
+  - category: A
+    enabled: true
+    ko: "총회"
+    en: "General Assembly"
+    # PCA's national assembly; "General Synod" or "National Assembly" are wrong
+
+  - category: A
+    enabled: true
+    ko: "장로"
+    en: "elder"
+    # model may say "senior" or "presbyter"
+
+  - category: A
+    enabled: true
+    ko: "집사"
+    en: "deacon"
+
+  - category: A
+    enabled: true
+    ko: "목사"
+    en: "pastor"
+    # "minister" or "reverend" also acceptable; "priest" is not
+
+  - category: A
+    enabled: true
+    ko: "부목사"
+    en: "associate pastor"
+
+  - category: A
+    enabled: true
+    ko: "담임목사"
+    en: "senior pastor"
+
+  # ── Category B: Worship / sacrament vocabulary ────────────────────────────
+  - category: B
+    enabled: false
+    ko: "성찬"
+    en: "Lord's Supper"
+    # PCA uses "Lord's Supper," not "Eucharist"
+
+  - category: B
+    enabled: false
+    ko: "세례"
+    en: "baptism"
+
+  - category: B
+    enabled: false
+    ko: "유아세례"
+    en: "infant baptism"
+
+  - category: B
+    enabled: false
+    ko: "예배"
+    en: "worship"
+
+  - category: B
+    enabled: false
+    ko: "설교"
+    en: "sermon"
+
+  - category: B
+    enabled: false
+    ko: "찬송"
+    en: "hymn"
+
+  # ── Category C: Confessional document names ───────────────────────────────
+  - category: C
+    enabled: true
+    ko: "웨스트민스터 신앙고백서"
+    en: "Westminster Confession of Faith"
+
+  - category: C
+    enabled: true
+    ko: "소요리문답"
+    en: "Westminster Shorter Catechism"
+    variants:
+      - "소요리 문답"
+      - "소교리문답"
+      - "소교리 문답"
+
+  - category: C
+    enabled: true
+    ko: "대요리문답"
+    en: "Westminster Larger Catechism"
+    variants:
+      - "대요리 문답"
+      - "대교리문답"
+      - "대교리 문답"
+
+  - category: C
+    enabled: true
+    ko: "하이델베르크 요리문답"
+    en: "Heidelberg Catechism"
+    variants:
+      - "하이델베르크 교리문답"
+
+  - category: C
+    enabled: true
+    ko: "벨직 신앙고백서"
+    en: "Belgic Confession"
+
+  - category: C
+    enabled: true
+    ko: "도르트 신경"
+    en: "Canons of Dort"
+    variants:
+      - "도르트 신조"
+
+  # ── Category D: Reformed doctrinal vocabulary ─────────────────────────────
+  - category: D
+    enabled: false
+    ko: "예정"
+    en: "predestination"
+
+  - category: D
+    enabled: false
+    ko: "선택"
+    en: "election"
+    # Too ambiguous outside doctrinal contexts — leave disabled
+
+  - category: D
+    enabled: false
+    ko: "언약"
+    en: "covenant"
+
+  - category: D
+    enabled: false
+    ko: "구속"
+    en: "redemption"
+    # Polysemous; only enable if confirmed miss in logs
+
+  - category: D
+    enabled: false
+    ko: "칭의"
+    en: "justification"
+
+  - category: D
+    enabled: false
+    ko: "성화"
+    en: "sanctification"
+
+  - category: D
+    enabled: false
+    ko: "영화"
+    en: "glorification"
+    # Also means "movie/film" — very high false-positive risk, do not enable
+
+  # ── Category E: Scripture / OT proper nouns ───────────────────────────────
+  - category: E
+    enabled: false
+    ko: "여호와"
+    en: "LORD"
+    # Enable only if congregation uses a specific ESV/NIV translation standard
+
+  - category: E
+    enabled: false
+    ko: "하나님"
+    en: "God"
+    # Model almost always gets this right
+
+  - category: E
+    enabled: false
+    ko: "예수님"
+    en: "Jesus"
+
+  - category: E
+    enabled: false
+    ko: "성령님"
+    en: "Holy Spirit"
+    variants:
+      - "성령"
+
+  # ── Category F: Korean-American community vocabulary (Konglish) ───────────
+  # Phonetic transliterations of English loanwords.
+  # Model usually "hears through" these correctly. Enable only after observing
+  # real misses. Spelling variants especially important here.
+
+  # Academic / student life (MSU context)
+  - category: F
+    enabled: false
+    ko: "포닥"
+    en: "postdoc"
+    variants:
+      - "포스닥"
+      - "포스트닥"
+      - "포스트닥터"
+
+  - category: F
+    enabled: false
+    ko: "어드바이저"
+    en: "advisor"
+    variants:
+      - "어드바이져"
+
+  - category: F
+    enabled: false
+    ko: "디펜스"
+    en: "dissertation defense"
+
+  - category: F
+    enabled: false
+    ko: "펜딩"
+    en: "funding"
+
+  - category: F
+    enabled: false
+    ko: "그래트"
+    en: "grant"
+    variants:
+      - "그렌트"
+
+  - category: F
+    enabled: false
+    ko: "티에이"
+    en: "TA"
+    variants:
+      - "티 에이"
+
+  - category: F
+    enabled: false
+    ko: "알에이"
+    en: "RA"
+    variants:
+      - "알 에이"
+
+  - category: F
+    enabled: false
+    ko: "그래드 스쿨"
+    en: "grad school"
+    variants:
+      - "그래드스쿨"
+
+  - category: F
+    enabled: false
+    ko: "언더그래드"
+    en: "undergrad"
+    variants:
+      - "언더그레드"
+
+  # Housing / rental
+  - category: F
+    enabled: false
+    ko: "랜드로드"
+    en: "landlord"
+    variants:
+      - "랜드 로드"
+
+  - category: F
+    enabled: false
+    ko: "렌트"
+    en: "rent"
+
+  - category: F
+    enabled: false
+    ko: "아파트"
+    en: "apartment"
+    variants:
+      - "아파트먼트"
+
+  - category: F
+    enabled: false
+    ko: "컨도"
+    en: "condo"
+    variants:
+      - "콘도"
+      - "콘도미니엄"
+
+  - category: F
+    enabled: false
+    ko: "타운하우스"
+    en: "townhouse"
+
+  - category: F
+    enabled: false
+    ko: "베이스먼트"
+    en: "basement"
+    variants:
+      - "베이스 먼트"
+
+  - category: F
+    enabled: false
+    ko: "디파짃"
+    en: "deposit"
+    variants:
+      - "디포짃"
+      - "디파 짃"
+
+  - category: F
+    enabled: false
+    ko: "리스"
+    en: "lease"
+
+  # Immigration / visa
+  - category: F
+    enabled: false
+    ko: "비자"
+    en: "visa"
+
+  - category: F
+    enabled: false
+    ko: "그린카드"
+    en: "green card"
+    variants:
+      - "그린 카드"
+
+  - category: F
+    enabled: false
+    ko: "소셜 시큐리티"
+    en: "Social Security"
+    variants:
+      - "소셜시큐리티"
+      - "소셜 시큐어리티"
+      - "소셜"
+
+  - category: F
+    enabled: false
+    ko: "스폰서"
+    en: "sponsor"
+
+  # Work / finance
+  - category: F
+    enabled: false
+    ko: "잃"
+    en: "job"
+    # Very short; high false-positive risk ("잡다" = to catch). Do not enable.
+
+  - category: F
+    enabled: false
+    ko: "인터뷰"
+    en: "interview"
+
+  - category: F
+    enabled: false
+    ko: "오퍼"
+    en: "offer"
+    # As in "job offer"; model often gets this right
+
+  - category: F
+    enabled: false
+    ko: "크레딧 스코어"
+    en: "credit score"
+    variants:
+      - "크레딧스코어"
+      - "크레딧"
+
+  - category: F
+    enabled: false
+    ko: "모기지"
+    en: "mortgage"
+    variants:
+      - "모게지"
+
+  - category: F
+    enabled: false
+    ko: "인슈런스"
+    en: "insurance"
+    variants:
+      - "인슈어런스"
+      - "인슈런"
+
+review_only:
+  - ko: "주일"
+    note: "Lord's Day vs. Sabbath — meaning depends on sermon context; do not auto-replace"
+
+  - ko: "권사"
+    note: "No PCA office equivalent; consider leaving untranslated or as 'deaconess' — operator should decide"
+
+  - ko: "서리집사"
+    note: "No formal PCA office match; 'provisional deacon' or leave as-is — operator should decide"
+
+  - ko: "영화"
+    note: "'Glorification' in doctrinal context but also means 'movie/film' — too ambiguous to auto-replace"
+
+  - ko: "선택"
+    note: "'Election' (doctrine) but also 'selection/choice' in non-doctrinal contexts — too ambiguous"
