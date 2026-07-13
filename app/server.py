@@ -97,6 +97,7 @@ broadcaster = CaptionBroadcaster()
 audio = AudioCapture()
 session = GeminiSession(
     on_caption=broadcaster.on_caption_delta,
+    on_source_transcript=broadcaster.on_source_delta,
     on_audio_chunk=broadcaster.on_audio_chunk,
 )
 
@@ -820,7 +821,7 @@ _ATTENDEE_HTML = """<!DOCTYPE html>
     margin-right: 12px;
     font-weight: 500;
   }
-  
+
   #current-wrapper {
     background: var(--color-warm-50);
     border-top: 1px solid var(--color-warm-100);
@@ -1411,6 +1412,44 @@ _OPERATOR_HTML = """<!DOCTYPE html>
   .stat-val.err  { color: var(--color-error); }
   .stat-val.cost { color: var(--color-navy-700); font-weight: bold; }
 
+  /* Compact status grid — 4 columns: label | val | label | val
+     Full-width rows (long values) span all 4 cols via .sg-wide */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: auto 1fr auto 1fr;
+    gap: 0 10px;
+    margin-top: 4px;
+  }
+  .sg-label {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    align-self: center;
+    white-space: nowrap;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--color-warm-100);
+  }
+  .sg-val {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+    align-self: center;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--color-warm-100);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Full-width label: col 1, value: cols 2-4 */
+  .sg-label.sg-wide          { grid-column: 1; }
+  .sg-val.sg-wide            { grid-column: 2 / span 3; }
+  /* Remove bottom border on last row */
+  .sg-label.sg-last, .sg-val.sg-last { border-bottom: none; }
+  .sg-val.ok   { color: var(--color-success); }
+  .sg-val.warn { color: var(--color-gold-500); }
+  .sg-val.err  { color: var(--color-error); }
+  .sg-val.cost { color: var(--color-navy-700); font-weight: 700; }
+
   /* Tooltips */
   .tooltip {
     position: relative;
@@ -1457,7 +1496,7 @@ _OPERATOR_HTML = """<!DOCTYPE html>
 
   /* Caption preview */
   #preview-wrap {
-    height: 180px;
+    height: 280px;
     overflow-y: auto;
     background: var(--color-warm-white);
     border: 1px solid var(--color-warm-100);
@@ -1465,12 +1504,32 @@ _OPERATOR_HTML = """<!DOCTYPE html>
     padding: 12px;
     margin-top: 12px;
   }
-  #preview {
-    font-family: 'Inter', 'Noto Sans KR', sans-serif;
-    font-size: 16px;
+  .preview-pair {
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--color-warm-100);
+  }
+  .preview-pair:last-child { border-bottom: none; margin-bottom: 0; }
+  .preview-ko {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+  }
+  .preview-en {
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
     color: var(--color-text-primary);
-    line-height: 1.7;
-    white-space: pre-wrap;
+    font-weight: 500;
+    line-height: 1.6;
+    margin-top: 2px;
+  }
+  .preview-en.live { color: var(--color-navy-600); }
+  .preview-ts {
+    font-size: 11px;
+    color: var(--color-gold-500);
+    font-weight: 600;
+    margin-right: 6px;
   }
   /* Event log */
   #log {
@@ -1587,85 +1646,61 @@ _OPERATOR_HTML = """<!DOCTYPE html>
       <select id="device-select"><option>Loading…</option></select>
       <div class="meter-wrap"><div class="meter-bar" id="level-bar"></div></div>
       <div class="meter-label" id="level-label">입력 레벨 (Input level)</div>
-      <div style="margin-top: 16px; border-top: 1px solid var(--color-warm-100); padding-top: 12px;">
-        <label for="auto-stop-select" style="font-size: 12px; font-weight: 600; color: var(--color-text-secondary); display: block; margin-bottom: 6px;">
-          자동 종료 대기 시간 (Auto-Stop Timeout)
-        </label>
-        <select id="auto-stop-select">
-          <option value="0">비활성화 (Disabled)</option>
-          <option value="1">1분 (1 Minute) — 테스트용</option>
-          <option value="5">5분 (5 Minutes)</option>
-          <option value="10">10분 (10 Minutes)</option>
-          <option value="15">15분 (15 Minutes)</option>
-          <option value="20">20분 (20 Minutes)</option>
-          <option value="30">30분 (30 Minutes)</option>
-        </select>
-      </div>
     </div>
 
-    <!-- Status -->
+    <!-- Status (compact grid) -->
     <div class="card">
       <h2>상태 모니터 (Status)</h2>
-      <div class="stat-row">
-        <span class="stat-label tooltip">오디오 입력 (Audio in)
+      <div class="stat-grid">
+        <!-- Row 1: Audio (full width) -->
+        <span class="sg-label sg-wide tooltip">오디오 입력
           <span class="tooltiptext">Windows PC의 마이크/오디오 신호가 서버에 정상 수신되고 있는지 나타냅니다. (Indicates if the mic audio is being captured properly.)</span>
         </span>
-        <span class="stat-val" id="stat-audio">—</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label tooltip">Gemini 세션 (Gemini)
+        <span class="sg-val sg-wide" id="stat-audio">—</span>
+        <!-- Row 2: Gemini (full width) -->
+        <span class="sg-label sg-wide tooltip">Gemini 세션
           <span class="tooltiptext">구글 Gemini Live API 서버와의 실시간 웹소켓 번역 연결 상태입니다. (WebSocket connection status to Google Gemini Live API.)</span>
         </span>
-        <span class="stat-val" id="stat-session">—</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label tooltip">지연 속도 (Latency)
-          <span class="tooltiptext">입력된 음성이 번역되어 폰 화면에 표시될 때까지 소요되는 지체 시간입니다. (Time lag from audio capture to caption output.)</span>
-        </span>
-        <span class="stat-val" id="stat-latency">—</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label tooltip">접속자 수 (Attendees)
-          <span class="tooltiptext">현재 와이파이를 통해 자막(/live) 페이지에 접속해 있는 실시간 기기 수입니다. (Number of devices currently viewing the live captions.)</span>
-        </span>
-        <span class="stat-val" id="stat-attendees">0</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label tooltip">재연결 횟수 (Reconnects)
-          <span class="tooltiptext">Gemini Live API의 연결 불안정 혹은 10분 만료로 인해 재설정된 자동 복구 횟수입니다. (Auto-recovery count due to Gemini API connection drops.)</span>
-        </span>
-        <span class="stat-val" id="stat-reconnects">0</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label tooltip">자막 생성 수 (Captions)
-          <span class="tooltiptext">현재 세션 동안 번역되어 전송 완료된 자막 라인의 총 개수입니다. (Total translated caption paragraphs sent in this session.)</span>
-        </span>
-        <span class="stat-val" id="stat-captions">0</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label tooltip">진행 시간 (Runtime)
-          <span class="tooltiptext">예배 번역 시스템이 시작된 이후 총 가동 시간입니다. (Total active runtime of the translation server.)</span>
-        </span>
-        <span class="stat-val" id="stat-runtime">—</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label tooltip">예상 비용 (Est. cost)
-          <span class="tooltiptext">구글 제미나이 Live API의 유료 실시간 가격(분당 $0.0368) 기준으로 계산된 추정 요금입니다. (Estimated API cost based on Gemini Paid Tier.)</span>
-        </span>
-        <span class="stat-val cost" id="stat-cost">—</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label tooltip">사용 모델 (Model)
+        <span class="sg-val sg-wide" id="stat-session">—</span>
+        <!-- Row 3: Model (full width, right below Gemini) -->
+        <span class="sg-label sg-wide tooltip">모델
           <span class="tooltiptext">번역과 음성 스트리밍을 수행하고 있는 구글 제미나이 인공지능 모델 번호입니다. (Gemini model ID performing the live translation.)</span>
         </span>
-        <span class="stat-val" id="stat-model" style="font-size:12px;color:var(--color-text-muted)">—</span>
+        <span class="sg-val sg-wide" id="stat-model" style="font-size:11px;color:var(--color-text-muted)">—</span>
+        <!-- Row 4: Latency | Attendees -->
+        <span class="sg-label tooltip">지연
+          <span class="tooltiptext">입력된 음성이 번역되어 폰 화면에 표시될 때까지 소요되는 지체 시간입니다. (Time lag from audio capture to caption output.)</span>
+        </span>
+        <span class="sg-val" id="stat-latency">—</span>
+        <span class="sg-label tooltip">접속자
+          <span class="tooltiptext">현재 와이파이를 통해 자막(/live) 페이지에 접속해 있는 실시간 기기 수입니다. (Number of devices currently viewing the live captions.)</span>
+        </span>
+        <span class="sg-val" id="stat-attendees">0</span>
+        <!-- Row 5: Reconnects | Captions -->
+        <span class="sg-label tooltip">재연결
+          <span class="tooltiptext">Gemini Live API의 연결 불안정 혹은 10분 만료로 인해 재설정된 자동 복구 횟수입니다. (Auto-recovery count due to Gemini API connection drops.)</span>
+        </span>
+        <span class="sg-val" id="stat-reconnects">0</span>
+        <span class="sg-label tooltip">자막 수
+          <span class="tooltiptext">현재 세션 동안 번역되어 전송 완료된 자막 라인의 총 개수입니다. (Total translated caption paragraphs sent in this session.)</span>
+        </span>
+        <span class="sg-val" id="stat-captions">0</span>
+        <!-- Row 6: Runtime | Cost -->
+        <span class="sg-label tooltip sg-last">시간
+          <span class="tooltiptext">예배 번역 시스템이 시작된 이후 총 가동 시간입니다. (Total active runtime of the translation server.)</span>
+        </span>
+        <span class="sg-val sg-last" id="stat-runtime">—</span>
+        <span class="sg-label tooltip sg-last">비용
+          <span class="tooltiptext">구글 제미나이 Live API의 유료 실시간 가격(분당 $0.0368) 기준으로 계산된 추정 요금입니다. (Estimated API cost based on Gemini Paid Tier.)</span>
+        </span>
+        <span class="sg-val cost sg-last" id="stat-cost">—</span>
       </div>
     </div>
 
-    <!-- Caption preview -->
+    <!-- Caption preview (Korean + English paired) -->
     <div class="card">
       <h2>실시간 자막 미리보기 (Preview)</h2>
-      <div id="preview-wrap"><div id="preview">—</div></div>
+      <div id="preview-wrap"><div id="preview"></div></div>
     </div>
 
     <!-- Control buttons -->
@@ -1675,26 +1710,28 @@ _OPERATOR_HTML = """<!DOCTYPE html>
       <button class="danger"   id="btn-stop"  disabled>■ Stop</button>
     </div>
 
-    <!-- System Shutdown Button -->
-    <div style="margin-top: 16px;">
-      <button id="btn-shutdown" class="secondary" style="border-color: var(--color-error); color: var(--color-error); font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px;">
-        🔴 프로그램 완전 종료 (Exit System)
+    <!-- Auto-Stop + Exit System side by side -->
+    <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+      <span class="tooltip" style="flex-shrink: 0; font-size: 18px; cursor: default; line-height: 1;">⏱
+        <span class="tooltiptext" style="left: 0; margin-left: 0;">자동 종료 대기 시간 — 설정한 시간 동안 오디오가 없으면 자동으로 서비스를 종료합니다. (Auto-Stop: service stops automatically after this silence duration.)</span>
+      </span>
+      <select id="auto-stop-select" style="font-size: 12px; padding: 7px 8px; flex: 1; min-width: 0;">
+        <option value="0">자동종료 안 함 (Off)</option>
+        <option value="1">1분 (1 Min) — 테스트용</option>
+        <option value="5">5분 (5 Min)</option>
+        <option value="10">10분 (10 Min)</option>
+        <option value="15">15분 (15 Min)</option>
+        <option value="20">20분 (20 Min)</option>
+        <option value="30">30분 (30 Min)</option>
+      </select>
+      <button id="btn-shutdown" class="secondary" style="flex: 1; border-color: var(--color-error); color: var(--color-error); font-weight: 600; padding: 7px 12px;">
+        🔴 Exit System
       </button>
     </div>
 
   </div><!-- /col-left -->
 
   <div class="col-right">
-
-    <!-- QR code -->
-    <div class="card">
-      <h2 class="card-toggle open" id="qr-toggle">
-        접속 QR 코드 <span class="chevron">▼</span>
-      </h2>
-      <div class="card-body" id="qr-body">
-        <img id="qr-img" src="/api/qr.png" alt="QR code" style="width:100%;height:auto;display:block;">
-      </div>
-    </div>
 
     <!-- Audio playback -->
     <div class="card">
@@ -1725,6 +1762,16 @@ _OPERATOR_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- QR code (bottom of right column) -->
+    <div class="card">
+      <h2 class="card-toggle" id="qr-toggle">
+        접속 QR 코드 <span class="chevron">▼</span>
+      </h2>
+      <div class="card-body hidden" id="qr-body">
+        <img id="qr-img" src="/api/qr.png" alt="QR code" style="width:100%;height:auto;display:block;">
+      </div>
+    </div>
+
   </div><!-- /col-right -->
 
 </main>
@@ -1732,7 +1779,6 @@ _OPERATOR_HTML = """<!DOCTYPE html>
 <script>
 let polling = null;
 let captionEs = null;
-let previewLines = [];
 let lastEvent = '';
 let hasInitializedAutoStop = false;
 
@@ -1743,6 +1789,52 @@ const btnShutdown = document.getElementById('btn-shutdown');
 const preview  = document.getElementById('preview');
 const previewWrap = document.getElementById('preview-wrap');
 const logEl    = document.getElementById('log');
+
+// ── Preview: Korean + English paired DOM ──────────────────────────────────────
+// Each "pair" = one committed turn: { koEl, enEl, wrapEl, koText, enText }
+let pairs = [];      // committed pairs
+let livePair = null; // the currently-accumulating in-progress pair
+
+const MAX_PAIRS = 50;
+
+function getOrCreateLivePair() {
+  if (livePair) return livePair;
+  const wrap = document.createElement('div');
+  wrap.className = 'preview-pair';
+  const koEl = document.createElement('div');
+  koEl.className = 'preview-ko';
+  const enEl = document.createElement('div');
+  enEl.className = 'preview-en live';
+  wrap.appendChild(koEl);
+  wrap.appendChild(enEl);
+  preview.appendChild(wrap);
+  livePair = { wrap, koEl, enEl };
+  return livePair;
+}
+
+function commitLivePair(timeStr) {
+  if (!livePair) return;
+  livePair.enEl.classList.remove('live');
+  if (timeStr) {
+    const ts = document.createElement('span');
+    ts.className = 'preview-ts';
+    ts.textContent = '[' + timeStr + '] ';
+    livePair.enEl.prepend(ts);
+  }
+  pairs.push(livePair);
+  livePair = null;
+  // Trim oldest pairs
+  while (pairs.length > MAX_PAIRS) {
+    const old = pairs.shift();
+    old.wrap.remove();
+  }
+}
+
+function resetPreview() {
+  preview.innerHTML = '';
+  pairs = [];
+  livePair = null;
+}
 
 // ── Foldable cards ──────────────────────────────────────────────────────────
 ['qr-toggle', 'log-toggle'].forEach(id => {
@@ -1868,7 +1960,7 @@ btnStart.addEventListener('click', async () => {
     await fetch('/api/start', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({device_index: idx}) });
     btnPause.disabled = false; btnStop.disabled = false;
-    previewLines = []; preview.textContent = '';
+    resetPreview();
     document.getElementById('stat-runtime').textContent = '—';
     document.getElementById('stat-cost').textContent = '—';
     startStatusPoll(); connectSSE();
@@ -1969,11 +2061,11 @@ function startStatusPoll() {
 
     const auEl = document.getElementById('stat-audio');
     auEl.textContent = st.audio.status + (st.audio.device ? ' — ' + st.audio.device : '');
-    auEl.className = 'stat-val ' + (AUDIO_COLOR[st.audio.status] || '');
+    auEl.className = 'sg-val ' + (AUDIO_COLOR[st.audio.status] || '');
 
     const seEl = document.getElementById('stat-session');
     seEl.textContent = st.session.status + (st.session.last_event ? ' (' + st.session.last_event + ')' : '');
-    seEl.className = 'stat-val ' + (SESSION_COLOR[st.session.status] || '');
+    seEl.className = 'sg-val ' + (SESSION_COLOR[st.session.status] || '');
 
     document.getElementById('stat-latency').textContent = st.session.latency_ms ? st.session.latency_ms + ' ms' : '—';
     document.getElementById('stat-attendees').textContent = st.attendees;
@@ -2020,31 +2112,49 @@ function startStatusPoll() {
   }, 1000);
 }
 
-// ── SSE: captions only (audio is on WS /audio-stream) ────────────────────────
+// ── SSE: Korean + English paired preview ─────────────────────────────────────
 function connectSSE() {
   if (captionEs) captionEs.close();
   captionEs = new EventSource('/stream');
   captionEs.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.kind === 'ping')  { return; }
-    if (msg.kind === 'update') {
-      if (previewLines.length === 0) previewLines.push('');
-      previewLines[previewLines.length - 1] = msg.text;
+    if (msg.kind === 'ping') { return; }
+
+    if (msg.kind === 'source') {
+      // Korean delta — append to the live pair's KO line
+      const p = getOrCreateLivePair();
+      p.koEl.textContent += msg.text;
+
+    } else if (msg.kind === 'update') {
+      // English delta — replace live pair's EN line (broadcaster sends full accumulated text)
+      const p = getOrCreateLivePair();
+      p.enEl.textContent = msg.text;
+
     } else if (msg.kind === 'commit') {
-      if (previewLines.length > 50) previewLines.shift();
-      const ts = msg.time_str ? `[${msg.time_str}] ` : '';
-      if (previewLines.length > 0) {
-        previewLines[previewLines.length - 1] = ts + previewLines[previewLines.length - 1];
-      }
-      previewLines.push('');
+      // Finalize the live pair: remove live styling, prepend timestamp
+      commitLivePair(msg.time_str || null);
+
     } else if (msg.kind === 'unavailable') {
-      previewLines.push('[Translation unavailable]');
+      commitLivePair(null);
+      const wrap = document.createElement('div');
+      wrap.className = 'preview-pair';
+      wrap.innerHTML = '<div class="preview-en" style="color:var(--color-error)">[번역 불가 / Translation unavailable]</div>';
+      preview.appendChild(wrap);
+
     } else if (msg.kind === 'paused') {
-      previewLines.push('— Paused —');
+      commitLivePair(null);
+      const wrap = document.createElement('div');
+      wrap.className = 'preview-pair';
+      wrap.innerHTML = '<div class="preview-en" style="color:var(--color-text-muted)">— Paused —</div>';
+      preview.appendChild(wrap);
+
     } else if (msg.kind === 'resumed') {
-      previewLines.push('— Resumed —');
+      const wrap = document.createElement('div');
+      wrap.className = 'preview-pair';
+      wrap.innerHTML = '<div class="preview-en" style="color:var(--color-success)">— Resumed —</div>';
+      preview.appendChild(wrap);
     }
-    preview.textContent = previewLines.join('\\n');
+
     previewWrap.scrollTop = previewWrap.scrollHeight;
   };
 }

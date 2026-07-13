@@ -24,4 +24,4 @@ if __name__ == "__main__":
     cfg = network_cfg()
     # Bind to all interfaces (0.0.0.0) so phones on the same WiFi can reach
     # the caption and audio endpoints without extra firewall rules.
-    uvicorn.run("main:app", host=cfg.get("host", "0.0.0.0"), port=cfg.get("port", 8000), reload=False)
+    uvicorn.run("main:app", host=cfg.get("host", "0.0.0.0"), port=cfg.get("port", 8000), reload=False, access_log=False)

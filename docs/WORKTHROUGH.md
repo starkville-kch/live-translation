@@ -73,6 +73,25 @@ This document serves as the chronological build record, verification test log, a
   * **파인더 패턴 골드 재색상**: QR 코드의 세 모서리 `7×7` 파인더 패턴(스캔 기준점)을 `draw.rounded_rectangle` 레이어 페인팅 방식 대신, 픽셀 단위 색상 교체(`px[x,y] = GOLD`)를 이용해 정확히 네이비 픽셀만 골드(`#b89445`)로 바꿔 그 외 모듈에 영향을 주지 않았습니다.
   * **중앙 로고 삽입 (Quiet Zone 버퍼 포함)**: 단순 로고 붙여넣기 대신, Pillow `ImageDraw.ellipse()`로 흰색 원형 조용 구역(Quiet Zone)을 먼저 그린 뒤 그 안에 네이비 내부 원을 그려 흰색 PCA 로고를 시각적으로 띄웁니다. 로고 크기는 QR 폭의 최대 20% 이내로 제한했습니다.
 
+### 세션 10 — 자막 커밋 전략 정교화 및 한국어 언어 감지 수정
+
+* **목표**: 자막이 너무 길어져 화면이 굳는 현상 및 잘못된 언어 감지(베트남어)를 해결.
+* **문제 1 — 화면 고정**: 설교 중 연속 발화가 이어지는 경우 1.5초 묵음 타이머가 계속 리셋되어 `_current_line`이 수백 자까지 성장, 참석자 화면이 단락 전체를 한 번에 표시하며 굳는 문제가 발생했습니다.
+  * **해결책**: `MAX_LINE_CHARS = 150` 강제 커밋 안전망을 추가했습니다. 줄이 150자에 도달하면 `_find_split()`이 마지막 60자 이내에서 `. `, `! `, `? `, `; `, `, ` 순으로 자연스러운 경계를 탐색해 분할하고, 없으면 마지막 공백으로 폴백합니다.
+* **문제 2 — `turn_complete` 시도 및 철회**: 세션 도중 Gemini의 `turn_complete` 신호를 주 커밋 트리거로 사용하는 방식을 구현했으나, 설교 중 잦은 `"음"`, `"어"` 같은 필러 발화마다 신호가 발생하여 자막이 과도하게 끊기는 품질 저하를 확인했습니다. 결국 철회하고 1.5초 묵음 타이머를 유일한 1차 커밋 방식으로 확정했습니다.
+* **문제 3 — 베트남어 전사**: `AudioTranscriptionConfig()`에 언어 힌트 없이 자동 감지를 맡겼을 때 모델이 한국어를 베트남어로 오인하는 사례가 발생했습니다.
+  * **해결책**: `input_audio_transcription`에 `language_hints=types.LanguageHints(language_codes=["ko", "en"])`를 지정했습니다. `"en"` 을 함께 포함한 이유는 목사님이 영문 성경 구절을 인용하는 경우가 있기 때문입니다.
+
+### 세션 11 — 운영자 화면 UX 전면 개편
+
+* **목표**: 운영자가 한국어 원문과 영어 번역을 함께 확인하고, 화면 공간을 효율적으로 사용할 수 있도록 레이아웃 재구성.
+* **구현 내역**:
+  * **한국어+영어 쌍 표시**: 새로운 `"source"` SSE 이벤트 종류를 도입해 한국어 원문 델타를 스트리밍합니다. 운영자 미리보기에서 `getOrCreateLivePair()` / `commitLivePair()` DOM 함수로 한국어 줄과 영어 줄을 쌍으로 렌더링합니다. 참석자 화면은 `source` 이벤트를 무시합니다.
+  * **레이아웃 재정렬**: 왼쪽 열 순서를 입력 장치 → 상태 모니터 → 미리보기 → 제어 버튼 → 자동종료+종료 행으로 확정. 오른쪽 열은 음성 모니터 → 이벤트 로그 → QR 코드(하단) 순.
+  * **상태 모니터 압축**: 4열 그리드(`grid-template-columns: auto 1fr auto 1fr`)를 도입해 오디오 입력·세션·모델은 전체 행으로, 지연+접속자·재연결+자막 수·시간+비용은 2개씩 같은 행에 배치. 총 9행 → 6행으로 높이를 약 1/3 절감했습니다.
+  * **자동 종료 + 시스템 종료 통합 행**: 두 컨트롤을 같은 행에 배치하고, 자동 종료 레이블을 툴팁 아이콘으로 대체해 공간을 절약했습니다.
+  * **Uvicorn 액세스 로그 비활성화**: `uvicorn.run(..., access_log=False)`로 HTTP 요청 로그 노이즈를 제거했습니다.
+
 ### 세션 9 — 오디오 파이프라인 디버깅 및 마이크 선택 자동화
 * **목표**: 일시적인 오디오 지연 및 깨짐 현상 진단 후 임시 WAV 덤프 비활성화, 웹 UI 마이크 장치 선택 동기화 및 config.yaml 자동 저장 기능 구현.
 * **구현 내역**:
@@ -170,6 +189,25 @@ This document serves as the chronological build record, verification test log, a
   * **Rounded Data Modules:** Swapped the harsh square pixels for smooth round dots using `StyledPilImage + RoundedModuleDrawer`. Base module color set to Presbyterian Navy (`#1a2a42`).
   * **Pixel-Level Gold Finder Pattern Recoloring:** Rather than drawing rounded rectangles over the finder patterns (which can bleed into surrounding modules), the implementation iterates over every pixel within each 7×7 finder bounding box and swaps navy pixels to gold (`#b89445`) in-place via `px[x, y] = GOLD`. This scalpel approach preserves the rounded module shapes while precisely recoloring only the target pixels.
   * **Logo with Quiet-Zone Buffer:** A solid white `ellipse` (the "quiet zone") is drawn first in the center to create a clean, scanner-safe gap between the logo and surrounding data modules. A smaller navy inner circle is drawn inside the white ring to provide contrast for the white PCA logo. The logo is capped at exactly 20% of QR width per spec.
+
+### Session 10 — Caption Commit Strategy Refinement & Korean Language Detection Fix
+
+* **Goal:** Fix screen-freeze from long paragraphs and Vietnamese misidentification of Korean source audio.
+* **Problem 1 — Screen freeze:** During continuous speech, the 1.5s silence timer kept resetting, allowing `_current_line` to grow to hundreds of characters. The attendee screen would then freeze while rendering an entire paragraph at once.
+  * **Fix:** Added `MAX_LINE_CHARS = 150` as an overflow safety net. When the line reaches 150 characters, `_find_split()` searches the last 60 characters for a natural boundary (`. ` → `! ` → `? ` → `; ` → `, `), falling back to the last space if none is found.
+* **Problem 2 — `turn_complete` attempt and revert:** Attempted to use Gemini's `turn_complete` signal as the primary commit trigger. Rejected because the signal fires on every filler utterance ("um", "uh") in sermon speech, causing excessive caption fragmentation. Reverted; the 1.5s silence timer remains the sole primary commit mechanism.
+* **Problem 3 — Vietnamese transcript:** Without a language hint, the model misidentified Korean as Vietnamese.
+  * **Fix:** Added `language_hints=types.LanguageHints(language_codes=["ko", "en"])` to `input_audio_transcription`. `"en"` is included because the pastor occasionally quotes English scripture passages.
+
+### Session 11 — Operator Console UX Overhaul
+
+* **Goal:** Restructure operator console for better space efficiency and bilingual source+translation monitoring.
+* **Changes:**
+  * **Korean+English paired preview:** Introduced a new `"source"` SSE event kind to stream Korean source text deltas. Operator preview renders them as paired Korean/English line sets via `getOrCreateLivePair()` / `commitLivePair()` DOM functions. Attendee page ignores `source` events entirely.
+  * **Layout reorder:** Left column finalized as: Input Device → Status → Preview → Control Buttons → Auto-Stop+Exit row. Right column: Audio Monitor → Event Log → QR Code (bottom).
+  * **Compact Status card:** Adopted a 4-column grid (`grid-template-columns: auto 1fr auto 1fr`). Long-value rows (오디오 입력, Gemini 세션, 모델) span full width; short numeric stats (지연+접속자, 재연결+자막 수, 시간+비용) share rows in pairs. Reduced from 9 rows to 6 rows, cutting card height by roughly a third.
+  * **Auto-Stop + Exit System combined row:** Both controls placed in the same row with the Auto-Stop label replaced by a tooltip icon to save space.
+  * **Uvicorn access log suppression:** `uvicorn.run(..., access_log=False)` to eliminate HTTP request log noise from the event log.
 
 ### Session 9 — Audio Pipeline Diagnostics & Mic Selection Automation
 * **Goal:** Diagnostic cleanup of the temporary WAV capture, automatic selection of the saved microphone in the web console, and instant configuration updates.

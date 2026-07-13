@@ -304,7 +304,9 @@ class GeminiSession:
                         )
                     )
                 ),
-                input_audio_transcription=types.AudioTranscriptionConfig(),
+                input_audio_transcription=types.AudioTranscriptionConfig(
+                    language_hints=types.LanguageHints(language_codes=["ko", "en"]),
+                ),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
                 context_window_compression=types.ContextWindowCompressionConfig(
                     sliding_window=types.SlidingWindow(),

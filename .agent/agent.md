@@ -31,7 +31,10 @@ Audio captured from USB mixer → streamed to Gemini Live API → English captio
 ## Key Design Decisions
 - **Model**: `gemini-3.5-live-translate-preview` — auto-selected at startup via `resolve_live_model()`. Uses `translation_config` (not system prompt). Translation text in `server_content.output_transcription.text`; Korean source in `server_content.input_transcription.text`.
 - **Session persistence**: One session per service run. Session resumption handle stored; reconnects automatically on GoAway (every ~10 min) with exponential backoff.
-- **Caption UX**: Current line replaced in-place as tokens arrive; committed to scrollback after 1.5s pause.
+- **Caption UX**: Current line replaced in-place as tokens arrive; committed to scrollback after 1.5s pause (`PAUSE_THRESHOLD_S`). `turn_complete` signal was tested as a commit trigger but rejected — it fires on filler utterances in sermon speech, causing excessive fragmentation. Do not re-introduce.
+- **Overflow protection**: `MAX_LINE_CHARS = 150` force-commits in `CaptionBroadcaster` when no silence pause occurs. `_find_split()` searches the last 60 chars for `. ` / `! ` / `? ` / `; ` / `, ` boundaries before falling back to last space.
+- **Korean source streaming**: `"source"` SSE event kind delivers Korean input transcription deltas. Attendee page ignores it. Operator preview pairs Korean+English using `getOrCreateLivePair()` / `commitLivePair()`.
+- **Language detection**: `language_hints=types.LanguageHints(language_codes=["ko", "en"])` on `input_audio_transcription` prevents Korean→Vietnamese misidentification. `"en"` included for English scripture quotations.
 - **Audio transport**: Captions over SSE; translated audio PCM16 (24kHz) over binary WebSocket (`WS /audio-stream`). Audio clients that have playback disabled generate zero traffic.
 - **Voice pinning**: Translated audio pinned to `orus` (deep male) via `SpeechConfig → PrebuiltVoiceConfig`. Without this, Gemini picks a random voice on every reconnect.
 - **Transcript export**: On stop, `flush_current_turn()` commits any in-progress turn, then per-session folder written to `logs/sessions/YYYYMMDD_HHMMSS/`.
@@ -86,4 +89,6 @@ Then open `http://localhost:8000` in a browser.
 - [x] Phase 6: Pause/resume, runtime/cost display, session log, split logging
 - [x] Phase 7: Translated audio playback (binary WebSocket, Web Audio API, pinned `orus` voice)
 - [x] Phase 8: Post-service transcript export (per-session folder, ko/en/aligned files)
+- [x] Phase 9: Audio pipeline hardening, auto-commit silence segmentation, timestamp injection, concurrency state machine, button sync (v1.4.0)
+- [x] Phase 10: Caption overflow protection, Korean language hint fix, turn_complete revert, Korean+English paired operator preview, operator console UX overhaul (v1.5.0)
 - [x] V0–V6 verification protocol passed

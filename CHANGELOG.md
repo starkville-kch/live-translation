@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] - 2026-07-13
+
+### Added
+- **Korean source text streaming on operator preview:**
+  - Introduced `"source"` SSE event kind to stream Korean input transcription deltas in real-time.
+  - Operator preview now renders Korean+English caption pairs side-by-side using `getOrCreateLivePair()` / `commitLivePair()` DOM helpers. Attendee page ignores `source` events entirely.
+- **Max-line-length overflow protection:**
+  - Added `MAX_LINE_CHARS = 150` force-commit safety net in `CaptionBroadcaster` to prevent screen freeze during long continuous speech.
+  - `_find_split()` searches the last 60 characters for a natural sentence/clause boundary (`. `, `! `, `? `, `; `, `, `) before falling back to the last word boundary.
+- **Korean language hint for audio transcription:**
+  - Added `language_hints=types.LanguageHints(language_codes=["ko", "en"])` to `input_audio_transcription` config to prevent the model from misidentifying Korean as Vietnamese. `"en"` included to handle English scripture quotations.
+
+### Changed
+- **Operator console layout reorganized:**
+  - Left column order finalized: Input Device → Status → Preview → Control Buttons → Auto-Stop+Exit row.
+  - Right column order finalized: Audio Monitor → Event Log → QR Code (bottom).
+  - Auto-Stop timeout selector and Exit System button consolidated into a single row; Auto-Stop label replaced by tooltip icon to save horizontal space.
+  - Exit System button expanded to half the row width for easier access.
+- **Status card compacted to 4-column grid:**
+  - Long-value rows (오디오 입력, Gemini 세션, 모델) span full width; short numeric stats (지연+접속자, 재연결+자막 수, 시간+비용) share rows in pairs. Card height reduced from 9 rows to 6 rows (~33% shorter).
+  - Model row positioned immediately below Gemini 세션 row.
+- **Uvicorn access logs suppressed:**
+  - `access_log=False` passed to `uvicorn.run()` to eliminate HTTP request noise from the operator event log.
+- **Caption commit strategy reverted to silence-only:**
+  - `turn_complete`-based commit was tested and rejected — it fires on filler utterances ("um", "uh") causing excessive fragmentation in sermon speech. 1.5s silence timer remains the sole primary commit trigger.
+
 ## [1.4.0] - 2026-07-13
 
 ### Added

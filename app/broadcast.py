@@ -24,6 +24,10 @@ After ``PAUSE_THRESHOLD_S`` seconds of silence (no new tokens), a
 This debounce approach prevents flickering on the attendee screen while
 still feeling real-time.
 
+If the line exceeds ``MAX_LINE_CHARS`` during continuous speech (no pause
+long enough to trigger the silence timer), it is force-committed at the
+last word boundary so the attendee screen never freezes on a paragraph.
+
 Audio streaming (WebSocket)
 ---------------------------
 Raw 24 kHz PCM16 mono bytes arrive from the Gemini translate model and are
@@ -43,11 +47,13 @@ from dataclasses import dataclass
 
 
 PAUSE_THRESHOLD_S = 1.5  # seconds without new tokens before committing current line
+MAX_LINE_CHARS = 150      # force-commit when line exceeds this length (continuous speech)
+_BOUNDARY_LOOKBACK = 60  # search the last N chars for a natural split point
 
 
 @dataclass
 class CaptionEvent:
-    kind: str  # "update" | "commit" | "unavailable" | "ping" | "paused" | "resumed"
+    kind: str  # "update" | "commit" | "source" | "unavailable" | "ping" | "paused" | "resumed"
     text: str = ""
 
 
@@ -83,18 +89,63 @@ class CaptionBroadcaster:
         except ValueError:
             pass
 
+    def on_source_delta(self, delta: str) -> None:
+        """Korean source text delta — pushed to all SSE clients (attendee page ignores it)."""
+        self._push(CaptionEvent(kind="source", text=delta))
+
     def on_caption_delta(self, delta: str) -> None:
         self._unavailable = False
         self._current_line += delta
         self._caption_count += 1
         self._last_token_at = time.monotonic()
+
+        # Force-commit when the line grows too long during continuous speech.
+        # Prefer splitting after a sentence-end or clause boundary in the last
+        # _BOUNDARY_LOOKBACK chars; fall back to the last space if none found.
+        if len(self._current_line) >= MAX_LINE_CHARS:
+            cut = self._find_split(self._current_line)
+            to_commit = self._current_line[:cut].rstrip()
+            remainder = self._current_line[cut:].lstrip()
+            if self._commit_task and not self._commit_task.done():
+                self._commit_task.cancel()
+            self._push(CaptionEvent(kind="commit", text=to_commit))
+            self._current_line = remainder
+            if remainder:
+                self._push(CaptionEvent(kind="update", text=remainder))
+                loop = asyncio.get_event_loop()
+                self._commit_task = loop.create_task(self._schedule_commit())
+            return
+
         self._push(CaptionEvent(kind="update", text=self._current_line))
 
-        # Restart the commit timer on every new token
+        # Restart the silence commit timer on every new token
         if self._commit_task and not self._commit_task.done():
             self._commit_task.cancel()
         loop = asyncio.get_event_loop()
         self._commit_task = loop.create_task(self._schedule_commit())
+
+    def _find_split(self, line: str) -> int:
+        """Return the index after which to split the line.
+
+        Search the last _BOUNDARY_LOOKBACK characters for:
+          1. Sentence end followed by a space:  '. '  '! '  '? '
+          2. Clause boundary followed by a space:  ', '  '; '
+          3. Last space (word boundary fallback)
+        Returns the position *after* the punctuation/space so the commit
+        text ends naturally and the remainder starts cleanly.
+        """
+        search_start = max(0, len(line) - _BOUNDARY_LOOKBACK)
+        window = line[search_start:]
+
+        # Try sentence-end boundaries first
+        for punct in ('. ', '! ', '? ', '; ', ', '):
+            pos = window.rfind(punct)
+            if pos >= 0:
+                return search_start + pos + len(punct)
+
+        # Fall back to last space
+        pos = line.rfind(' ')
+        return pos if pos > 0 else len(line)
 
     async def _schedule_commit(self) -> None:
         try:
