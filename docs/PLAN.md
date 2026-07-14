@@ -168,7 +168,11 @@ network:
 
 * **Phase 10 — 다국어 동시 통역**: 하나의 마이크 신호를 분기하여 중국어 등 타 언어 세션을 동시 가동하는 설계 구조 구현.
 * **Phase 11 — 원격 참석자용 클라우드 브리지**: 로컬 믹서 오디오 신호를 경량 프로토콜로 클라우드 가상 서버에 쏘고, 클라우드가 전세계 온라인 시청자폰으로 번역 자막을 전송하는 클라우드 연동 구현.
-* **Phase 12 — 번역 모델 비용/품질 최적화**: `gemini-3.1-flash-live-preview` + `system_instruction`(TEXT 모달리티) 전환 시 오디오 출력 비용이 약 80% 절감됩니다. 단, 전용 번역 모델 대비 PCA 용어 및 한국어 특수 표현 번역 품질을 실제 설교 오디오로 비교 검증한 후 전환 여부를 결정합니다.
+* **Phase 12 — 번역 모델 비용/품질 최적화 (3라운드 벤치마크 완료 ✅)**: `logs/sermon_2min_new.m4a`(2분 클립), CaptionKit 결과, 한국어 원문 기준으로 세 차례 벤치마크 완료. 결과물: `.agent/scratch/benchmark_results/`.
+  * **1라운드**: 현재 운영 vs. `TURN_INCLUDES_ONLY_ACTIVITY` → 차이 없음. 번역 모델은 `translation_config` 내부 VAD로 전환 경계 자체 관리, `realtime_input_config` 무효.
+  * **2라운드**: `translation_config` 전용 / 하이브리드 / `system_instruction` 전용+`TURN_INCLUDES_ONLY_ACTIVITY` 3가지 비교 → 차이 없음. `system_instruction`은 수락되나 번역 모델 내부 엔진이 무시.
+  * **3라운드 (진짜 모델 비교)**: `gemini-3.5-live-translate-preview`+`translation_config`(A) vs. `gemini-3.1-flash-live-preview`+`system_instruction`(B). A: 2분 완주, 825ms 지연, 1882자 ✅. B: **약 30초 후 세션 충돌** (WebSocket keepalive timeout, 오류 1011), 43자만 출력 ❌.
+  * **결론**: `gemini-3.1-flash-live-preview`는 지속적 오디오 스트림에서 불안정 — 60~90분 예배에 부적합. **현재 운영 설정(`gemini-3.5-live-translate-preview`+`translation_config`)이 최적**. 오디오 입력 품질이 번역 품질의 주요 변수.
 * **Phase 13 — 무설치 Windows 실행 파일 생성**: PyInstaller를 활용해 Python이 없는 PC에서도 더블 클릭하여 실행할 수 있는 독립형 `.exe` 런처 팩킹.
 
 </details>
@@ -387,12 +391,34 @@ logging:
 - Each session would get the same microphone audio (duplicate the `_pipe` coroutine).
 - The attendee page (`/live`) would need a language selector that switches which SSE stream it subscribes to (e.g. `/stream?lang=en` vs `/stream?lang=zh`).
 
-### Phase 12 — Translation model cost/quality evaluation
-- **Candidate**: `gemini-3.1-flash-live-preview` with `response_modalities=["TEXT"]` + `system_instruction` (already implemented as the `else` branch in `_build_config()`).
-- **Cost benefit**: Audio output billing (~$0.0315/min) is eliminated; only text output applies. Estimated **~80% cost reduction** vs the current translate model.
-- **Trade-off**: The general flash model does not use `translation_config`; translation quality — especially PCA polity terminology, Korean honorifics, and sermon-register phrasing — must be validated against real sermon audio before switching.
-- **Activation**: Set `resolve_live_model()` preference to rank `gemini-3.1-flash-live-preview` above the translate model; `_build_config()` else branch already handles TEXT + `system_instruction`.
-- **Decision gate**: Side-by-side caption quality comparison over at least one full Sunday service recording.
+### Phase 12 — Translation model cost/quality evaluation (3 rounds benchmarked ✅)
+
+All benchmarks used `logs/sermon_2min_new.m4a` (2 min from `sermon_6_24_2026.mp4` @ 24:33), with CaptionKit output and Korean ground truth as reference. Artifacts: `.agent/scratch/benchmark_results/`.
+
+**Round 1 — `TURN_INCLUDES_ONLY_ACTIVITY` on the translate model (`config_a.txt`, `config_b.txt`)**
+- Config A: current production (`translation_config`, no `realtime_input_config`)
+- Config B: same + `TURN_INCLUDES_ONLY_ACTIVITY`
+- **Result**: No difference. The translate model manages turn boundaries internally via `translation_config` VAD; `realtime_input_config` is ignored.
+
+**Round 2 — `system_instruction` on the translate model (`v2_report.txt`)**
+Probe confirmed `gemini-3.5-live-translate-preview` accepts `system_instruction`. Tested:
+- Config A: `translation_config` only — 606ms latency, 1939 EN chars
+- Config B: `translation_config` + `system_instruction` — 619ms, 1991 chars
+- Config C: `system_instruction` only + `TURN_INCLUDES_ONLY_ACTIVITY` — 587ms, 1989 chars
+- **Result**: No difference. `system_instruction` is accepted but ignored — the translate model's internal engine dominates regardless.
+
+**Round 3 — `gemini-3.1-flash-live-preview` + `system_instruction` vs `gemini-3.5-live-translate-preview` (`v3_report.txt`)**
+The genuine model comparison: example-code model vs. production model.
+- Config A: `gemini-3.5-live-translate-preview` + `translation_config` — completed full 2 min, 825ms latency, 1882 EN chars ✅
+- Config B: `gemini-3.1-flash-live-preview` + `system_instruction` + `TURN_INCLUDES_ONLY_ACTIVITY` — **session crashed** after ~30s (WebSocket keepalive timeout, error 1011), only 43 chars captured ❌
+- **Result**: `gemini-3.1-flash-live-preview` is not stable for continuous 2-minute audio streams. `gemini-3.5-live-translate-preview` is the correct choice for a 60–90 minute church service.
+
+**Key findings across all rounds:**
+- **Current production config (`gemini-3.5-live-translate-preview` + `translation_config`) is optimal.**
+- `gemini-3.1-flash-live-preview` drops sessions under sustained audio load — unsuitable for live services.
+- `system_instruction` has no effect on the translate model; the internal translation engine overrides it.
+- Audio input quality is the dominant factor for translation accuracy.
+- `gemini-3.1-flash-live-preview` TEXT modality (cost-reduction path): returns error 1007 — not available.
 
 ### Phase 11 — Cloud deployment for remote attendees
 1. Deploy `main.py` to a small cloud VM (e.g. Google Cloud Run, Railway, or a VPS).

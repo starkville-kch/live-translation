@@ -116,8 +116,8 @@ This document serves as the chronological build record, verification test log, a
 
 ## 3. 기술 의사결정 회고 (Retrospective)
 
-### 1️⃣ 오디오 리샘플러: Numpy/Librosa 대신 순수 파이썬 구현
-* *이유*: 프로덕션 환경의 Windows 기기에 거대한 C++ 컴파일 라이브러리인 NumPy나 SciPy를 강제 설치시키는 행위는 비기술직 봉사자에게 큰 장벽이 됩니다. 성능 차이가 거의 없는 1차원 선형 리샘플러를 `audio.py`에 직접 구현함으로써 순수 Python 환경만으로 실시간 변환 파이프라인을 실현했습니다.
+### 1️⃣ 오디오 리샘플러: NumPy + SciPy 기반 Butterworth LPF 구현
+* *이유*: 초기에는 의존성 부담을 줄이기 위해 순수 파이썬 선형 보간 리샘플러를 사용했습니다. 그러나 실제 테스트에서 에일리어싱 아티팩트가 번역 품질에 영향을 미쳐, 4차 Butterworth 안티에일리어싱 필터를 앞에 적용한 위상 추적 보간기로 교체했습니다. NumPy/SciPy는 이미 `requirements.txt`에 포함되어 있으며, 장치가 네이티브 16kHz 모노를 지원하면 리샘플러 자체가 비활성화됩니다.
 
 ### 2️⃣ 자막 전송: WebSockets 대신 Server-Sent Events (SSE) 선택
 * *이유*: 모바일 폰은 화면이 꺼지면 웹소켓 연결이 가차없이 유실되며, 브라우저 스크립트로 재연결 로직을 견고하게 짜는 것은 복잡합니다. 반면 HTTP SSE는 모바일 Safari 및 Chrome 브라우저에 네이티브 자동 재연결 엔진이 내장되어 있어, 네트워크가 순간 이탈해도 자막 데이터 소실 우려가 거의 없습니다.
