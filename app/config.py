@@ -44,14 +44,18 @@ Public API
 ``save_gemini_model()``— persists a new model name back to config.yaml
 """
 import os
+import sys
 import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
-
-_ROOT = Path(__file__).parent.parent
+# When running as a PyInstaller frozen exe, __file__ points inside the temp
+# extraction folder. All user-editable files (config.yaml, .env) live next
+# to the exe itself, so use sys.executable's directory in that case.
+_ROOT = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent.parent
 _CONFIG_PATH = _ROOT / "config.yaml"
+
+load_dotenv(_ROOT / ".env")
 
 
 def _load() -> dict:

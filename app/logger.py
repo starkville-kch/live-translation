@@ -113,8 +113,11 @@ class _ConsoleFormatter(logging.Formatter):
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
+import sys as _sys
 _cfg     = logging_cfg()
-_log_dir = Path(_cfg.get("log_dir", "logs"))
+# When frozen, write logs next to the exe rather than the CWD
+_log_base = Path(_sys.executable).parent if getattr(_sys, "frozen", False) else Path(".")
+_log_dir  = _log_base / _cfg.get("log_dir", "logs")
 _log_dir.mkdir(exist_ok=True)
 
 _file_fmt    = _FileFormatter()

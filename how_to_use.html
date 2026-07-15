@@ -911,14 +911,27 @@ python main.py</pre>
           </tr>
           <tr>
             <td><code>network.port</code></td>
-            <td><code>8000</code></td>
+            <td><code>8080</code></td>
             <td>
-              <span data-lang="ko">FastAPI 웹 서버 포트입니다. 다른 프로그램과 포트 충돌이 발생하는 경우 <code>8080</code> 등으로 변경하십시오.</span>
-              <span data-lang="en">The server listener port. Change only if port 8000 is already in use by another program on this computer.</span>
+              <span data-lang="ko">FastAPI 웹 서버 포트입니다. 다른 프로그램과 포트 충돌이 발생하는 경우 다른 번호로 변경하십시오.</span>
+              <span data-lang="en">The server listener port. Change only if this port is already in use by another program on this computer.</span>
             </td>
           </tr>
         </tbody>
       </table>
+
+      <div class="warn">
+        <strong data-lang="ko">⚠️ QR 코드 주의:</strong>
+        <span data-lang="ko">
+          포트를 변경하면 참석자 URL(<code>http://&lt;ip&gt;:&lt;port&gt;/live</code>)이 바뀌며, <strong>QR 코드도 함께 변경됩니다.</strong>
+          저장·인쇄된 QR 코드가 있다면 변경 후 관리자 콘솔에서 새 QR 코드를 다운로드하여 사용 중인 모든 곳(슬라이드, 인쇄물 등)을 업데이트해야 합니다.
+        </span>
+      </div>
+      <div class="warn" data-lang="en">
+        <strong>⚠️ QR Code Warning:</strong>
+        Changing the port changes the attendee URL (<code>http://&lt;ip&gt;:&lt;port&gt;/live</code>), which means <strong>the QR code also changes.</strong>
+        If you have the QR code saved, printed, or displayed anywhere — re-download it from the operator console after changing this value and update every place it is used (slides, printed handouts, etc.).
+      </div>
     </div>
   </details>
 

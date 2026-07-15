@@ -1,8 +1,22 @@
 # Agent Context — SKC Live Translation
 
+## Doc Update Policy
+After any major piece of work, update this file and the relevant docs.
+
+| What changed | Files to update |
+|---|---|
+| New feature or phase completed | `agent.md`, `CHANGELOG.md`, `docs/PLAN.en.md`, `docs/PLAN.ko.md` |
+| New file added | `agent.md` (Document Index), `docs/PLAN.en.md` + `PLAN.ko.md` (File Map) |
+| Architecture or design decision | `agent.md` (Key Design Decisions), `docs/PLAN.en.md`, `docs/TECHNICAL.en.md` if code-level |
+| Build/exe change | `docs/BUILD_EXE.en.md`, `docs/BUILD_EXE.ko.md`, `SKC_translation.spec` |
+| Operator workflow change | `how_to_use.html` |
+
+---
+
 ## Project Summary
-Real-time Korean→English captioning appliance for church services.
-Audio captured from USB mixer → streamed to Gemini Live API → English captions fanned out to attendee phones via SSE; translated audio delivered via binary WebSocket.
+Real-time Korean→English captioning appliance for church services. Audio from USB mixer → Gemini Live API (`gemini-3.5-live-translate-preview`) → English captions over SSE + translated audio over binary WebSocket → attendee phones. Single session per 60–90 min service. Port: **8080** (set in `config.yaml`).
+
+---
 
 ## Architecture
 ```
@@ -17,81 +31,36 @@ Audio captured from USB mixer → streamed to Gemini Live API → English captio
                                               ├── GET  /live             ← attendee phone page
                                               ├── GET  /stream           ← SSE caption stream
                                               ├── WS   /audio-stream     ← binary PCM16 audio
-                                              ├── GET  /api/status       ← JSON status
-                                              ├── GET  /api/devices      ← device list
-                                              ├── POST /api/devices/select
-                                              ├── POST /api/start
-                                              ├── POST /api/stop         ← also writes transcript files
-                                              ├── POST /api/pause
-                                              ├── POST /api/resume
-                                              ├── GET  /api/qr.png
-                                              └── GET  /logo.webp
+                                              ├── GET  /api/qr.png       ← QR → /live at current port
+                                              └── POST /api/start|stop|pause|resume
 ```
+
+---
 
 ## Key Design Decisions
-- **Model**: `gemini-3.5-live-translate-preview` — auto-selected at startup via `resolve_live_model()`. Uses `translation_config` (not system prompt). Translation text in `server_content.output_transcription.text`; Korean source in `server_content.input_transcription.text`.
-- **Session persistence**: One session per service run. Session resumption handle stored; reconnects automatically on GoAway (every ~10 min) with exponential backoff.
-- **Caption UX**: Current line replaced in-place as tokens arrive; committed to scrollback after 1.5s pause (`PAUSE_THRESHOLD_S`). `turn_complete` signal was tested as a commit trigger but rejected — it fires on filler utterances in sermon speech, causing excessive fragmentation. Do not re-introduce.
-- **Overflow protection**: `MAX_LINE_CHARS = 150` force-commits in `CaptionBroadcaster` when no silence pause occurs. `_find_split()` searches the last 60 chars for `. ` / `! ` / `? ` / `; ` / `, ` boundaries before falling back to last space.
-- **Korean source streaming**: `"source"` SSE event kind delivers Korean input transcription deltas. Attendee page ignores it. Operator preview pairs Korean+English using `getOrCreateLivePair()` / `commitLivePair()`.
-- **Language detection**: `language_hints=types.LanguageHints(language_codes=["ko", "en"])` on `input_audio_transcription` prevents Korean→Vietnamese misidentification. `"en"` included for English scripture quotations.
-- **Audio transport**: Captions over SSE; translated audio PCM16 (24kHz) over binary WebSocket (`WS /audio-stream`). Audio clients that have playback disabled generate zero traffic.
-- **Voice pinning**: Translated audio pinned to `orus` (deep male) via `SpeechConfig → PrebuiltVoiceConfig`. Without this, Gemini picks a random voice on every reconnect.
-- **Transcript export**: On stop, `flush_current_turn()` commits any in-progress turn, then per-session folder written to `logs/sessions/YYYYMMDD_HHMMSS/`.
-- **Two log files**: `ops.log` (server/audio, INFO+) and `session.log` (Gemini session, DEBUG+). `propagate=False` on each logger.
-- **Security**: Gemini API key in `.env` only — never hardcoded, never shown in any UI.
+These are the non-obvious decisions that can't be derived by reading the code. Don't re-run these experiments.
 
-## Files
-| File | Purpose |
-|------|---------|
-| `main.py` | Entry point (`uvicorn main:app`) |
-| `config.yaml` | Runtime config (device, port, log path, model) |
-| `.env` | `GEMINI_API_KEY` (never committed) |
-| `app/config.py` | Config loader + `save_audio_device()`, `save_gemini_model()` |
-| `app/logger.py` | Two rotating handlers: `ops.log` and `session.log` |
-| `app/audio.py` | PyAudio capture, PCM16 resampling, RMS level metering, disconnect detection |
-| `app/gemini_session.py` | Gemini Live session, reconnection, GoAway, transcript buffers, `flush_current_turn()` |
-| `app/broadcast.py` | SSE caption fanout + binary PCM audio fanout; accumulates `_current_ko` for glossary |
-| `app/server.py` | FastAPI routes + embedded HTML + transcript export |
-| `logs/ops.log` | Server/audio operational log (INFO+) |
-| `logs/session.log` | Gemini session log with `[KO]`, `[EN delta]`, `[EN turn]` entries (DEBUG+) |
-| `app/glossary.py` | `GlossaryCorrector` — loads `config/glossary.yaml`, corrects committed lines |
-| `config/glossary.yaml` | Terminology glossary: direct (auto-apply) + review_only (log only) tiers |
-| `logs/sessions/YYYYMMDD_HHMMSS/` | Per-session transcript: `summary.txt`, `ko.txt`, `en.txt`, `aligned.txt` |
+- **`gemini-3.1-flash-live-preview` is banned**: crashes after ~30s of continuous audio (error 1011 keepalive timeout). Do not use as fallback. Confirmed Phase 12 Round 3.
+- **`translation_config` is mandatory, `system_instruction` does nothing**: the translate model requires `translation_config` to activate translation mode. `system_instruction` is accepted by the API but silently ignored by the internal engine. Confirmed Phase 12 Round 2. Don't re-test this.
+- **`turn_complete` removed as a commit trigger**: fires on filler utterances ("um", "uh") in sermon speech → excessive fragmentation. Do not re-introduce. Caption lines are committed after 1.5s silence (`PAUSE_THRESHOLD_S`).
+- **`SessionResumptionConfig` + `SlidingWindow` are mandatory**: without them the session drops every ~10 min. This is not optional.
+- **Port fallback rejected**: if port is in use, show a message + open browser to running service + exit. Do not silently pick a new port — it would break attendee QR codes and cause audio device conflicts.
+- **Voice pinned to `orus`**: without `SpeechConfig → PrebuiltVoiceConfig(voice_name="orus")`, Gemini picks a random voice on every GoAway reconnect — audibly jarring mid-sermon.
+- **CaptionKit can run in parallel**: Windows shared-mode audio driver allows both apps on the same USB mixer simultaneously. No virtual audio cable needed.
+- **`skc_build` conda env for exe builds**: the `agent` env includes PyTorch (~2.5 GB), producing a 3 GB exe. Use the minimal `skc_build` env for ~70 MB output. See `docs/BUILD_EXE.en.md` for full details.
 
-## Running
-```bash
-conda activate agent
-python -m app.audio --list          # enumerate audio devices
-python main.py                      # start the server
-```
-Then open `http://localhost:8000` in a browser.
+---
 
-## Environment
-- Python env: `agent` (conda)
-- OS: Windows 11
-- Key packages: `google-genai`, `fastapi`, `uvicorn`, `pyaudio`, `qrcode`
+## Document Index
 
-## Scratch / Testing
-- `.agent/scratch/` — temporary test files, WAV captures, experiment outputs
-- `.agent/scripts/` — helper scripts (device test, model probe, end-to-end tests)
-- `.agent/skills/` — reusable agent skill definitions
-
-## `.claude/` vs `.agent/`
-- `.claude/settings.json` — Claude Code's own config (fixed path, cannot be renamed)
-- `.agent/` — this project's AI context, scripts, and skills (portable)
-
-## Phase Status
-- [x] Phase 0: Audio capture + PCM16 pipeline
-- [x] Phase 1: Gemini Live session (translation_config, resumption, compression)
-- [x] Phase 2: FastAPI + SSE + attendee/operator pages
-- [x] Phase 3: Reliability (GoAway, retry, FAILED state)
-- [x] Phase 4: Operator status, QR code
-- [x] Phase 5: Visual and UX revamp (Presbyterian bulletin aesthetic, English attendee page, local PCA logo)
-- [x] Phase 6: Pause/resume, runtime/cost display, session log, split logging
-- [x] Phase 7: Translated audio playback (binary WebSocket, Web Audio API, pinned `orus` voice)
-- [x] Phase 8: Post-service transcript export (per-session folder, ko/en/aligned files)
-- [x] Phase 9: Audio pipeline hardening, auto-commit silence segmentation, timestamp injection, concurrency state machine, button sync (v1.4.0)
-- [x] Phase 10: Caption overflow protection, Korean language hint fix, turn_complete revert, Korean+English paired operator preview, operator console UX overhaul (v1.5.0)
-- [x] Phase 11: Terminology glossary correction pass + Part A context-seed probe (v1.6.0)
-- [x] V0–V6 verification protocol passed
+| Document | Content | Read when |
+|---|---|---|
+| `docs/PLAN.en.md` | File map, phase history (0–13), tech stack, reliability matrix, config reference | System overview, what phases are done, which files do what |
+| `docs/PLAN.ko.md` | Same as above in Korean | — |
+| `docs/TECHNICAL.en.md` | Code-level: FastAPI routes, Gemini session config, audio pipeline, asyncio patterns | Code changes, debugging |
+| `docs/TECHNICAL.ko.md` | Same as above in Korean | — |
+| `docs/WORKTHROUGH.en.md` | Chronological build sessions, verification protocol results (V0–V6), known quirks | Understanding past decisions, known bugs |
+| `docs/WORKTHROUGH.ko.md` | Same as above in Korean | — |
+| `docs/BUILD_EXE.en.md` | PyInstaller build log (7 attempts), spec decisions, frozen-exe code changes, skc_build env | Rebuilding the exe |
+| `docs/BUILD_EXE.ko.md` | Same as above in Korean | — |
+| `CHANGELOG.md` | Version history (English) | What changed in each release |

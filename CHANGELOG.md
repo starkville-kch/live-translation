@@ -7,135 +7,141 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-07-14
+
+### Added
+- **Single executable (.exe) support:**
+  - Added `SKC_translation.spec` — PyInstaller build spec to package the server into a ~70 MB single Windows executable.
+  - Added `build_exe.bat` — one-click build script with environment setup instructions.
+  - Build artifacts (`build/`, `dist/`) output to `.agent/scratch/exe/` and gitignored automatically.
+  - Full build attempt log documented in `docs/BUILD_EXE.md`.
+
+### Changed
+- **`main.py` — frozen exe compatibility:**
+  - `uvicorn.run("main:app", ...)` → `uvicorn.run(app, ...)`. String-based import fails inside a frozen exe (no `main.py` on disk).
+  - Added browser auto-open — opens `http://localhost:{port}/` in the default browser 2 seconds after server starts.
+  - Added port-conflict detection — if port is already in use, prints a message, opens the browser to the running service, and exits cleanly.
+- **`app/config.py` — frozen path fix:**
+  - Added `getattr(sys, "frozen", False)` check. When frozen, looks for `config.yaml` and `.env` next to the exe instead of inside the temp extraction folder.
+- **`app/logger.py` — frozen log directory fix:**
+  - When frozen, logs are written to `logs/` relative to the exe location. Without this fix, logs would go to the temp folder and be lost on exit.
+- **`SKC_start.bat` — removed duplicate browser open:**
+  - Removed the `timeout /t 4` browser-open logic since `main.py` now handles it directly.
+
+---
+
 ## [1.5.0] - 2026-07-13
 
 ### Added
 - **Korean source text streaming on operator preview:**
   - Introduced `"source"` SSE event kind to stream Korean input transcription deltas in real-time.
-  - Operator preview now renders Korean+English caption pairs side-by-side using `getOrCreateLivePair()` / `commitLivePair()` DOM helpers. Attendee page ignores `source` events entirely.
+  - Operator preview now renders Korean+English caption pairs using `getOrCreateLivePair()` / `commitLivePair()` DOM helpers. Attendee page ignores `source` events entirely.
 - **Max-line-length overflow protection:**
   - Added `MAX_LINE_CHARS = 150` force-commit safety net in `CaptionBroadcaster` to prevent screen freeze during long continuous speech.
-  - `_find_split()` searches the last 60 characters for a natural sentence/clause boundary (`. `, `! `, `? `, `; `, `, `) before falling back to the last word boundary.
+  - `_find_split()` searches the last 60 characters for a natural boundary (`. `, `! `, `? `, `; `, `, `) before falling back to the last word boundary.
 - **Korean language hint for audio transcription:**
-  - Added `language_hints=types.LanguageHints(language_codes=["ko", "en"])` to `input_audio_transcription` config to prevent the model from misidentifying Korean as Vietnamese. `"en"` included to handle English scripture quotations.
+  - Added `language_hints=types.LanguageHints(language_codes=["ko", "en"])` to prevent the model from misidentifying Korean as Vietnamese. `"en"` included to handle English scripture quotations.
 
 ### Changed
 - **Operator console layout reorganized:**
   - Left column order finalized: Input Device → Status → Preview → Control Buttons → Auto-Stop+Exit row.
   - Right column order finalized: Audio Monitor → Event Log → QR Code (bottom).
-  - Auto-Stop timeout selector and Exit System button consolidated into a single row; Auto-Stop label replaced by tooltip icon to save horizontal space.
+  - Auto-Stop timeout selector and Exit System button consolidated into a single row; Auto-Stop label replaced by tooltip icon.
   - Exit System button expanded to half the row width for easier access.
 - **Status card compacted to 4-column grid:**
-  - Long-value rows (오디오 입력, Gemini 세션, 모델) span full width; short numeric stats (지연+접속자, 재연결+자막 수, 시간+비용) share rows in pairs. Card height reduced from 9 rows to 6 rows (~33% shorter).
-  - Model row positioned immediately below Gemini 세션 row.
+  - Long-value rows (오디오 입력, Gemini 세션, 모델) span full width; short numeric stats share rows in pairs. Height reduced from 9 rows to 6 rows (~33% shorter).
 - **Uvicorn access logs suppressed:**
-  - `access_log=False` passed to `uvicorn.run()` to eliminate HTTP request noise from the operator event log.
+  - `access_log=False` to eliminate HTTP request noise from the operator event log.
 - **Caption commit strategy reverted to silence-only:**
-  - `turn_complete`-based commit was tested and rejected — it fires on filler utterances ("um", "uh") causing excessive fragmentation in sermon speech. 1.5s silence timer remains the sole primary commit trigger.
+  - `turn_complete`-based commit tested and rejected — fires on filler utterances causing excessive fragmentation. 1.5s silence timer remains the sole primary commit trigger.
+
+---
 
 ## [1.4.0] - 2026-07-13
 
 ### Added
-- **Audio Capture Rate-Limiting, Resampling Upgrade, and Host API Clarification:**
-  - Diagnosed a critical driver bug where Windows DirectSound input devices fail to block on `stream.read()`, returning instantly and causing the capture loop to run at warp speed. This flooded the Gemini session with duplicate buffers and resulted in 500,000ms latency and choppy/meaningless audio.
-  - **DirectSound rejection:** Devices under the Windows DirectSound host API are now refused at startup with a clear error message, preventing the non-blocking read bug from ever reaching production.
-  - **Native 16kHz mono capture:** When the selected device supports 16kHz mono natively (e.g. MME devices), the stream is opened directly at the target format, completely bypassing software downmixing and resampling — matching Google's own reference implementation pattern.
-  - **USB hot-plug reconnection:** If the USB mic disconnects mid-capture, the capture thread now retries with exponential backoff (2s → 30s cap), re-initializing PyAudio's device list on each attempt so that re-plugged USB devices are discoverable. The retry loop is interruptible by `stop()`.
-  - Implemented an automatic rate-limiting fallback sleep as a safety net for any remaining non-blocking driver behaviors.
-  - Upgraded the resampling fallback pipeline to use a SciPy-based 4th-order Butterworth low-pass filter (cutoff at 7.5 kHz) combined with a phase-tracking linear interpolator for proper anti-aliasing.
-  - Completely replaced the deprecated standard library `audioop` module with NumPy/SciPy-based algorithms (downmixing, anti-aliased resampling, and RMS calculation), prepping the project for Python 3.13.
-  - Fixed the queue overflow behavior in `_enqueue` to evict the oldest chunk first on `QueueFull` (FIFO), ensuring the pipeline prioritizes live, recent audio when backpressure occurs.
-  - Updated the device listing logic to append the Host API name (e.g. `[MME]`, `[Windows DirectSound]`, `[Windows WASAPI]`) to each device in the operator configuration dropdown.
-- **Auto-Commit Silence Segmentation:**
-  - Implemented an asynchronous auto-commit silence detection task in `GeminiSession` that automatically splits long turns into distinct transcripts with separate relative timestamps after 1.5s of silence (matching the broadcast pause threshold).
-  - Pre-empts `turn_complete` limitations when speakers talk continuously or the model loops, preventing a single giant line in exported logs (`aligned.txt`, `ko.txt`, `en.txt`).
-- **UI Caption and Preview Timestamping:**
-  - Injected relative timestamps (`[MM:SS]`) into Server-Sent Events (SSE) commit payloads.
-  - Added visual timestamping to committed captions in both the attendee caption page and the operator console preview area.
-  - Added a premium gold-toned (`var(--color-gold-500)`) CSS styling for the `<span>` wrapped timestamps on the attendee screen to maintain high-end editorial aesthetics.
-- **Concurrency Hardening:**
-  - Implemented `ServiceState` state machine (`STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `FAILED`) and a global async lock `_state_lock` in `app/server.py` to prevent duplicate concurrent audio/session threads.
-  - Added unified `_teardown()` function to handle all thread joining, queue draining, and session termination cleanup.
-  - Added automatic shutdown/recovery `_auto_stop_on_failure` callback when the connection enters the `FAILED` state.
-- **Button and Badge Synchronization:**
-  - Synchronized operator dashboard controls (`btnStart`, `btnPause`, `btnStop`) and badge state indicators in real-time across multiple tabs.
-- **Audio Device Selection Auto-Sync:**
-  - Added saved `device_index` to `/api/status` response to expose the currently configured audio device index.
-  - Updated the operator console's `loadDevices` javascript logic to automatically pre-select the saved audio device index from `config.yaml` on page load, rather than defaulting to index `0` (Microsoft Sound Mapper).
-  - Added an instant `change` listener to `device-select` in the operator console UI to persist any device selection changes immediately to `config.yaml` via `/api/devices/select`.
+- **Audio capture rate-limiting, resampling upgrade, and host API clarification:**
+  - Diagnosed a critical driver bug where Windows DirectSound input devices fail to block on `stream.read()`, returning instantly and flooding the Gemini session with duplicate buffers (500,000ms latency, choppy audio).
+  - **DirectSound rejection:** Devices under the Windows DirectSound host API are refused at startup with a clear error message.
+  - **Native 16kHz mono capture:** When the device supports 16kHz mono natively, the stream opens directly at that format, bypassing all software resampling.
+  - **USB hot-plug reconnection:** If the USB mic disconnects mid-capture, the capture thread retries with exponential backoff (2s → 30s cap).
+  - Upgraded resampling pipeline to SciPy-based 4th-order Butterworth LPF (7.5 kHz cutoff) + phase-tracking linear interpolator for proper anti-aliasing.
+  - Replaced deprecated `audioop` module with NumPy/SciPy (Python 3.13 ready).
+  - Fixed queue overflow to evict the oldest chunk first on `QueueFull` (FIFO).
+  - Added Host API name (`[MME]`, `[Windows DirectSound]`, `[Windows WASAPI]`) to device listing in the operator dropdown.
+- **Auto-commit silence segmentation:**
+  - Async auto-commit silence detection task in `GeminiSession` — splits long turns after 1.5s of silence.
+- **UI caption and preview timestamping:**
+  - Injected relative timestamps (`[MM:SS]`) into SSE commit payloads.
+  - Visual timestamps in both attendee caption page and operator preview.
+  - Gold CSS styling (`var(--color-gold-500)`) for timestamps on the attendee screen.
+- **Concurrency hardening:**
+  - `ServiceState` state machine (`STOPPED`, `STARTING`, `RUNNING`, `STOPPING`, `FAILED`) + global async lock `_state_lock` to prevent duplicate concurrent sessions.
+  - Unified `_teardown()` for all cleanup.
+  - `_auto_stop_on_failure` callback on `FAILED` state.
+- **Button and badge synchronization:**
+  - Real-time sync of operator dashboard controls and badges across multiple tabs.
+- **Audio device selection auto-sync:**
+  - Saved `device_index` exposed in `/api/status`.
+  - `loadDevices()` JS auto-selects the saved device on page load.
+  - Instant `change` listener on `device-select` to persist changes to `config.yaml` immediately.
 
 ### Changed
-- **Retry Loop Safety:**
-  - Cleanly handle and re-raise `asyncio.CancelledError` inside `_run_with_retry` to prevent orphan tasks.
-  - Reset reconnection attempt counter on successful runs and capped backoff delay at 60s.
-- **Turn-Onset Latency Tracking:**
-  - Replaced continuously growing latency calculation with turn-onset latency computed once at the start of each spoken turn.
-- **Diagnostic Cleanups:**
-  - Cleaned up temporary audio pipeline diagnostic codes and WAV dumping logic in `app/audio.py` after resolving DJI Mic Mini audio pipeline checks.
+- **Retry loop safety:** Clean `asyncio.CancelledError` handling; reconnect counter reset on success; backoff capped at 60s.
+- **Turn-onset latency tracking:** Replaced continuously growing calculation with per-turn onset measurement.
+- **Diagnostic cleanups:** Removed temporary WAV dump logic from `app/audio.py`.
+
+---
 
 ## [1.3.0] - 2026-07-12
 
 ### Added
-- **Graceful Web Shutdown:**
-  - Implemented a secure localhost-only endpoint `/api/shutdown` that stops active sessions and terminates the Python server process via `SIGINT`.
-  - Added a distinct red `🔴 프로그램 완전 종료 (Exit System)` button on the operator console with a bilingual confirmation dialog to prevent accidental triggers.
-  - Replaces the console page with a clean, friendly "System Successfully Terminated" guidance screen once the server goes offline.
-- **Collapsible Configuration Guide:**
-  - Added a comprehensive, bilingual guide explaining all `config.yaml` options (audio devices, Gemini settings, network, and logging defaults) inside `docs/HOW_TO_USE.md` and the browser helper page (`/help`).
-  - Wrapped the guide in a collapsible `<details>` panel to keep day-to-day documentation clean.
+- **Graceful web shutdown:**
+  - Secure localhost-only `/api/shutdown` endpoint — stops sessions and terminates via `SIGINT`.
+  - Red `🔴 프로그램 완전 종료 (Exit System)` button on operator console with bilingual confirmation dialog.
+  - Replaces the console with a clean "System Successfully Terminated" guidance screen on shutdown.
+- **Collapsible configuration guide:**
+  - Comprehensive bilingual `config.yaml` guide added to `docs/HOW_TO_USE.md` and `/help` page, wrapped in a collapsible `<details>` panel.
 
 ### Changed
-- **Operator Guidance Updates:**
-  - Updated the Stop Service workflow documentation to prioritize the Web Shutdown button over command-line key combos (reducing the risk of orphaned background zombie processes locking port 8000).
-- **UI & Alignment Enhancements:**
-  - Fixed vertical alignment of the collapsible details arrow marker using a custom flexbox-based CSS pseudo-element in `how_to_use.html`.
-  - Brightened the helper page hero description text to pure white (#ffffff) to maximize readability against the dark navy background.
+- **Operator guidance:** Updated Stop Service workflow to prioritize the Web Shutdown button over command-line key combos.
+- **UI fixes:** Fixed collapsible details arrow marker vertical alignment; brightened help page hero text to pure white (`#ffffff`).
 
 ---
 
 ## [1.2.0] - 2026-07-11
 
 ### Added
-- **Adjustable Auto-Stop Timeout:**
-  - Implemented an asynchronous background thread `_auto_stop_check()` in the server backend to monitor microphone signals.
-  - Automatically terminates the Gemini Live session and stops audio capture when input is silent (`NO_SIGNAL` / RMS below 50) or disconnected (`DISCONNECTED`) for a user-specified duration.
-- **Console Setting Interface:**
-  - Added a visual settings dropdown for "Auto-Stop Timeout" directly inside the **Input Device Settings** card on the operator console.
-  - Options include: *Disabled (0 min)*, *1 min (test)*, *5 min*, *10 min (default)*, *15 min*, *20 min*, and *30 min*.
-  - Settings are dynamically synchronized with the server via AJAX and persist across server restarts via updates to `config.yaml`.
-- **System Logging:**
-  - Added operational logging notices when the automatic shutdown triggers to save API costs.
+- **Adjustable auto-stop timeout:**
+  - Async background `_auto_stop_check()` thread monitors microphone signals.
+  - Automatically stops the Gemini Live session when input is silent (`NO_SIGNAL`) or disconnected for a user-specified duration.
+- **Console setting interface:**
+  - Auto-Stop Timeout dropdown added to the Input Device Settings card.
+  - Options: Disabled (0 min), 1 min (test), 5 min, 10 min (default), 15 min, 20 min, 30 min.
+  - Synced via AJAX and persisted to `config.yaml`.
+- **System logging:** Operational log notices when auto-shutdown triggers.
 
 ### Changed
-- Configured `.gitignore` to ignore the entire `.agent/` directory to prevent committing local AI configurations.
+- Added `.agent/` directory to `.gitignore`.
 
 ---
 
 ## [1.1.0] - 2026-07-10
 
 ### Added
-- **Translated Audio Playback:**
-  - Integrated translated English audio playback using binary WebSockets (`/audio-stream`) and the Web Audio API on the client side.
-  - Pinned the translated audio voice to `orus` (deep male) via `SpeechConfig` to ensure voice stability across session reconnects.
-- **Transcript Export:**
-  - Added post-service transcript exporters that create session directories under `logs/sessions/YYYYMMDD_HHMMSS/` containing aligned and raw (`ko.txt`, `en.txt`, `aligned.txt`, `summary.txt`) transcript files.
-- **Service controls:**
-  - Added visual buttons on the operator console to pause and resume the live stream.
+- **Translated audio playback:** Binary WebSocket `/audio-stream` + Web Audio API. Voice pinned to `orus` (deep male) via `SpeechConfig`.
+- **Transcript export:** Post-service session directories under `logs/sessions/YYYYMMDD_HHMMSS/` with `ko.txt`, `en.txt`, `aligned.txt`, `summary.txt`.
+- **Service controls:** Pause and resume buttons on the operator console.
 
 ### Changed
-- Refactored server logging into a structured/rotating dual-file layout: `ops.log` (operational logs, INFO+) and `session.log` (Gemini WebSocket frames, DEBUG+).
+- Refactored server logging to dual rotating files: `ops.log` (INFO+) and `session.log` (DEBUG+).
 
 ---
 
 ## [1.0.0] - 2026-07-09
 
 ### Added
-- **Core Translation Pipeline:**
-  - Real-time PCM16 audio capture and mono downsampling pipeline.
-  - Google GenAI Live API integration using `gemini-3.5-live-translate-preview`.
-- **Operator Console:**
-  - Premium Presbyterian bulletin-styled dashboard with input device selection, real-time audio volume level meters, session status badges, latency tracker, cost tracker, and live event log.
-- **Attendee Page:**
-  - Minimalist, mobile-friendly live translation screen (`/live`) streaming translation captions in real-time over Server-Sent Events (SSE).
-- **Session Recovery:**
-  - Implemented automated session resumption logic to handle Google API GoAway connection terminations.
+- **Core translation pipeline:** Real-time PCM16 audio capture, mono downsampling, Google GenAI Live API integration with `gemini-3.5-live-translate-preview`.
+- **Operator console:** Presbyterian bulletin-styled dashboard with device selection, audio level meters, session status badges, latency tracker, cost tracker, and live event log.
+- **Attendee page:** Mobile-friendly live caption screen (`/live`) streaming over SSE.
+- **Session recovery:** Automated session resumption for Google API GoAway terminations.

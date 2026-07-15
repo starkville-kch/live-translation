@@ -63,11 +63,8 @@ python --version
 echo  [2/3] Starting translation server from: %PROJECT_DIR%
 cd /d "%PROJECT_DIR%"
 
-::  Schedule browser open after 4 s (server startup time)
-::    Runs in a detached minimized window so it doesn't clutter the screen.
-start "" /min cmd /c "timeout /t 4 /nobreak >nul && start """" ""%OPERATOR_URL%"""
-
 ::  Start the server (blocking — keeps this window alive)
+::  The server opens the browser automatically after startup.
 echo  [3/3] Server starting... browser will open in ~4 seconds.
 echo.
 python main.py
