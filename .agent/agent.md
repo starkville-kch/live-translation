@@ -26,13 +26,17 @@ Real-time Korean→English captioning appliance for church services. Audio from 
                                               ├── SSE caption fanout (_clients)
                                               └── PCM audio fanout (_audio_clients)
                                                        ↓
+                                              app/events.py (OperatorEventLog)
+                                              └── thread-safe ring buffer, polled by frontend
+                                                       ↓
                                               app/server.py (FastAPI)
-                                              ├── GET  /                 ← operator page
-                                              ├── GET  /live             ← attendee phone page
-                                              ├── GET  /stream           ← SSE caption stream
-                                              ├── WS   /audio-stream     ← binary PCM16 audio
-                                              ├── GET  /api/qr.png       ← QR → /live at current port
-                                              └── POST /api/start|stop|pause|resume
+                                              ├── GET  /                     ← operator page
+                                              ├── GET  /live                 ← attendee phone page
+                                              ├── GET  /stream               ← SSE caption stream
+                                              ├── WS   /audio-stream         ← binary PCM16 audio
+                                              ├── GET  /api/qr.png           ← QR → /live at current port
+                                              ├── POST /api/start|stop|pause|resume
+                                              └── GET  /api/events?since=N   ← operator event polling
 ```
 
 ---
@@ -48,6 +52,8 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 - **Voice pinned to `orus`**: without `SpeechConfig → PrebuiltVoiceConfig(voice_name="orus")`, Gemini picks a random voice on every GoAway reconnect — audibly jarring mid-sermon.
 - **CaptionKit can run in parallel**: Windows shared-mode audio driver allows both apps on the same USB mixer simultaneously. No virtual audio cable needed.
 - **`skc_build` conda env for exe builds**: the `agent` env includes PyTorch (~2.5 GB), producing a 3 GB exe. Use the minimal `skc_build` env for ~70 MB output. See `docs/BUILD_EXE.en.md` for full details.
+- **Operator vs developer log separation**: runtime events that a volunteer needs to see (Gemini connected, attendee joined, etc.) go to `app/events.py` `OperatorEventLog` (in-memory, polled via `/api/events`). Developer/debug logs go to rotating files `ops.log`/`session.log` in the `logs/` folder. Do not mix these two channels.
+- **`ssSet()` JS helper must walk childNodes**: using `el.textContent = label` on a status pill destroys the nested `<span class="ss-tip">` tooltip on every poll tick. The fix walks `childNodes` to update only the bare text node. Do not rewrite this to use `textContent` directly.
 
 ---
 
@@ -55,7 +61,8 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 
 | Document | Content | Read when |
 |---|---|---|
-| `docs/PLAN.en.md` | File map, phase history (0–13), tech stack, reliability matrix, config reference | System overview, what phases are done, which files do what |
+| `app/events.py` | `OperatorEventLog` — thread-safe ring buffer, 7 categories, `since(last_id)` API | Understanding operator event plumbing |
+| `docs/PLAN.en.md` | File map, phase history (0–14), tech stack, reliability matrix, config reference | System overview, what phases are done, which files do what |
 | `docs/PLAN.ko.md` | Same as above in Korean | — |
 | `docs/TECHNICAL.en.md` | Code-level: FastAPI routes, Gemini session config, audio pipeline, asyncio patterns | Code changes, debugging |
 | `docs/TECHNICAL.ko.md` | Same as above in Korean | — |

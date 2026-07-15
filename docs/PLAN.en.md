@@ -55,8 +55,9 @@ Windows PC (this app)
           ├─ POST /api/stop          stop service + write session transcript files
           ├─ POST /api/pause         pause audio pipe + billing
           ├─ POST /api/resume        resume audio pipe + billing
-          ├─ GET  /logo.webp         local PCA logo (served from app/)
-          └─ GET  /api/qr.png        QR code PNG (links to /live)
+          ├─ GET  /logo.webp              local PCA logo (served from app/)
+          ├─ GET  /api/qr.png             QR code PNG (links to /live)
+          └─ GET  /api/events?since=N     incremental operator event poll
 ```
 
 ---
@@ -128,7 +129,8 @@ Windows PC (this app)
 | `SKC_start.bat` | One-click server launcher (activates conda `agent` env) |
 | `SKC_translation.spec` | PyInstaller build spec — produces single ~70MB exe |
 | `build_exe.bat` | One-click exe build script with environment setup instructions |
-| `app/config.py` | Config loader + `save_audio_device()`, `save_gemini_model()` |
+| `app/config.py` | Config loader + `save_audio_device()`, `save_gemini_model()`, `admin_cfg()` |
+| `app/events.py` | `OperatorEventLog` — thread-safe ring buffer (50 events), 7 categories, `since(last_id)` API |
 | `app/logger.py` | Rotating file + console logger |
 | `app/audio.py` | PyAudio capture, PCM16 resampling, RMS metering, disconnect detection |
 | `app/gemini_session.py` | Gemini Live session, auto model selection, reconnection, GoAway |
@@ -180,6 +182,7 @@ Windows PC (this app)
 | 11 | Operator console UX overhaul: Korean+English pairs, 4-column status grid, layout reorder | ✅ Done |
 | 12 | Translation model 3-round benchmark: `gemini-3.5-live-translate-preview` confirmed optimal | ✅ Done |
 | 13 | Single executable: PyInstaller ~70MB exe, `SKC_translation.spec`, `build_exe.bat` | ✅ Done |
+| 14 | Operator event log (`app/events.py`), status strip, `/api/events`, `/admin/logs` developer diagnostics | ✅ Done |
 | V0–V5 | Verification protocol | ✅ All passed |
 
 ---
@@ -211,13 +214,13 @@ logging:
 
 ## 8. Future Phases
 
-### Phase 14 — Multi-language simultaneous interpretation (Chinese, etc.)
+### Phase 15 — Multi-language simultaneous interpretation (Chinese, etc.)
 - The Gemini Live translate model currently exposes one `target_language_code` per session.
 - Supporting two languages simultaneously requires two parallel `GeminiSession` instances — one targeting `"en"`, one targeting `"zh"`.
 - Each session receives the same microphone audio (duplicate the `_pipe` coroutine).
 - The attendee page (`/live`) would need a language selector switching between `/stream?lang=en` and `/stream?lang=zh`.
 
-### Phase 15 — Cloud deployment for remote attendees
+### Phase 16 — Cloud deployment for remote attendees
 - Deploy `main.py` to a small cloud VM (Google Cloud Run, Railway, or a VPS).
 - Audio cannot be captured in the cloud — the PC captures audio and POSTs PCM chunks to the cloud server via a lightweight WebSocket.
 - The cloud server pipes audio into Gemini Live and fans SSE captions out to all attendees globally.

@@ -60,6 +60,7 @@ from scipy import signal
 import pyaudio
 
 from app.config import audio_cfg, save_audio_device
+from app.events import operator_events
 from app.logger import audio_log
 
 TARGET_RATE = 16000
@@ -332,6 +333,7 @@ class AudioCapture:
                 status=AudioStatus.CONNECTED,
                 device_name=device_info["name"],
             )
+            operator_events.add("audio", f"Audio connected: {device_info['name']}")
             audio_log.info("Audio capture started: %s @ %dHz %dch",
                            device_info["name"], src_rate, src_channels)
 
@@ -342,6 +344,7 @@ class AudioCapture:
             needs_downmix = src_channels > 1
             last_nonsilent = time.monotonic()
             non_blocking_warned = False
+            prev_audio_status = AudioStatus.CONNECTED
 
             while not self._stop_event.is_set():
                 t_start = time.monotonic()
@@ -350,6 +353,7 @@ class AudioCapture:
                 except OSError as e:
                     audio_log.warning("Stream read error (device likely disconnected): %s", e)
                     self._emit(status=AudioStatus.DISCONNECTED, level_rms=0.0)
+                    operator_events.add("error", "Audio device disconnected", {"error": str(e)})
                     return  # Return to outer retry loop
 
                 t_end = time.monotonic()
@@ -395,6 +399,13 @@ class AudioCapture:
                     status = AudioStatus.NO_SIGNAL
                 else:
                     status = AudioStatus.CONNECTED
+
+                if status != prev_audio_status:
+                    if status == AudioStatus.NO_SIGNAL:
+                        operator_events.add("warning", "Audio: no signal detected")
+                    elif status == AudioStatus.CONNECTED and prev_audio_status == AudioStatus.NO_SIGNAL:
+                        operator_events.add("audio", "Audio signal restored")
+                    prev_audio_status = status
 
                 self._emit(status=status, level_rms=level)
 

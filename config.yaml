@@ -13,8 +13,4 @@ logging:
   max_bytes: 10485760
 network:
   host: 0.0.0.0
-  # NOTE: Changing the port changes the attendee URL (http://<ip>:<port>/live),
-  # which means the QR code also changes. If you have the QR code saved or
-  # printed anywhere, re-download it from the operator console after changing
-  # this value and update every place it is used (slides, printed handouts, etc.).
   port: 8080

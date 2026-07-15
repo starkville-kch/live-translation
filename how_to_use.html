@@ -582,8 +582,10 @@ python -m app.audio --list</pre>
       <div class="step-body">
         <h3 data-lang="ko">번역 서버 실행</h3>
         <h3 data-lang="en">Start the Server</h3>
-        <p data-lang="ko">터미널을 열고 번역 서버를 구동합니다. 예배가 진행되는 동안 터미널을 닫지 말고 그대로 열어두세요:</p>
-        <p data-lang="en">Open your terminal, activate conda, and run the FastAPI server. Keep this window open during service:</p>
+        <p data-lang="ko"><strong>실행 파일 버전 (권장):</strong> <code>SKC_translation.exe</code>를 더블클릭하거나 <code>SKC_start.bat</code>을 실행하면 브라우저가 자동으로 열립니다. 검은색 콘솔 창은 예배가 끝날 때까지 닫지 마세요.</p>
+        <p data-lang="en"><strong>Executable version (recommended):</strong> Double-click <code>SKC_translation.exe</code>, or run <code>SKC_start.bat</code>. The browser will open automatically after a few seconds. Do not close the black console window until the service is finished.</p>
+        <p data-lang="ko"><strong>개발 모드 (개발자용):</strong> 터미널을 열고 다음 명령어로 서버를 실행합니다:</p>
+        <p data-lang="en"><strong>Developer mode:</strong> Open a terminal and run:</p>
         <pre>conda activate agent
 python main.py</pre>
       </div>
@@ -593,8 +595,8 @@ python main.py</pre>
       <div class="step-body">
         <h3 data-lang="ko">관리자 콘솔 접속</h3>
         <h3 data-lang="en">Open the Operator Console</h3>
-        <p data-lang="ko">이 PC의 브라우저에서 <code>http://localhost:8000</code> 주소로 접속합니다.</p>
-        <p data-lang="en">Open <code>http://localhost:8000</code> in a browser on this host PC.</p>
+        <p data-lang="ko"><code>SKC_translation.exe</code> 실행 시 브라우저가 자동으로 열립니다. 수동으로 접속하려면 이 PC의 브라우저에서 <code>http://localhost:8080</code> 주소로 접속합니다.</p>
+        <p data-lang="en">When using <code>SKC_translation.exe</code> the browser opens automatically. To open it manually, navigate to <code>http://localhost:8080</code> in a browser on this host PC.</p>
       </div>
     </div>
 
@@ -740,6 +742,93 @@ python main.py</pre>
     <strong>Note:</strong> Reconnections are expected. The Gemini Live API WebSocket triggers a refresh roughly every 10 minutes. Attendees will see a brief 2–3 second pause, after which captions and audio resume automatically without requiring a page reload.
   </div>
 
+  <!-- 상태 스트립 / Status Strip -->
+  <h2 data-lang="ko">상태 스트립 (Status Strip)</h2>
+  <h2 data-lang="en">Status Strip</h2>
+
+  <p data-lang="ko">관리자 콘솔 제목 표시줄 바로 아래에 5개의 상태 알림이 가로로 나열됩니다. 각 상태는 배경 색으로 한눈에 구분됩니다.</p>
+  <p data-lang="en">The operator console shows a row of 5 status pills directly beneath the title bar. Each pill changes background color to indicate health at a glance.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th><span data-lang="ko">알림 항목</span><span data-lang="en">Pill</span></th>
+        <th><span data-lang="ko">색상</span><span data-lang="en">Color</span></th>
+        <th><span data-lang="ko">의미</span><span data-lang="en">Meaning</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong data-lang="ko">🎙 오디오 (Audio)</strong><strong data-lang="en">🎙 Audio</strong></td>
+        <td><span class="badge badge-green" data-lang="ko">초록</span><span class="badge badge-green" data-lang="en">Green</span></td>
+        <td><span data-lang="ko">USB 믹서 오디오 신호가 수신되고 있음</span><span data-lang="en">USB mixer audio signal is being received</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><span class="badge badge-amber" data-lang="ko">노랑</span><span class="badge badge-amber" data-lang="en">Amber</span></td>
+        <td><span data-lang="ko">무음 감지 / 신호 없음</span><span data-lang="en">No signal detected (silence)</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><span class="badge badge-red" data-lang="ko">빨강</span><span class="badge badge-red" data-lang="en">Red</span></td>
+        <td><span data-lang="ko">오디오 장치 오류 또는 연결 끊김</span><span data-lang="en">Audio device error or disconnected</span></td>
+      </tr>
+      <tr>
+        <td><strong data-lang="ko">🤖 제미나이 (Gemini)</strong><strong data-lang="en">🤖 Gemini</strong></td>
+        <td><span class="badge badge-green" data-lang="ko">초록</span><span class="badge badge-green" data-lang="en">Green</span></td>
+        <td><span data-lang="ko">Gemini API 세션 연결됨</span><span data-lang="en">Gemini API session connected</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><span class="badge badge-amber" data-lang="ko">노랑</span><span class="badge badge-amber" data-lang="en">Amber</span></td>
+        <td><span data-lang="ko">연결 시도 중 / 재연결 중</span><span data-lang="en">Connecting or reconnecting</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><span class="badge badge-red" data-lang="ko">빨강</span><span class="badge badge-red" data-lang="en">Red</span></td>
+        <td><span data-lang="ko">최대 재시도 횟수 초과 — Stop 후 Start 필요</span><span data-lang="en">Max retries exceeded — click Stop then Start</span></td>
+      </tr>
+      <tr>
+        <td><strong data-lang="ko">🌐 인터넷 (Internet)</strong><strong data-lang="en">🌐 Internet</strong></td>
+        <td><span class="badge badge-green" data-lang="ko">초록</span><span class="badge badge-green" data-lang="en">Green</span></td>
+        <td><span data-lang="ko">인터넷 연결 정상</span><span data-lang="en">Internet connection normal</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><span class="badge badge-red" data-lang="ko">빨강</span><span class="badge badge-red" data-lang="en">Red</span></td>
+        <td><span data-lang="ko">인터넷 연결 없음</span><span data-lang="en">No internet access</span></td>
+      </tr>
+      <tr>
+        <td><strong data-lang="ko">🔤 번역 (Translation)</strong><strong data-lang="en">🔤 Translation</strong></td>
+        <td><span class="badge badge-green" data-lang="ko">초록</span><span class="badge badge-green" data-lang="en">Green</span></td>
+        <td><span data-lang="ko">번역 서비스 실행 중 (Live)</span><span data-lang="en">Translation service is running (Live)</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><span class="badge badge-amber" data-lang="ko">노랑</span><span class="badge badge-amber" data-lang="en">Amber</span></td>
+        <td><span data-lang="ko">일시정지 중</span><span data-lang="en">Paused</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><span class="badge badge-red" data-lang="ko">빨강</span><span class="badge badge-red" data-lang="en">Red</span></td>
+        <td><span data-lang="ko">중지됨 (서비스 미실행)</span><span data-lang="en">Stopped (service not running)</span></td>
+      </tr>
+      <tr>
+        <td><strong data-lang="ko">🖥 웹서버 (Web Server)</strong><strong data-lang="en">🖥 Web Server</strong></td>
+        <td><span class="badge badge-green" data-lang="ko">초록</span><span class="badge badge-green" data-lang="en">Green</span></td>
+        <td><span data-lang="ko">이 페이지가 로드되었으므로 서버가 정상 작동 중</span><span data-lang="en">This page loaded — server is running</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <strong data-lang="ko">알림:</strong>
+    <span data-lang="ko">각 상태 알림에 마우스를 올리면(hover) 해당 색상의 의미를 설명하는 한국어/영어 툴팁이 표시됩니다.</span>
+  </div>
+  <div class="note" data-lang="en">
+    <strong>Tip:</strong> Hover over any status pill to see a tooltip explaining what each color means.
+  </div>
+
   <!-- 페이지 종류 / Pages mapping -->
   <h2 data-lang="ko">웹 페이지 주소 종류</h2>
   <h2 data-lang="en">System Pages</h2>
@@ -760,18 +849,18 @@ python main.py</pre>
     </thead>
     <tbody>
       <tr>
-        <td><code>http://&lt;ip&gt;:8000/</code></td>
+        <td><code>http://&lt;ip&gt;:8080/</code></td>
         <td>
           <span data-lang="ko">운영 봉사자 (Operator)</span>
           <span data-lang="en">Volunteer Operator</span>
         </td>
         <td>
-          <span data-lang="ko">마이크 입력 장치 변경, 시작/중지, 일시정지, 실시간 자막 모니터링, 비용/오디오 레벨 확인</span>
-          <span data-lang="en">Start/stop translation, pause billing, adjust volumes, level meters, event log.</span>
+          <span data-lang="ko">마이크 입력 장치 변경, 시작/중지, 일시정지, 실시간 자막 모니터링, 이벤트 로그, 상태 스트립 확인</span>
+          <span data-lang="en">Start/stop translation, pause, level meters, event log, status strip.</span>
         </td>
       </tr>
       <tr>
-        <td><code>http://&lt;ip&gt;:8000/live</code></td>
+        <td><code>http://&lt;ip&gt;:8080/live</code></td>
         <td>
           <span data-lang="ko">예배 참석자 (Attendees)</span>
           <span data-lang="en">Worship Attendees</span>

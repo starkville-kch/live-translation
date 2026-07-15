@@ -45,6 +45,8 @@ import asyncio
 import time
 from dataclasses import dataclass
 
+from app.events import operator_events
+
 
 PAUSE_THRESHOLD_S = 1.5  # seconds without new tokens before committing current line
 MAX_LINE_CHARS = 150      # force-commit when line exceeds this length (continuous speech)
@@ -83,14 +85,21 @@ class CaptionBroadcaster:
     def add_client(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=100)
         self._clients.append(q)
+        operator_events.add("user", f"Attendee joined ({len(self._clients)} connected)",
+                            {"count": len(self._clients)})
         return q
 
     def remove_client(self, q: asyncio.Queue) -> None:
         self._clients.discard(q) if hasattr(self._clients, "discard") else None
+        removed = False
         try:
             self._clients.remove(q)
+            removed = True
         except ValueError:
             pass
+        if removed:
+            operator_events.add("user", f"Attendee left ({len(self._clients)} connected)",
+                                {"count": len(self._clients)})
 
     def on_source_delta(self, delta: str) -> None:
         """Korean source text delta — pushed to all SSE clients (attendee page ignores it)."""

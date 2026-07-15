@@ -55,8 +55,9 @@ Windows PC (본 애플리케이션)
           ├─ POST /api/stop          번역 파이프라인 종료 및 텍스트 파일 저장
           ├─ POST /api/pause         마이크 캡처 및 API 세션 일시 중지
           ├─ POST /api/resume        마이크 캡처 및 API 세션 재개
-          ├─ GET  /logo.webp         로컬 저장된 PCA 로고 이미지 서비스
-          └─ GET  /api/qr.png        참석자 페이지 접속용 QR 코드 생성
+          ├─ GET  /logo.webp              로컬 저장된 PCA 로고 이미지 서비스
+          ├─ GET  /api/qr.png             참석자 페이지 접속용 QR 코드 생성
+          └─ GET  /api/events?since=N     운영자 이벤트 증분 폴링
 ```
 
 ---
@@ -114,7 +115,8 @@ Windows PC (본 애플리케이션)
 | `SKC_start.bat` | 원클릭 서버 실행 스크립트 (conda 환경 활성화) |
 | `SKC_translation.spec` | PyInstaller 빌드 스펙 — 단일 exe 생성 |
 | `build_exe.bat` | 원클릭 exe 빌드 스크립트 |
-| `app/config.py` | 설정 로더 + `save_audio_device()`, `save_gemini_model()` |
+| `app/config.py` | 설정 로더 + `save_audio_device()`, `save_gemini_model()`, `admin_cfg()` |
+| `app/events.py` | `OperatorEventLog` — 스레드 안전 링 버퍼(50개), 7개 카테고리, `since(last_id)` API |
 | `app/logger.py` | 회전 파일 + 콘솔 로거 |
 | `app/audio.py` | PyAudio 캡처, PCM16 리샘플링, RMS 미터링, 연결 해제 감지 |
 | `app/gemini_session.py` | Gemini Live 세션, 모델 자동 선택, 재연결, GoAway 처리 |
@@ -166,6 +168,7 @@ Windows PC (본 애플리케이션)
 | 11 | 운영자 화면 UX 전면 개편: 한국어+영어 쌍 표시, 상태 카드 4열 압축, 레이아웃 재정렬 | ✅ 완료 |
 | 12 | 번역 모델 비용/품질 3라운드 벤치마크: `gemini-3.5-live-translate-preview` 최적 확인 | ✅ 완료 |
 | 13 | 단일 실행 파일(.exe): PyInstaller 70MB, `SKC_translation.spec`, `build_exe.bat` | ✅ 완료 |
+| 14 | 운영자 이벤트 로그(`app/events.py`), 상태 스트립, `/api/events`, `/admin/logs` 개발자 진단 | ✅ 완료 |
 | V0–V5 | 검증 프로토콜 | ✅ 전체 통과 |
 
 ---
@@ -196,7 +199,7 @@ logging:
 
 ## 8. 향후 확장 계획 (Future Phases)
 
-### Phase 14 — 다국어 동시 통역 (중국어 등)
+### Phase 15 — 다국어 동시 통역 (중국어 등)
 - Gemini Live 번역 모델은 현재 세션당 `target_language_code` 하나만 지원.
 - 두 언어 동시 지원 시 `GeminiSession` 인스턴스를 병렬로 두 개 구동 (`"en"` / `"zh"`).
 - 참석자 페이지(`/live`)에 언어 선택기 추가 (`/stream?lang=en` vs `/stream?lang=zh`).

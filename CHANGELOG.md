@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.0] - 2026-07-15
+
+### Added
+- **Structured operator event log (`app/events.py`):**
+  - New `OperatorEventLog` class — thread-safe ring buffer (50 events, `deque` + `threading.Lock`) with 7 categories: success, audio, gemini, network, user, warning, error.
+  - `/api/events?since=N` endpoint for incremental polling; frontend polls every 1.5s and appends new entries with auto-scroll and manual-override scroll tracking.
+  - Expandable event details panel (click any row to show key/value detail dict).
+  - DOM trimmed to 50 entries; newest events scroll into view automatically.
+- **Status strip on operator console:**
+  - 5 colored pill badges beneath the title bar: Audio, Gemini, Internet, Translation, Web Server.
+  - Three states: green (ok), amber (warn), red (error), each with bilingual hover tooltips.
+  - Pills updated every second from the existing `/api/status` poll.
+- **Event instrumentation across all modules:**
+  - `app/audio.py`: fires events on device connect, signal-lost/restored transitions, and OSError disconnect.
+  - `app/gemini_session.py`: fires events on connect, reconnect (with attempt count), GoAway, and max-retries failure.
+  - `app/broadcast.py`: fires events on attendee join/leave with current count.
+  - `app/server.py`: fires events on system start, service start/stop/pause/resume, and auto-stop changes.
+
+### Changed
+- Operator event log replaced the old `lastEvent` diff-based log entry with a proper structured event stream.
+- Status strip pills are centered in the strip; control buttons layout unchanged.
+
+---
+
 ## [1.6.0] - 2026-07-14
 
 ### Added

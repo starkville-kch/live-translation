@@ -59,6 +59,7 @@ On /api/stop, ``_write_session_log()`` writes four files to
 import asyncio
 import io
 import json
+
 import socket
 import time
 from contextlib import asynccontextmanager
@@ -73,6 +74,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from app.audio import AudioCapture, AudioStatus, list_input_devices
 from app.broadcast import CaptionBroadcaster, CaptionEvent
 from app.config import logging_cfg, network_cfg, save_audio_device, audio_cfg, save_auto_stop_timeout
+from app.events import operator_events
 from app.gemini_session import GEMINI_MODEL
 from app.gemini_session import GeminiSession, SessionStatus
 from app.glossary import GlossaryCorrector
@@ -111,6 +113,7 @@ _paused = False
 _service_start_time: float | None = None   # monotonic, set when service starts
 _billed_seconds: float = 0.0               # audio seconds sent to Gemini
 _pause_start: float | None = None          # monotonic when paused
+
 
 
 def _local_ip() -> str:
@@ -287,14 +290,16 @@ def _write_session_log() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _qr_png_cache
     cfg = network_cfg()
     port = cfg.get("port", 8000)
     public_url = cfg.get("public_url") or f"http://{_local_ip()}:{port}"
     live_url = f"{public_url}/live"
 
-    global _qr_png_cache
     _qr_png_cache = _build_qr(live_url)
     server_log.info("QR code URL: %s", live_url)
+
+    operator_events.add("success", "System started", {"port": port})
 
     async def _ping():
         while True:
@@ -445,6 +450,7 @@ async def start_service(body: dict = {}):
             await session.start()
             _state = ServiceState.RUNNING
             server_log.info("Service started")
+            operator_events.add("success", "Translation started")
         except Exception as e:
             server_log.error("Failed to start service: %s", e)
             await _teardown()
@@ -462,6 +468,7 @@ async def stop_service():
         _state = ServiceState.STOPPING
         await _teardown()
         server_log.info("Service stopped")
+        operator_events.add("gemini", "Translation stopped")
     return {"ok": True}
 
 
@@ -495,6 +502,7 @@ async def pause_service():
         _pause_start = time.monotonic()
         broadcaster._push(CaptionEvent(kind="paused"))
         server_log.info("Service paused")
+        operator_events.add("user", "Translation paused")
     return {"ok": True, "paused": _paused}
 
 
@@ -506,6 +514,7 @@ async def resume_service():
         _pause_start = None
         broadcaster._push(CaptionEvent(kind="resumed"))
         server_log.info("Service resumed")
+        operator_events.add("user", "Translation resumed")
     return {"ok": True, "paused": _paused}
 
 
@@ -531,6 +540,7 @@ session._on_state = _handle_session_state_change
 async def set_auto_stop(body: dict):
     minutes = int(body["minutes"])
     save_auto_stop_timeout(minutes)
+    operator_events.add("user", f"Auto-stop set to {minutes} min")
     return {"ok": True, "minutes": minutes}
 
 
@@ -597,6 +607,11 @@ async def get_logo():
     with open(logo_path, "rb") as f:
         content = f.read()
     return Response(content=content, media_type="image/webp")
+
+
+@app.get("/api/events")
+async def get_events(since: int = -1):
+    return {"events": operator_events.since(since), "latest_id": operator_events.latest_id}
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
@@ -1611,6 +1626,78 @@ _OPERATOR_HTML = """<!DOCTYPE html>
     width: 100%;
     text-decoration: underline;
   }
+
+  /* Status strip */
+  #status-strip {
+    background: var(--color-navy-800);
+    border-bottom: 2px solid var(--color-navy-700);
+    padding: 6px 20px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    overflow: visible;
+    position: relative;
+    z-index: 50;
+  }
+  .ss-item {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: var(--color-navy-700);
+    color: #8fa3bc;
+    transition: background 0.3s, color 0.3s;
+    position: relative;
+    cursor: help;
+  }
+  .ss-ok   { background: #14532d; color: #86efac; }
+  .ss-warn { background: #713f12; color: #fde68a; }
+  .ss-err  { background: #7f1d1d; color: #fca5a5; }
+  /* Tooltip for status strip — opens downward since strip is at top of page */
+  .ss-item .ss-tip {
+    visibility: hidden;
+    opacity: 0;
+    width: 220px;
+    background: var(--color-navy-900);
+    color: #fff;
+    font-size: 12px;
+    font-weight: normal;
+    line-height: 1.5;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--color-gold-500);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    transition: opacity 0.2s;
+    white-space: normal;
+    pointer-events: none;
+  }
+  .ss-item .ss-tip::before {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: transparent transparent var(--color-navy-900) transparent;
+  }
+  .ss-item:hover .ss-tip { visibility: visible; opacity: 1; }
+
+  /* Event log expandable entries */
+  .log-entry { padding: 3px 0; border-bottom: 1px dotted var(--color-warm-100); }
+  .log-entry.has-details { cursor: pointer; }
+  .log-details { display: none; padding: 3px 0 3px 18px; font-size: 11px;
+                 color: var(--color-text-muted); line-height: 1.5; }
+  .log-details.open { display: block; }
 </style>
 </head>
 <body>
@@ -1638,6 +1725,52 @@ _OPERATOR_HTML = """<!DOCTYPE html>
     <span id="hdr-badge" class="badge badge-gray">Stopped</span>
   </div>
 </header>
+
+<div id="status-strip">
+  <div class="ss-item" id="ss-audio">🔵 Audio
+    <span class="ss-tip">
+      <strong>Audio (USB Mixer)</strong><br>
+      🟢 Signal detected<br>
+      🟡 No signal — mic may be muted or disconnected<br>
+      🔴 Device disconnected — check USB cable<br>
+      🔵 Service not started
+    </span>
+  </div>
+  <div class="ss-item" id="ss-gemini">🔵 Gemini
+    <span class="ss-tip">
+      <strong>Gemini AI Session</strong><br>
+      🟢 Connected and translating<br>
+      🟡 Reconnecting — translation will resume<br>
+      🔴 Failed — check internet or restart<br>
+      🔵 Service not started
+    </span>
+  </div>
+  <div class="ss-item" id="ss-internet">🔵 Internet
+    <span class="ss-tip">
+      <strong>Internet / Google API</strong><br>
+      🟢 Reachable<br>
+      🟡 Reconnecting to Google servers<br>
+      🔴 Cannot reach Google — check Wi-Fi<br>
+      🔵 Service not started
+    </span>
+  </div>
+  <div class="ss-item" id="ss-translation">🔵 Translation
+    <span class="ss-tip">
+      <strong>Translation Pipeline</strong><br>
+      🟢 Live — captions flowing to attendees<br>
+      🟡 Starting up or paused<br>
+      🔴 Error — restart the service<br>
+      🔵 Stopped
+    </span>
+  </div>
+  <div class="ss-item ss-ok">🟢 Web Server
+    <span class="ss-tip">
+      <strong>Web Server</strong><br>
+      🟢 Running — attendees can connect<br>
+      (If you see this page, the server is up)
+    </span>
+  </div>
+</div>
 
 <main>
 
@@ -1761,7 +1894,7 @@ _OPERATOR_HTML = """<!DOCTYPE html>
         이벤트 로그 (Event Log) <span class="chevron">▼</span>
       </h2>
       <div class="card-body hidden" id="log-body">
-        <div id="log"><div class="log-entry" style="color:var(--color-text-muted)">No events yet…</div></div>
+        <div id="log"><div class="log-placeholder" style="color:var(--color-text-muted); padding:3px 0;">No events yet…</div></div>
       </div>
     </div>
 
@@ -1782,8 +1915,10 @@ _OPERATOR_HTML = """<!DOCTYPE html>
 <script>
 let polling = null;
 let captionEs = null;
-let lastEvent = '';
 let hasInitializedAutoStop = false;
+let lastEventId = -1;
+let userScrolledUp = false;
+let eventPollTimer = null;
 
 const btnStart = document.getElementById('btn-start');
 const btnPause = document.getElementById('btn-pause');
@@ -2039,12 +2174,60 @@ function fmtRuntime(s) {
   return Math.floor(s/60) + ':' + String(Math.floor(s%60)).padStart(2,'0');
 }
 
-function addLog(msg) {
+// ── Event log (polls /api/events) ────────────────────────────────────────────
+logEl.addEventListener('scroll', () => {
+  const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 10;
+  userScrolledUp = !atBottom;
+});
+
+function fmtTs(ts) {
+  return new Date(ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+
+function appendLogEvent(ev) {
+  const placeholder = logEl.querySelector('.log-placeholder');
+  if (placeholder) placeholder.remove();
+
+  const hasDetails = ev.details && Object.keys(ev.details).length > 0;
   const d = document.createElement('div');
-  d.className = 'log-entry';
-  d.textContent = new Date().toLocaleTimeString() + ' — ' + msg;
-  logEl.prepend(d);
-  while (logEl.children.length > 100) logEl.removeChild(logEl.lastChild);
+  d.className = 'log-entry' + (hasDetails ? ' has-details' : '');
+
+  const mainLine = document.createElement('div');
+  mainLine.textContent = fmtTs(ev.ts) + ' ' + ev.icon + ' ' + ev.message +
+                         (hasDetails ? ' ▸' : '');
+  d.appendChild(mainLine);
+
+  if (hasDetails) {
+    const dd = document.createElement('div');
+    dd.className = 'log-details';
+    for (const [k, v] of Object.entries(ev.details)) {
+      const row = document.createElement('div');
+      row.textContent = k + ': ' + v;
+      dd.appendChild(row);
+    }
+    d.appendChild(dd);
+    d.addEventListener('click', () => dd.classList.toggle('open'));
+  }
+
+  logEl.appendChild(d);
+  while (logEl.children.length > 50) logEl.removeChild(logEl.firstChild);
+  if (!userScrolledUp) logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function pollEvents() {
+  try {
+    const data = await fetch('/api/events?since=' + lastEventId).then(r => r.json());
+    if (data.events && data.events.length > 0) {
+      data.events.forEach(appendLogEvent);
+      lastEventId = data.latest_id;
+    }
+  } catch { /* network error — skip */ }
+}
+
+function startEventPoll() {
+  if (eventPollTimer) clearInterval(eventPollTimer);
+  pollEvents();
+  eventPollTimer = setInterval(pollEvents, 1500);
 }
 
 function startStatusPoll() {
@@ -2080,10 +2263,28 @@ function startStatusPoll() {
       document.getElementById('stat-cost').textContent = '$' + st.cost_usd.toFixed(4);
     }
 
-    if (st.session.last_event && st.session.last_event !== lastEvent) {
-      addLog(st.session.last_event);
-      lastEvent = st.session.last_event;
+    // ── Status strip ──────────────────────────────────────────────────────────
+    function ssSet(id, cls, label) {
+      const el = document.getElementById(id);
+      el.className = 'ss-item ' + cls;
+      // Update only the leading text node — leave the .ss-tip child span intact
+      for (const node of el.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE) { node.textContent = label + ' '; return; }
+      }
+      el.insertBefore(document.createTextNode(label + ' '), el.firstChild);
     }
+    const audioMap = {connected:['ss-ok','🟢 Audio'], no_signal:['ss-warn','🟡 Audio'], disconnected:['ss-err','🔴 Audio'], stopped:['','🔵 Audio']};
+    ssSet('ss-audio', ...(audioMap[st.audio.status] || ['','🔵 Audio']));
+    const geminiMap = {connected:['ss-ok','🟢 Gemini'], reconnecting:['ss-warn','🟡 Gemini'], connecting:['ss-warn','🟡 Gemini'], failed:['ss-err','🔴 Gemini'], stopped:['','🔵 Gemini']};
+    ssSet('ss-gemini', ...(geminiMap[st.session.status] || ['','🔵 Gemini']));
+    if (st.session.status === 'connected') ssSet('ss-internet', 'ss-ok', '🟢 Internet');
+    else if (st.session.status === 'reconnecting') ssSet('ss-internet', 'ss-warn', '🟡 Internet');
+    else if (st.session.status === 'failed') ssSet('ss-internet', 'ss-err', '🔴 Internet');
+    else ssSet('ss-internet', '', '🔵 Internet');
+    if (st.state === 'running' && st.session.status === 'connected') ssSet('ss-translation', 'ss-ok', '🟢 Translation');
+    else if (st.state === 'starting' || st.paused) ssSet('ss-translation', 'ss-warn', '🟡 Translation');
+    else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'ss-err', '🔴 Translation');
+    else ssSet('ss-translation', '', '🔵 Translation');
 
     const badge = document.getElementById('hdr-badge');
     if (!st.service_running) {
@@ -2170,14 +2371,13 @@ document.getElementById('auto-stop-select').addEventListener('change', async (e)
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ minutes: mins })
     });
-    addLog(`Auto-Stop Timeout updated to ${mins === 0 ? 'Disabled' : mins + ' min'}`);
-  } catch (err) {
-    addLog('Failed to update Auto-Stop Timeout');
-  }
+  } catch (err) { /* event will still appear via backend operator_events */ }
 });
 
 loadDevices();
 startStatusPoll();
+startEventPoll();
 </script>
 </body>
 </html>"""
+

@@ -10,14 +10,15 @@ This document explains how each core component of the system is implemented at t
 ## 📌 Table of Contents
 1. [End-to-End Data Flow](#1-end-to-end-data-flow)
 2. [FastAPI Server Structure](#2-fastapi-server-structure)
-3. [Gemini Live API Session](#3-gemini-live-api-session)
-4. [Audio Capture Pipeline](#4-audio-capture-pipeline)
-5. [SSE Caption Broadcast](#5-sse-caption-broadcast)
-6. [Web Audio API Real-Time Playback](#6-web-audio-api-real-time-playback)
-7. [Caption Commit Strategy](#7-caption-commit-strategy)
-8. [Glossary Correction Pass](#8-glossary-correction-pass)
-9. [Asyncio Patterns Summary](#9-asyncio-patterns-summary)
-10. [Extension Guide](#10-extension-guide)
+3. [Operator Event Log](#3-operator-event-log)
+4. [Gemini Live API Session](#4-gemini-live-api-session)
+5. [Audio Capture Pipeline](#5-audio-capture-pipeline)
+6. [SSE Caption Broadcast](#6-sse-caption-broadcast)
+7. [Web Audio API Real-Time Playback](#7-web-audio-api-real-time-playback)
+8. [Caption Commit Strategy](#8-caption-commit-strategy)
+9. [Glossary Correction Pass](#9-glossary-correction-pass)
+10. [Asyncio Patterns Summary](#10-asyncio-patterns-summary)
+11. [Extension Guide](#11-extension-guide)
 
 ---
 
@@ -86,6 +87,7 @@ Two global singletons persist for the server's lifetime:
 | `POST /api/stop` | HTTP | JSON | Stop pipeline + write log |
 | `POST /api/pause` | HTTP | JSON | Pause mic + billing |
 | `POST /api/resume` | HTTP | JSON | Resume from pause |
+| `GET /api/events?since=N` | HTTP | JSON | Incremental operator event poll |
 
 ### SSE Endpoint Pattern
 
@@ -137,7 +139,62 @@ All HTML is defined as Python strings inside `server.py`. No template engine is 
 
 ---
 
-## 3. Gemini Live API Session
+## 3. Operator Event Log
+
+`app/events.py` — `OperatorEventLog`
+
+### Purpose
+Separates operator-facing events (Gemini connected, attendee joined, etc.) from developer logs (rotating files `ops.log`/`session.log`). Volunteers see structured events in the dashboard; developers see raw logs at `/admin/logs`.
+
+### Implementation
+
+```python
+class OperatorEventLog:
+    def __init__(self, maxlen=50):
+        self._deque = deque(maxlen=maxlen)   # ring buffer — oldest auto-evicted
+        self._lock = threading.Lock()        # shared: audio thread + asyncio
+        self._next_id = 0
+
+    def add(self, category, message, details=None):
+        with self._lock:
+            event = {"id": self._next_id, "ts": time.time(),
+                     "category": category, "icon": CATEGORY_ICONS[category],
+                     "message": message, "details": details or {}}
+            self._deque.append(event)
+            self._next_id += 1
+
+    def since(self, last_id):
+        with self._lock:
+            return [e for e in self._deque if e["id"] > last_id]
+```
+
+`threading.Lock` is used (not `asyncio.Lock`) because `app/audio.py` runs in a dedicated thread while the server runs in asyncio.
+
+### Categories
+
+| Category | Icon | When fired |
+|----------|------|------------|
+| `success` | 🟢 | Gemini connected, system started |
+| `audio` | 🔵 | Audio device connected, signal restored |
+| `gemini` | 🟣 | Session start/stop, connecting |
+| `network` | 🟡 | Reconnect attempt, GoAway |
+| `user` | 👤 | Attendee join/leave, pause/resume |
+| `warning` | ⚠️ | No signal detected |
+| `error` | 🔴 | Device disconnected, max retries exceeded |
+
+### `/api/events` Endpoint
+
+```python
+@app.get("/api/events")
+async def get_events(since: int = -1):
+    return {"events": operator_events.since(since), "latest_id": operator_events.latest_id}
+```
+
+The frontend polls this every 1.5s with `since=lastEventId`. On each response it appends new events and advances `lastEventId`. The DOM is trimmed to 50 entries.
+
+---
+
+## 4. Gemini Live API Session
 
 ### Connection Config (`_build_config`)
 
@@ -216,7 +273,7 @@ If `_resumption_handle` is set, the next connect call passes it to `SessionResum
 
 ---
 
-## 4. Audio Capture Pipeline
+## 5. Audio Capture Pipeline
 
 ### PCM Format Chain
 
@@ -255,7 +312,7 @@ Computed every 100ms (10 Hz). Sustained readings below `-60 dBFS` trigger the `N
 
 ---
 
-## 5. SSE Caption Broadcast
+## 6. SSE Caption Broadcast
 
 ### Event Types
 
@@ -286,7 +343,7 @@ Each client has an independent queue, so a slow client cannot block a fast one.
 
 ---
 
-## 6. Web Audio API Real-Time Playback
+## 7. Web Audio API Real-Time Playback
 
 ### Server → Browser Flow
 
@@ -332,7 +389,7 @@ iOS Safari requires a user gesture (tap) before `AudioContext` can be created �
 
 ---
 
-## 7. Caption Commit Strategy
+## 8. Caption Commit Strategy
 
 How the system decides when a streaming line is "done" and ready to display permanently.
 
@@ -358,7 +415,7 @@ Gemini fires `turn_complete` on every filler utterance ("um", "uh") in Korean se
 
 ---
 
-## 8. Glossary Correction Pass
+## 9. Glossary Correction Pass
 
 `app/glossary.py` + `config/glossary.yaml`
 
@@ -394,7 +451,7 @@ Set `enabled: true/false` per category in `config/glossary.yaml`:
 
 ---
 
-## 9. Asyncio Patterns Summary
+## 10. Asyncio Patterns Summary
 
 ### Task Structure Inside a Session
 
@@ -427,7 +484,7 @@ _run_session() contains:
 
 ---
 
-## 10. Extension Guide
+## 11. Extension Guide
 
 ### Adding a New REST Endpoint
 
