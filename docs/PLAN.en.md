@@ -227,3 +227,9 @@ logging:
 - Deploy `main.py` to a small cloud VM (Google Cloud Run, Railway, or a VPS).
 - Audio cannot be captured in the cloud — the PC captures audio and POSTs PCM chunks to the cloud server via a lightweight WebSocket.
 - The cloud server pipes audio into Gemini Live and fans SSE captions out to all attendees globally.
+
+### Phase 18 — Parallel session handoff on GoAway (Lever 2 reconnect optimization)
+- Overlap the old session with the new session to achieve a near-zero reconnect gap.
+- Upon receiving a `GoAway` warning (utilizing `time_left` if available in the SDK response), spin up a new parallel `GeminiSession` in the background.
+- Keep feeding audio to the old session until the new session's connection is fully established.
+- Instantly swap the active session reference and teardown the old session, reducing caption delivery latency during reconnects to effectively zero.

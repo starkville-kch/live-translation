@@ -60,7 +60,7 @@ from google.genai import types
 
 from app.config import gemini_api_key, gemini_model, save_gemini_model
 from app.events import operator_events
-from app.logger import session_log
+from app.logger import session_log, server_log
 
 def _model_rank(name: str) -> tuple:
     """Sort key: translate models first, then by version number descending, stable > preview."""
@@ -264,7 +264,8 @@ class GeminiSession:
                     event_msg = "Connecting to Gemini"
                     operator_events.add("gemini", "Connecting to Gemini")
                 self._emit(status=status, last_event=event_msg, reconnect_count=self._attempt)
-                session_log.info(event_msg)
+                server_log.info(event_msg)
+                session_log.debug(event_msg)
 
                 await self._run_session(is_reconnect=(self._attempt > 0 or is_resume))
                 self._attempt = 0  # reset on clean run completion
@@ -272,7 +273,8 @@ class GeminiSession:
                     return
 
             except asyncio.CancelledError:
-                session_log.info("Retry loop cancelled — exiting cleanly")
+                server_log.info("Retry loop cancelled — exiting cleanly")
+                session_log.debug("Retry loop cancelled — exiting cleanly")
                 raise  # must re-raise, never swallow
 
             except Exception as e:
@@ -283,12 +285,13 @@ class GeminiSession:
                 is_goaway = "GoAway" in str(e)
                 if is_goaway:
                     delay = 0.2
-                    session_log.info("GoAway received — reconnecting immediately in %.1fs", delay)
+                    server_log.info("GoAway received — reconnecting immediately in %.1fs", delay)
+                    session_log.debug("GoAway received — reconnecting immediately in %.1fs", delay)
                 else:
                     self._attempt += 1
                     if self._attempt >= MAX_RECONNECT_ATTEMPTS:
-                        session_log.error(
-                            "Max reconnect attempts reached — translation unavailable")
+                        server_log.error("Max reconnect attempts reached — translation unavailable")
+                        session_log.debug("Max reconnect attempts reached — translation unavailable")
                         self._emit(
                             status=SessionStatus.FAILED,
                             last_event=f"Translation unavailable: {e}",
@@ -298,7 +301,11 @@ class GeminiSession:
                                             {"error": str(e), "attempts": self._attempt})
                         return
                     delay = min(RECONNECT_BASE_DELAY * (2 ** (self._attempt - 1)), MAX_BACKOFF_SECONDS)
-                    session_log.warning(
+                    server_log.warning(
+                        "Session error (attempt %d): %s — retrying in %.1fs",
+                        self._attempt, e, delay
+                    )
+                    session_log.debug(
                         "Session error (attempt %d): %s — retrying in %.1fs",
                         self._attempt, e, delay
                     )
@@ -356,7 +363,12 @@ class GeminiSession:
         config = self._build_config()
         is_resuming = self._resumption_handle is not None
 
-        session_log.info(
+        server_log.info(
+            "Reconnect attempt: resumption_handle_present=%s handle_value=%r",
+            is_resuming,
+            self._resumption_handle
+        )
+        session_log.debug(
             "Reconnect attempt: resumption_handle_present=%s handle_value=%r",
             is_resuming,
             self._resumption_handle
@@ -370,8 +382,10 @@ class GeminiSession:
                 self._emit(status=SessionStatus.CONNECTED, last_event="Session connected",
                            reconnect_count=self._attempt)
                 operator_events.add("success", "Gemini connected", {"model": GEMINI_MODEL})
-                session_log.info("Gemini session connected (model=%s, resume=%s)",
-                                 GEMINI_MODEL, is_resuming)
+                server_log.info("Gemini session connected (model=%s, resume=%s)",
+                                GEMINI_MODEL, is_resuming)
+                session_log.debug("Gemini session connected (model=%s, resume=%s)",
+                                  GEMINI_MODEL, is_resuming)
                 self._resumption_handle = None  # consumed
 
                 if is_reconnect and not is_resuming:
@@ -409,7 +423,13 @@ class GeminiSession:
         except Exception as e:
             if "1000" in str(e) and self._stop_event.is_set():
                 return
-            session_log.error(
+            server_log.error(
+                "SESSION_FAILURE: type=%s close_code=%s message=%s",
+                type(e).__name__,
+                getattr(e, 'code', 'unknown'),
+                str(e)
+            )
+            session_log.debug(
                 "SESSION_FAILURE: type=%s close_code=%s message=%s",
                 type(e).__name__,
                 getattr(e, 'code', 'unknown'),
@@ -449,8 +469,8 @@ class GeminiSession:
 
                 # GoAway — reconnect before the connection actually drops
                 if hasattr(response, "go_away") and response.go_away:
-                    session_log.info(
-                        "GoAway received — initiating graceful reconnect")
+                    server_log.info("GoAway received — initiating graceful reconnect")
+                    session_log.debug("GoAway received — initiating graceful reconnect")
                     self._emit(last_event="GoAway: reconnecting")
                     operator_events.add("network", "GoAway — reconnecting")
                     raise RuntimeError("GoAway")
