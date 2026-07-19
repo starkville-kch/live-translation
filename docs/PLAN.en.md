@@ -81,7 +81,9 @@ Windows PC (this app)
 - One Gemini session for the entire 60–90 min service.
 - `SessionResumptionConfig` mandatory — without it the WebSocket drops every ~10 min.
 - `SlidingWindow` context compression mandatory — audio sessions cap at ~15 min otherwise.
-- GoAway messages trigger immediate reconnect before the connection actually drops.
+- **GoAway session cycles (~9-minute and ~27-minute boundaries)**: Gemini Live translate sessions issue a `GoAway` signal approximately every 9 minutes (commonly observed at ~8-10m and ~27m boundaries). This is now handled transparently by the resumption/retry logic, resetting the retry count on each successful reconnect to avoid budget exhaustion.
+- **Retry reset on success**: The session reconnection attempt counter (`self._attempt`) is reset to 0 upon successful connection. This prevents regular GoAway reconnects from exhausting the retry budget.
+- **Bounded auto-restart pipeline**: If the Gemini session fails permanently, `server.py` runs a bounded recovery loop (3 attempts: 2s, 5s, 15s) with a frontend warning status chime/flash before entering a terminal FAILED state.
 
 ### Caption UX
 - Current line replaced in-place as tokens stream in (no flickering append).
@@ -183,7 +185,8 @@ Windows PC (this app)
 | 12 | Translation model 3-round benchmark: `gemini-3.5-live-translate-preview` confirmed optimal | ✅ Done |
 | 13 | Single executable: PyInstaller ~70MB exe, `SKC_translation.spec`, `build_exe.bat` | ✅ Done |
 | 14 | Operator event log (`app/events.py`), status strip, `/api/events`, `/admin/logs` developer diagnostics | ✅ Done |
-| V0–V5 | Verification protocol | ✅ All passed |
+| 15 | Bounded auto-recovery loop, detailed close reason logging, operator warning alerts, and 27-min GoAway root cause resolution | ✅ Done |
+| V0–V5, V14–V18 | Verification protocol | ✅ All passed |
 
 ---
 
@@ -214,13 +217,13 @@ logging:
 
 ## 8. Future Phases
 
-### Phase 15 — Multi-language simultaneous interpretation (Chinese, etc.)
+### Phase 16 — Multi-language simultaneous interpretation (Chinese, etc.)
 - The Gemini Live translate model currently exposes one `target_language_code` per session.
 - Supporting two languages simultaneously requires two parallel `GeminiSession` instances — one targeting `"en"`, one targeting `"zh"`.
 - Each session receives the same microphone audio (duplicate the `_pipe` coroutine).
 - The attendee page (`/live`) would need a language selector switching between `/stream?lang=en` and `/stream?lang=zh`.
 
-### Phase 16 — Cloud deployment for remote attendees
+### Phase 17 — Cloud deployment for remote attendees
 - Deploy `main.py` to a small cloud VM (Google Cloud Run, Railway, or a VPS).
 - Audio cannot be captured in the cloud — the PC captures audio and POSTs PCM chunks to the cloud server via a lightweight WebSocket.
 - The cloud server pipes audio into Gemini Live and fans SSE captions out to all attendees globally.

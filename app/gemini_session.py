@@ -152,6 +152,7 @@ class GeminiSession:
         self._glossary = glossary
         self._state = SessionState()
         self._stop_event = asyncio.Event()
+        self._attempt = 0
         self._resumption_handle: str | None = None
         self._audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=500)
         self._task: asyncio.Task | None = None
@@ -246,27 +247,27 @@ class GeminiSession:
             pass  # drop under backpressure rather than stall
 
     async def _run_with_retry(self) -> None:
-        attempt = 0
+        self._attempt = 0
         MAX_BACKOFF_SECONDS = 60.0
         while not self._stop_event.is_set():
             try:
                 is_resume = self._resumption_handle is not None
-                if attempt > 0 or is_resume:
+                if self._attempt > 0 or is_resume:
                     status = SessionStatus.RECONNECTING
-                    event_msg = f"Reconnecting (attempt {attempt})" if attempt > 0 else "Reconnecting (resuming session)"
-                    if attempt > 0:
-                        operator_events.add("network", f"Reconnecting to Gemini (attempt {attempt})", {"attempt": attempt})
+                    event_msg = f"Reconnecting (attempt {self._attempt})" if self._attempt > 0 else "Reconnecting (resuming session)"
+                    if self._attempt > 0:
+                        operator_events.add("network", f"Reconnecting to Gemini (attempt {self._attempt})", {"attempt": self._attempt})
                     else:
                         operator_events.add("gemini", "Resuming Gemini session")
                 else:
                     status = SessionStatus.CONNECTING
                     event_msg = "Connecting to Gemini"
                     operator_events.add("gemini", "Connecting to Gemini")
-                self._emit(status=status, last_event=event_msg)
+                self._emit(status=status, last_event=event_msg, reconnect_count=self._attempt)
                 session_log.info(event_msg)
 
-                await self._run_session()
-                attempt = 0  # reset on clean run completion
+                await self._run_session(is_reconnect=(self._attempt > 0 or is_resume))
+                self._attempt = 0  # reset on clean run completion
                 if self._stop_event.is_set():
                     return
 
@@ -278,22 +279,29 @@ class GeminiSession:
                 # 1000 = clean WebSocket close (triggered by our own stop()); not a real error
                 if "1000" in str(e) and self._stop_event.is_set():
                     return
-                attempt += 1
-                if attempt >= MAX_RECONNECT_ATTEMPTS:
-                    session_log.error(
-                        "Max reconnect attempts reached — translation unavailable")
-                    self._emit(
-                        status=SessionStatus.FAILED,
-                        last_event=f"Translation unavailable: {e}",
+
+                is_goaway = "GoAway" in str(e)
+                if is_goaway:
+                    delay = 0.2
+                    session_log.info("GoAway received — reconnecting immediately in %.1fs", delay)
+                else:
+                    self._attempt += 1
+                    if self._attempt >= MAX_RECONNECT_ATTEMPTS:
+                        session_log.error(
+                            "Max reconnect attempts reached — translation unavailable")
+                        self._emit(
+                            status=SessionStatus.FAILED,
+                            last_event=f"Translation unavailable: {e}",
+                            reconnect_count=self._attempt
+                        )
+                        operator_events.add("error", "Gemini failed: max reconnects reached",
+                                            {"error": str(e), "attempts": self._attempt})
+                        return
+                    delay = min(RECONNECT_BASE_DELAY * (2 ** (self._attempt - 1)), MAX_BACKOFF_SECONDS)
+                    session_log.warning(
+                        "Session error (attempt %d): %s — retrying in %.1fs",
+                        self._attempt, e, delay
                     )
-                    operator_events.add("error", "Gemini failed: max reconnects reached",
-                                        {"error": str(e), "attempts": attempt})
-                    return
-                delay = min(RECONNECT_BASE_DELAY * (2 ** (attempt - 1)), MAX_BACKOFF_SECONDS)
-                session_log.warning(
-                    "Session error (attempt %d): %s — retrying in %.1fs",
-                    attempt, e, delay
-                )
                 try:
                     await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
                 except asyncio.TimeoutError:
@@ -344,48 +352,70 @@ class GeminiSession:
                 ),
             )
 
-    async def _run_session(self) -> None:
+    async def _run_session(self, is_reconnect: bool) -> None:
         config = self._build_config()
+        is_resuming = self._resumption_handle is not None
 
-        async with self._client.aio.live.connect(
-            model=GEMINI_MODEL, config=config
-        ) as session:
-            self._emit(status=SessionStatus.CONNECTED, last_event="Session connected",
-                       reconnect_count=self._state.reconnect_count)
-            operator_events.add("success", "Gemini connected", {"model": GEMINI_MODEL})
-            session_log.info("Gemini session connected (model=%s, resume=%s)",
-                             GEMINI_MODEL, bool(self._resumption_handle))
-            self._resumption_handle = None  # consumed
+        session_log.info(
+            "Reconnect attempt: resumption_handle_present=%s handle_value=%r",
+            is_resuming,
+            self._resumption_handle
+        )
 
-            send_task = asyncio.create_task(self._send_loop(session))
-            recv_task = asyncio.create_task(self._recv_loop(session))
-            commit_task = asyncio.create_task(self._auto_commit_loop())
-            stop_task = asyncio.create_task(self._stop_event.wait())
+        try:
+            async with self._client.aio.live.connect(
+                model=GEMINI_MODEL, config=config
+            ) as session:
+                self._attempt = 0
+                self._emit(status=SessionStatus.CONNECTED, last_event="Session connected",
+                           reconnect_count=self._attempt)
+                operator_events.add("success", "Gemini connected", {"model": GEMINI_MODEL})
+                session_log.info("Gemini session connected (model=%s, resume=%s)",
+                                 GEMINI_MODEL, is_resuming)
+                self._resumption_handle = None  # consumed
 
-            done: set = set()
-            try:
-                done, pending = await asyncio.wait(
-                    [send_task, recv_task, commit_task, stop_task],
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                for t in pending:
-                    t.cancel()
-                    try:
-                        await t
-                    except (asyncio.CancelledError, Exception):
-                        pass
-            finally:
-                for t in [send_task, recv_task, commit_task, stop_task]:
-                    if not t.done():
+                if is_reconnect and not is_resuming:
+                    operator_events.add("warning", "Reconnected without session resumption — context lost")
+
+                send_task = asyncio.create_task(self._send_loop(session))
+                recv_task = asyncio.create_task(self._recv_loop(session))
+                commit_task = asyncio.create_task(self._auto_commit_loop())
+                stop_task = asyncio.create_task(self._stop_event.wait())
+
+                done: set = set()
+                try:
+                    done, pending = await asyncio.wait(
+                        [send_task, recv_task, commit_task, stop_task],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for t in pending:
                         t.cancel()
+                        try:
+                            await t
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                finally:
+                    for t in [send_task, recv_task, commit_task, stop_task]:
+                        if not t.done():
+                            t.cancel()
 
-            # Re-raise exception from recv only if it's not a clean stop
-            for t in done:
-                if t != stop_task and not t.cancelled() and t.exception():
-                    ex = t.exception()
-                    if "1000" in str(ex) and self._stop_event.is_set():
-                        continue
-                    raise ex
+                # Re-raise exception from recv only if it's not a clean stop
+                for t in done:
+                    if t != stop_task and not t.cancelled() and t.exception():
+                        ex = t.exception()
+                        if "1000" in str(ex) and self._stop_event.is_set():
+                            continue
+                        raise ex
+        except Exception as e:
+            if "1000" in str(e) and self._stop_event.is_set():
+                return
+            session_log.error(
+                "SESSION_FAILURE: type=%s close_code=%s message=%s",
+                type(e).__name__,
+                getattr(e, 'code', 'unknown'),
+                str(e)
+            )
+            raise e
 
     async def _send_loop(self, session) -> None:
         try:

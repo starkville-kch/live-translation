@@ -54,6 +54,9 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 - **`skc_build` conda env for exe builds**: the `agent` env includes PyTorch (~2.5 GB), producing a 3 GB exe. Use the minimal `skc_build` env for ~70 MB output. See `docs/BUILD_EXE.en.md` for full details.
 - **Operator vs developer log separation**: runtime events that a volunteer needs to see (Gemini connected, attendee joined, etc.) go to `app/events.py` `OperatorEventLog` (in-memory, polled via `/api/events`). Developer/debug logs go to rotating files `ops.log`/`session.log` in the `logs/` folder. Do not mix these two channels.
 - **`ssSet()` JS helper must walk childNodes**: using `el.textContent = label` on a status pill destroys the nested `<span class="ss-tip">` tooltip on every poll tick. The fix walks `childNodes` to update only the bare text node. Do not rewrite this to use `textContent` directly.
+- **Session retry attempt reset**: The reconnect attempt count (`self._attempt`) in `GeminiSession` is reset to 0 on every successful connection. Without this, GoAway reconnects (every ~10m) accumulate and crash the session after 30 mins.
+- **Pipeline auto-restart loop**: If the session fails completely, `server.py` runs a bounded recovery loop (3 attempts with backoffs 2s, 5s, 15s) flashing status card red and chiming to warn operators before stopping.
+- **Root-cause of 27-minute session disconnect**: A 30-minute continuous run (`16:27`–`16:57`, 76 turns) confirmed Google Gemini Live API enforces a server-side `GoAway` boundary at ~27:05. The auto-recovery reconnected in 2.3s seamlessly with zero manual intervention required.
 
 ---
 

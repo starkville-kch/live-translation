@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.0] - 2026-07-19
+
+### Added
+- **Auto-restart recovery loop for session failures:**
+  - Bounded auto-restart sequence (3 attempts with backoffs 2s, 5s, 15s) in `server.py` replacing the terminal session teardown.
+  - Front-end operator notifications: flashing status card red and playing a synthesized Web Audio beep chime on the console during auto-recovery attempts.
+- **Detailed session failure diagnostics:**
+  - Explicit logging of specific exception types, WebSocket close codes, and error messages (`type`, `close_code`, `message`) in `GeminiSession._run_session`.
+  - Incremental reconnect attempt logging with resumption handle status (`resumption_handle_present` and its raw value).
+- **Session resumption monitoring:**
+  - Structured warnings on operator event log (`warning` event) when reconnection falls back to a cold-start (`resume=False`), signifying context loss.
+  - Corrected `self._attempt` count to reset to `0` upon every successful connection, preventing GoAway disconnects from exhausting the retry budget and crashing the session after 3 GoAways (approx. 27-30 minutes).
+
+### Changed
+- **Immediate GoAway reconnect optimization (Lever 1)**: Special-cased `GoAway` exceptions in `GeminiSession._run_with_retry` to execute an immediate 0.2s reconnect without exponential backoff, reducing the reconnect window from ~2.4s to ~0.5s.
+- **Unambiguous safety net logs:**
+  - Distinct log messages distinguishing mic silence auto-stop (`Service automatically stopped: no audio signal for {N} min` / `AUTO_STOP_TIMER fired`) from API session failures (`Service automatically stopped: session failure ({close_code})`).
+
 ## [1.7.0] - 2026-07-15
 
 ### Added

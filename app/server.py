@@ -113,6 +113,9 @@ _paused = False
 _service_start_time: float | None = None   # monotonic, set when service starts
 _billed_seconds: float = 0.0               # audio seconds sent to Gemini
 _pause_start: float | None = None          # monotonic when paused
+_auto_restart_attempt = 0
+_auto_restart_reason = ""
+_auto_restart_task: asyncio.Task | None = None
 
 
 
@@ -403,10 +406,13 @@ async def _auto_stop_check():
             if silence_start is None:
                 silence_start = time.monotonic()
             elif time.monotonic() - silence_start >= (timeout_min * 60.0):
-                server_log.info(
-                    "No mic signal detected for %d minutes. Stopping service automatically.",
-                    timeout_min
+                elapsed_min = (time.monotonic() - silence_start) / 60.0
+                server_log.warning(
+                    "AUTO_STOP_TIMER fired: elapsed=%.2fmin configured_limit=%dmin",
+                    elapsed_min, timeout_min
                 )
+                server_log.warning("Service automatically stopped: no audio signal for %d min", timeout_min)
+                operator_events.add("warning", f"Auto-stop: no audio signal for {timeout_min} min")
                 await stop_service()
                 break
         else:
@@ -414,8 +420,15 @@ async def _auto_stop_check():
 
 
 @app.post("/api/start")
-async def start_service(body: dict = {}):
+async def start_service(body: dict = {}, from_auto_restart: bool = False):
     global _state, _paused, _service_start_time, _billed_seconds, _pause_start
+    global _auto_restart_task, _auto_restart_attempt, _auto_restart_reason
+    if not from_auto_restart:
+        if _auto_restart_task and not _auto_restart_task.done():
+            _auto_restart_task.cancel()
+            _auto_restart_task = None
+        _auto_restart_attempt = 0
+        _auto_restart_reason = ""
     async with _state_lock:
         if _state in (ServiceState.RUNNING, ServiceState.STARTING):
             server_log.warning("start_service called while service is already running. Ignoring.")
@@ -461,7 +474,12 @@ async def start_service(body: dict = {}):
 
 @app.post("/api/stop")
 async def stop_service():
-    global _state
+    global _state, _auto_restart_task, _auto_restart_attempt, _auto_restart_reason
+    if _auto_restart_task and not _auto_restart_task.done():
+        _auto_restart_task.cancel()
+        _auto_restart_task = None
+    _auto_restart_attempt = 0
+    _auto_restart_reason = ""
     async with _state_lock:
         if _state in (ServiceState.STOPPED, ServiceState.STOPPING):
             return {"ok": True, "info": "Service already stopped"}
@@ -518,19 +536,63 @@ async def resume_service():
     return {"ok": True, "paused": _paused}
 
 
-async def _auto_stop_on_failure():
-    global _state
-    async with _state_lock:
-        if _state == ServiceState.RUNNING:
-            _state = ServiceState.STOPPING
-            await _teardown()
-            server_log.info("Service automatically stopped after session failure")
+async def _auto_stop_on_failure(reason: str):
+    global _state, _auto_restart_attempt, _auto_restart_reason
+    MAX_AUTO_RESTART_ATTEMPTS = 3
+    AUTO_RESTART_BACKOFF_SEC = [2, 5, 15]
+    
+    try:
+        server_log.warning("SESSION_FAILURE trigger: pipeline auto-restart loop initiated. Reason: %s", reason)
+        operator_events.add("error", f"Session failure: {reason}")
+        
+        # 1. Teardown and export the current session transcript
+        async with _state_lock:
+            if _state == ServiceState.RUNNING:
+                _state = ServiceState.STOPPING
+                await _teardown()
+                server_log.warning("Service automatically stopped: session failure (%s)", reason)
+        
+        # 2. Run the bounded auto-restart loop
+        _auto_restart_reason = reason
+        for attempt, backoff in enumerate(AUTO_RESTART_BACKOFF_SEC, start=1):
+            _auto_restart_attempt = attempt
+            operator_events.add(
+                "warning",
+                f"Auto-restart attempt {attempt}/{MAX_AUTO_RESTART_ATTEMPTS} in {backoff}s"
+            )
+            await asyncio.sleep(backoff)
+            try:
+                device_index = audio_cfg().get("device_index")
+                await start_service({"device_index": device_index}, from_auto_restart=True)
+                operator_events.add("success", f"Auto-restart succeeded on attempt {attempt}")
+                _auto_restart_attempt = 0
+                _auto_restart_reason = ""
+                return
+            except Exception as e:
+                operator_events.add("error", f"Auto-restart attempt {attempt} failed: {e}")
+                
+        # All attempts exhausted
+        _auto_restart_attempt = 0
+        _auto_restart_reason = ""
+        operator_events.add("error", "Auto-restart exhausted — manual intervention required")
+        broadcaster.set_unavailable()
+        async with _state_lock:
+            _state = ServiceState.FAILED
+            
+    except asyncio.CancelledError:
+        server_log.info("Auto-restart loop cancelled")
+        _auto_restart_attempt = 0
+        _auto_restart_reason = ""
+        raise
 
 
 def _handle_session_state_change(s):
+    global _auto_restart_task
     if s.status == SessionStatus.FAILED:
         broadcaster.set_unavailable()
-        asyncio.create_task(_auto_stop_on_failure())
+        if _auto_restart_task and not _auto_restart_task.done():
+            _auto_restart_task.cancel()
+        _auto_restart_task = asyncio.create_task(_auto_stop_on_failure(s.last_event))
 
 session._on_state = _handle_session_state_change
 
@@ -559,6 +621,8 @@ async def get_status():
         "billed_audio_s": round(_billed_seconds, 1),
         "auto_stop_timeout_min": audio_cfg().get("auto_stop_timeout_min", 10),
         "device_index": audio_cfg().get("device_index", 0),
+        "auto_restart_attempt": _auto_restart_attempt,
+        "auto_restart_reason": _auto_restart_reason,
         "audio": {
             "status": a.status,
             "level": round(a.level_rms, 1),
@@ -1785,7 +1849,7 @@ _OPERATOR_HTML = """<!DOCTYPE html>
     </div>
 
     <!-- Status (compact grid) -->
-    <div class="card">
+    <div class="card" id="status-card">
       <h2>상태 모니터 (Status)</h2>
       <div class="stat-grid">
         <!-- Row 1: Audio (full width) -->
@@ -1919,6 +1983,25 @@ let hasInitializedAutoStop = false;
 let lastEventId = -1;
 let userScrolledUp = false;
 let eventPollTimer = null;
+let lastAutoRestartAttempt = 0;
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+  } catch (e) {
+    console.error("Could not play beep", e);
+  }
+}
 
 const btnStart = document.getElementById('btn-start');
 const btnPause = document.getElementById('btn-pause');
@@ -2235,6 +2318,25 @@ function startStatusPoll() {
   polling = setInterval(async () => {
     let st;
     try { st = await fetch('/api/status').then(r => r.json()); } catch { return; }
+
+    if (st.auto_restart_attempt !== undefined && st.auto_restart_attempt > 0) {
+      if (st.auto_restart_attempt !== lastAutoRestartAttempt) {
+        playBeep();
+        lastAutoRestartAttempt = st.auto_restart_attempt;
+      }
+      const card = document.getElementById('status-card');
+      if (card) {
+        card.style.borderColor = 'var(--color-error)';
+        card.style.backgroundColor = 'rgba(163, 59, 59, 0.05)';
+      }
+    } else {
+      lastAutoRestartAttempt = 0;
+      const card = document.getElementById('status-card');
+      if (card) {
+        card.style.borderColor = '';
+        card.style.backgroundColor = '';
+      }
+    }
 
     if (!hasInitializedAutoStop && st.auto_stop_timeout_min !== undefined) {
       document.getElementById('auto-stop-select').value = st.auto_stop_timeout_min;

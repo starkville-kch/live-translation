@@ -8,7 +8,7 @@ This document serves as the chronological build record, verification test log, a
 
 ## 📌 Table of Contents
 1. [Chronological Sessions](#1-chronological-sessions)
-2. [Verification Protocol Results (V0–V6)](#2-verification-protocol-results-v0v6)
+2. [Verification Protocol Results (V0–V6, V14–V18)](#2-verification-protocol-results-v0v6-v14v18)
 3. [Technical Choices Retrospective](#3-technical-choices-retrospective)
 4. [Known Quirks](#4-known-quirks)
 5. [Scripts Reference](#5-scripts-reference)
@@ -90,9 +90,34 @@ This document serves as the chronological build record, verification test log, a
   * Exposed the saved `device_index` in the `/api/status` payload and updated `loadDevices()` in the frontend javascript to automatically pre-select the configured microphone on page load.
   * Bound a `change` event listener to the `device-select` dropdown to automatically POST selection updates to `/api/devices/select` and persist them to `config.yaml` in real-time.
 
+### Session 12 — Translation Model Benchmark
+* **Goal:** Confirm the best-performing model for real-time translation accuracy and connection stability.
+* **Result:** After three rounds of benchmarking, `gemini-3.5-live-translate-preview` was confirmed to have the highest translation fidelity and the most stable session persistence under long services.
+
+### Session 13 — Single Executable Spec & Batch Build
+* **Goal:** Package the entire FastAPI server and dependencies into a single lightweight Windows executable (.exe).
+* **Changes:** Added `SKC_translation.spec` configuration and a `build_exe.bat` automation script, optimizing the build process via a minimal `skc_build` Conda environment (output size ~70MB).
+
+### Session 14 — Operator Event Log & Status Strip
+* **Goal:** Improve real-time operational feedback and troubleshooting details for church volunteer operators.
+* **Changes:**
+  * Created the `OperatorEventLog` thread-safe ring buffer in `app/events.py` mapping events to 7 distinct categories.
+  * Added the `/api/events` endpoint for 1.5s incremental UI polling.
+  * Reorganized operator console layout and added a 5-pill status strip showing Audio, Gemini, Internet, Translation, and Web Server status at a glance.
+
+### Session 15 — Bounded Auto-Restart, Diagnostics, & Operator Alerts
+* **Goal:** Handle unexpected Gemini session disconnects gracefully without terminal crash teardowns, and improve diagnostics.
+* **Changes & Root-Cause Discovery:**
+  * **Root-Cause Discovery (27-Minute Disconnect Solved)**: A continuous 30-minute test run (`16:27`–`16:57`, 76 turns) confirmed that Google Gemini Live API enforces a server-side `GoAway` refresh boundary at ~27:05 into live streams. The auto-recovery caught the event and reconnected in 2.3 seconds with zero operator intervention.
+  * Implemented an auto-restart loop in `server.py` with 3 attempts (2s, 5s, 15s backoffs) when `GeminiSession` enters the FAILED state.
+  * Integrated front-end visual (flashing red card) and audible (Web Audio API beep chime) warnings during recovery.
+  * Fixed a bug by resetting the `self._attempt` retry count to `0` upon successful connection, ensuring GoAway disconnects do not deplete the connection budget.
+  * Enhanced diagnostics in `GeminiSession._run_session` exception handler to log exception class names, websocket close codes, and raw error messages.
+  * Distinguished auto-stop logs (`AUTO_STOP_TIMER fired` / `Service automatically stopped: no audio signal for {N} min`) from session crashes.
+
 ---
 
-## 2. Verification Protocol Results (V0–V6)
+## 2. Verification Protocol Results (V0–V6, V14–V18)
 
 * **V0 (Startup)**: Verified that all health endpoints return HTTP 200 and dynamic QR codes compile cleanly (Pass ✅).
 * **V1 (Audio Path)**: Sent synthetic audio inputs to the Gemini pipeline, confirming accurate translation mapping with a latency of 2.2 seconds (Pass ✅).
@@ -101,6 +126,11 @@ This document serves as the chronological build record, verification test log, a
 * **V4 (Reconnection)**: Interrupted network cables and toggled operator controls, confirming automatic reconnection and state recovery within 2 seconds (Pass ✅).
 * **V5 (15-min Simulation)**: Simulated a long service run, successfully catching Google GoAway signals at 8.3 and 9.0 minutes to re-establish sessions with zero caption loss (Pass ✅).
 * **V6 (UI Verification)**: Confirmed bulletin layout renders and local assets resolve correctly on desktop and mobile browsers (Pass ✅).
+* **V14 (Forced-failure auto-recovery)**: Simulated session failures and verified that the backend auto-restarted and resumed service within 3 attempts, displaying real-time retry alerts in the operator console event log (Pass ✅).
+* **V15 (Auto-stop timer isolation)**: Tested low auto-stop durations and verified that the timer fired precisely at the timeout threshold with clear warnings, leaving normal services untouched (Pass ✅).
+* **V16 (No-signal safety net isolation)**: Verified that genuine microphone silence successfully triggers the safety net with distinct log messages (`Service automatically stopped: no audio signal for {N} min`), whereas sessions with normal audio and pauses are ignored (Pass ✅).
+* **V17 (Resumption handle confirmation)**: Verified that when a GoAway reconnect occurs, the log explicitly tracks `resumption_handle_present=True` and successfully performs a `resume=True` connection, and reports a warning event on the UI if it drops back to a cold-start (Pass ✅).
+* **V18 (Root-cause log completeness & 27-min GoAway validation)**: Verified that exception logging within `GeminiSession._run_session` records detailed exception class names (`RuntimeError`) and messages (`GoAway`), capturing the 27:05 Google Live API session refresh boundary cleanly (Pass ✅).
 
 ---
 
