@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-07-19
+
+### Changed
+- **UI Architecture Refactoring to External Templates**:
+  - Extracted `_ATTENDEE_HTML` from `app/server.py` into `app/templates/attendee.html`.
+  - Extracted `_OPERATOR_HTML` from `app/server.py` into `app/templates/operator.html`.
+  - Replaced inline route responses in `app/server.py` with a dynamic template reader (`_read_template`) that uses a file-reading mechanism.
+  - Implemented dynamic hot-reloading for template files in development and caching in production (`sys.frozen`), optimizing AI token overhead and development efficiency.
+- **PyInstaller Specification Update**:
+  - Updated `SKC_translation.spec` to bundle the `app/templates` folder in PyInstaller's `datas` list, ensuring templates are correctly packaged inside the single-file executable.
+- **UTF-8 Console Output Support**:
+  - Configured `sys.stdout` and `sys.stderr` to enforce UTF-8 encoding in `main.py` when running on Windows to prevent `UnicodeEncodeError` when rendering unicode box-drawing console layouts.
+
+## [1.9.0] - 2026-07-19
+
+### Added
+- **mDNS LAN Hostname Advertising via Zeroconf**:
+  - Dynamically registers the `network.hostname` (defaults to `skc-live.local`) on service startup using `python-zeroconf` and unregisters on teardown.
+  - Automatically maps to the host's current DHCP-assigned IP address on start, ensuring stable mDNS discovery across both home and church networks.
+- **Dual-URL Display on Operator Console**:
+  - Embedded dynamic URL information card under the QR code on the operator console displaying both the primary hostname URL (`http://skc-live.local:8080/live`) and the fallback raw IP URL.
+  - Updated status poll endpoint `/api/status` to return both `live_url_primary` and `live_url_fallback` so the console updates in real time.
+- **Dependencies**:
+  - Added `zeroconf>=0.150.0` to `requirements.txt` to enable mDNS LAN service advertising.
+
 ## [1.8.0] - 2026-07-19
 
 ### Added

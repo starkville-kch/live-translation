@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1a2a42">
+<title>Live Translation — Starkville Korean Church</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Noto+Sans+KR:wght@400;500&family=Noto+Serif+KR:wght@600;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-navy-900: #0f1b2d;
+    --color-navy-800: #1a2a42;
+    --color-navy-700: #243757;
+    --color-navy-600: #2e4a6e;
+    --color-navy-100: #e8edf4;
+    --color-navy-50: #f3f6fa;
+    --color-gold-500: #b8923e;
+    --color-gold-400: #c9a555;
+    --color-gold-300: #d4b872;
+    --color-gold-100: #f5edd8;
+    --color-warm-white: #faf8f5;
+    --color-warm-50: #f5f2ed;
+    --color-warm-100: #eae5dc;
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #4a4a4a;
+    --color-text-muted: #7a7a7a;
+    --color-text-inverse: #faf8f5;
+    --color-error: #a33b3b;
+    --color-success: #3b6e4f;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--color-warm-white);
+    color: var(--color-text-primary);
+    font-family: 'Noto Sans KR', 'Inter', system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+    line-height: 1.75;
+  }
+
+  /* Header Branding */
+  .church-header {
+    background: var(--color-navy-800);
+    color: var(--color-text-inverse);
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 3px solid var(--color-gold-300);
+    flex-shrink: 0;
+  }
+  .header-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .church-logo {
+    width: 22px;
+    height: auto;
+  }
+  .church-titles {
+    display: flex;
+    flex-direction: column;
+  }
+  .kr-title {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+  }
+  .en-title {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    opacity: 0.8;
+    line-height: 1.2;
+  }
+  .status-pill {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 99px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255,255,255,0.1);
+    color: var(--color-text-muted);
+    transition: all 0.3s ease;
+  }
+  .status-pill.ok {
+    background: rgba(59, 110, 79, 0.2);
+    color: #4ade80;
+  }
+  .status-pill.warn {
+    background: rgba(201, 165, 85, 0.2);
+    color: #fbd58d;
+  }
+  .status-pill.err {
+    background: rgba(163, 59, 59, 0.2);
+    color: #fca5a5;
+  }
+
+  /* Control Bar */
+  #controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: var(--color-warm-50);
+    border-bottom: 1px solid var(--color-warm-100);
+    flex-shrink: 0;
+    gap: 20px;
+  }
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+  }
+  .control-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+  }
+  #font-range {
+    flex: 1;
+    accent-color: var(--color-gold-500);
+    height: 4px;
+    border-radius: 2px;
+    cursor: pointer;
+    max-width: 300px;
+  }
+  .ctl-btn {
+    background: var(--color-warm-white);
+    border: 1px solid var(--color-warm-100);
+    color: var(--color-navy-900);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ctl-btn:hover {
+    background: var(--color-navy-50);
+    border-color: var(--color-navy-100);
+  }
+  .ctl-btn.active {
+    background: var(--color-gold-500);
+    color: var(--color-text-inverse);
+    border-color: var(--color-gold-500);
+  }
+  .ctl-btn.active:hover {
+    background: var(--color-gold-400);
+  }
+
+  /* Caption Flow Display */
+  #history {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .history-spacer {
+    margin-top: auto;
+  }
+  .history-inner {
+    max-width: 42rem;
+    width: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .line {
+    font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
+    font-size: var(--fs, 28px);
+    line-height: 1.75;
+    color: var(--color-text-secondary);
+    animation: slideUp 0.4s ease-out;
+  }
+  .timestamp {
+    color: var(--color-gold-500);
+    font-size: 0.75em;
+    font-family: 'Inter', sans-serif;
+    margin-right: 12px;
+    font-weight: 500;
+  }
+
+  #current-wrapper {
+    background: var(--color-warm-50);
+    border-top: 1px solid var(--color-warm-100);
+    flex-shrink: 0;
+    width: 100%;
+  }
+  #current {
+    max-width: 42rem;
+    width: 100%;
+    margin: 0 auto;
+    padding: 20px 24px;
+    box-sizing: border-box;
+    font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
+    font-size: var(--fs, 28px);
+    line-height: 1.75;
+    color: var(--color-navy-900);
+    font-weight: 500;
+    min-height: 3.5em;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Earphone warning modal */
+  #earphone-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 27, 45, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+  }
+  #earphone-modal.hidden { display: none; }
+  .modal-box {
+    background: var(--color-warm-white);
+    border-radius: 12px;
+    border: 1px solid var(--color-warm-100);
+    box-shadow: 0 10px 30px rgba(15, 27, 45, 0.15);
+    padding: 32px 24px;
+    max-width: 380px;
+    text-align: center;
+  }
+  .modal-box h2 {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 20px;
+    color: var(--color-navy-900);
+    margin-bottom: 12px;
+  }
+  .modal-box p {
+    font-size: 15px;
+    color: var(--color-text-secondary);
+    line-height: 1.7;
+    margin-bottom: 24px;
+  }
+  .modal-box .icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+    color: var(--color-gold-500);
+  }
+  .modal-confirm {
+    background: var(--color-gold-500);
+    color: var(--color-text-inverse);
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    transition: background 0.2s;
+  }
+  .modal-confirm:hover {
+    background: var(--color-gold-400);
+  }
+  .modal-skip {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    margin-top: 14px;
+    width: 100%;
+    text-decoration: underline;
+  }
+</style>
+</head>
+<body>
+
+<div id="earphone-modal" class="hidden">
+  <div class="modal-box">
+    <div class="icon">🎧</div>
+    <h2>Use Earphones</h2>
+    <p>Audio translation will play through your device. Please use wired or Bluetooth earphones to avoid disturbing the service.</p>
+    <button class="modal-confirm" id="modal-ok">I have earphones — enable audio</button>
+    <button class="modal-skip" id="modal-skip">Text only</button>
+  </div>
+</div>
+
+<header class="church-header">
+  <div class="header-content">
+    <img src="/logo.webp" alt="PCA Logo" class="church-logo">
+    <div class="church-titles">
+      <span class="kr-title" style="font-family: 'Source Serif 4', Georgia, serif;">Starkville Korean Church (PCA)</span>
+    </div>
+  </div>
+  <div class="header-status">
+    <span id="status-pill" class="status-pill warn">● Connecting</span>
+  </div>
+</header>
+
+<div id="controls">
+  <div class="control-group">
+    <span class="control-label">Font Size</span>
+    <input id="font-range" type="range" min="20" max="56" value="28">
+  </div>
+  <button id="audio-btn" class="ctl-btn" title="Enable audio translation">🔇 Audio Off</button>
+</div>
+
+<div id="history">
+  <div class="history-spacer"></div>
+  <div class="history-inner" id="history-inner"></div>
+</div>
+
+<div id="current-wrapper">
+  <div id="current">Connecting…</div>
+</div>
+
+<script>
+const historyEl = document.getElementById('history');
+const historyInner = document.getElementById('history-inner');
+const current = document.getElementById('current');
+const pill = document.getElementById('status-pill');
+const fontRange = document.getElementById('font-range');
+const audioBtn = document.getElementById('audio-btn');
+const modal = document.getElementById('earphone-modal');
+
+// ── Font size ──────────────────────────────────────────────────────────────
+fontRange.addEventListener('input', () => {
+  document.documentElement.style.setProperty('--fs', fontRange.value + 'px');
+});
+
+// ── Wake Lock ──────────────────────────────────────────────────────────────
+async function requestWakeLock() {
+  try { await navigator.wakeLock.request('screen'); } catch {}
+}
+requestWakeLock();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') requestWakeLock();
+});
+
+// ── Status Pill ─────────────────────────────────────────────────────────────
+function setStatus(state) {
+  pill.className = 'status-pill';
+  if (state === 'ok') {
+    pill.classList.add('ok');
+    pill.textContent = '● Live';
+  } else if (state === 'warn') {
+    pill.classList.add('warn');
+    pill.textContent = '● Connecting';
+  } else if (state === 'err') {
+    pill.classList.add('err');
+    pill.textContent = '● Error';
+  }
+}
+
+// ── Audio engine (Web Audio API, 24kHz PCM16 mono) ────────────────────────
+let audioCtx = null;
+let audioEnabled = false;
+let audioWs = null;
+let nextPlayAt = 0;
+const SAMPLE_RATE = 24000;
+
+function ensureAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+    nextPlayAt = audioCtx.currentTime;
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playPCM16(arrayBuffer) {
+  if (!audioEnabled || !audioCtx) return;
+  const raw = new Int16Array(arrayBuffer);
+  const buf = audioCtx.createBuffer(1, raw.length, SAMPLE_RATE);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < raw.length; i++) ch[i] = raw[i] / 32768;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  const now = audioCtx.currentTime;
+  if (nextPlayAt < now) nextPlayAt = now + 0.05;
+  src.start(nextPlayAt);
+  nextPlayAt += buf.duration;
+}
+
+function connectAudio() {
+  if (audioWs) { audioWs.close(); audioWs = null; }
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream');
+  audioWs.binaryType = 'arraybuffer';
+  audioWs.onmessage = (e) => playPCM16(e.data);
+  audioWs.onerror = () => {};
+  audioWs.onclose = () => {
+    audioWs = null;
+    if (audioEnabled) setTimeout(connectAudio, 3000); // reconnect if still wanted
+  };
+}
+
+function disconnectAudio() {
+  if (audioWs) { audioWs.close(); audioWs = null; }
+}
+
+// ── Earphone modal ─────────────────────────────────────────────────────────
+function enableAudio() {
+  ensureAudioCtx();
+  audioEnabled = true;
+  connectAudio();
+  audioBtn.textContent = '🔊 Audio On';
+  audioBtn.classList.add('active');
+  modal.classList.add('hidden');
+}
+
+document.getElementById('modal-ok').addEventListener('click', enableAudio);
+document.getElementById('modal-skip').addEventListener('click', () => {
+  modal.classList.add('hidden');
+});
+
+audioBtn.addEventListener('click', () => {
+  if (audioEnabled) {
+    audioEnabled = false;
+    disconnectAudio();
+    audioBtn.textContent = '🔇 Audio Off';
+    audioBtn.classList.remove('active');
+  } else {
+    modal.classList.remove('hidden');
+  }
+});
+
+// ── SSE caption stream (captions only — audio is on WS /audio-stream) ─────
+let es;
+function connect() {
+  es = new EventSource('/stream');
+  es.onopen = () => { setStatus('ok'); current.textContent = ''; };
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.kind === 'update') {
+      current.textContent = msg.text;
+    } else if (msg.kind === 'commit') {
+      if (msg.text.trim()) {
+        const div = document.createElement('div');
+        div.className = 'line';
+        if (msg.time_str) {
+          const span = document.createElement('span');
+          span.className = 'timestamp';
+          span.textContent = `[${msg.time_str}] `;
+          div.appendChild(span);
+        }
+        const textSpan = document.createElement('span');
+        textSpan.textContent = msg.text;
+        div.appendChild(textSpan);
+        historyInner.appendChild(div);
+        historyEl.scrollTop = historyEl.scrollHeight;
+        while (historyInner.children.length > 25) historyInner.removeChild(historyInner.firstChild);
+      }
+      current.textContent = '';
+    } else if (msg.kind === 'unavailable') {
+      current.textContent = 'Translation unavailable';
+      setStatus('err');
+    }
+  };
+  es.onerror = () => {
+    setStatus('warn');
+    current.textContent = 'Reconnecting…';
+    es.close();
+    setTimeout(connect, 3000);
+  };
+}
+connect();
+</script>
+</body>
+</html>

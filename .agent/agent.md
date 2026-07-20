@@ -57,6 +57,9 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 - **Session retry attempt reset**: The reconnect attempt count (`self._attempt`) in `GeminiSession` is reset to 0 on every successful connection. Without this, GoAway reconnects (every ~10m) accumulate and crash the session after 30 mins.
 - **Pipeline auto-restart loop**: If the session fails completely, `server.py` runs a bounded recovery loop (3 attempts with backoffs 2s, 5s, 15s) flashing status card red and chiming to warn operators before stopping.
 - **Root-cause of 27-minute session disconnect**: A 30-minute continuous run (`16:27`–`16:57`, 76 turns) confirmed Google Gemini Live API enforces a server-side `GoAway` boundary at ~27:05. The auto-recovery reconnected in 2.3s seamlessly with zero manual intervention required.
+- **mDNS LAN Hostname via Zeroconf**: registered the network.hostname (default: `skc-live.local`) dynamically on startup using `python-zeroconf` and unregistered on shutdown. This resolves DHCP reassignment issues across networks (home vs church) without requiring static IP configuration or router reservations.
+- **Dual-URL operator fallback**: provided both primary (.local hostname) and fallback (raw IP) live URLs beneath the QR code image on the operator console. If mDNS resolution fails due to network/multicast blocking, the operator can provide the raw IP address immediately.
+- **External HTML UI Templates**: Extracted the previously embedded HTML strings from `app/server.py` into separate template files (`app/templates/attendee.html` and `app/templates/operator.html`). Created a dynamic loader (`_read_template`) that caches templates in production (`sys.frozen`) but re-reads them from disk in development, enabling real-time hot-reloading for UI edits without restarting the server. Added both templates to the PyInstaller `.spec` file datas list to ensure they package correctly in single-file executables.
 
 ---
 

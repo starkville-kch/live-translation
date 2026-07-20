@@ -1,5 +1,5 @@
 audio:
-  auto_stop_timeout_min: 1
+  auto_stop_timeout_min: 10
   channels: 1
   chunk_ms: 100
   device_index: 1
@@ -13,4 +13,5 @@ logging:
   max_bytes: 10485760
 network:
   host: 0.0.0.0
+  hostname: skc-live.local
   port: 8080

@@ -186,7 +186,9 @@ Windows PC (this app)
 | 13 | Single executable: PyInstaller ~70MB exe, `SKC_translation.spec`, `build_exe.bat` | ✅ Done |
 | 14 | Operator event log (`app/events.py`), status strip, `/api/events`, `/admin/logs` developer diagnostics | ✅ Done |
 | 15 | Bounded auto-recovery loop, detailed close reason logging, operator warning alerts, and 27-min GoAway root cause resolution | ✅ Done |
-| V0–V5, V14–V18 | Verification protocol | ✅ All passed |
+| 16 | mDNS hostname advertisement (`python-zeroconf`), dynamic URL resolver, primary/fallback display on operator console | ✅ Done |
+| 17 | UI refactoring to external templates: `attendee.html` and `operator.html` separated from `server.py`, with dynamic loader enabling hot-reload in development | ✅ Done |
+| V0–V5, V14–V19 | Verification protocol | ✅ All passed |
 
 ---
 
@@ -204,6 +206,7 @@ gemini:
 
 network:
   host: 0.0.0.0   # bind all interfaces (localhost + WiFi attendees)
+  hostname: skc-live.local
   port: 8080
   # public_url: "http://192.168.1.x:8080"  # override if auto-detect picks wrong interface
 
@@ -217,18 +220,18 @@ logging:
 
 ## 8. Future Phases
 
-### Phase 16 — Multi-language simultaneous interpretation (Chinese, etc.)
+### Phase 18 — Multi-language simultaneous interpretation (Chinese, etc.)
 - The Gemini Live translate model currently exposes one `target_language_code` per session.
 - Supporting two languages simultaneously requires two parallel `GeminiSession` instances — one targeting `"en"`, one targeting `"zh"`.
 - Each session receives the same microphone audio (duplicate the `_pipe` coroutine).
 - The attendee page (`/live`) would need a language selector switching between `/stream?lang=en` and `/stream?lang=zh`.
 
-### Phase 17 — Cloud deployment for remote attendees
+### Phase 19 — Cloud deployment for remote attendees
 - Deploy `main.py` to a small cloud VM (Google Cloud Run, Railway, or a VPS).
 - Audio cannot be captured in the cloud — the PC captures audio and POSTs PCM chunks to the cloud server via a lightweight WebSocket.
 - The cloud server pipes audio into Gemini Live and fans SSE captions out to all attendees globally.
 
-### Phase 18 — Parallel session handoff on GoAway (Lever 2 reconnect optimization)
+### Phase 20 — Parallel session handoff on GoAway (Lever 2 reconnect optimization)
 - Overlap the old session with the new session to achieve a near-zero reconnect gap.
 - Upon receiving a `GoAway` warning (utilizing `time_left` if available in the SDK response), spin up a new parallel `GeminiSession` in the background.
 - Keep feeding audio to the old session until the new session's connection is fully established.

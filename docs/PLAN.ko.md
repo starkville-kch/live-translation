@@ -171,7 +171,9 @@ Windows PC (본 애플리케이션)
 | 13 | 단일 실행 파일(.exe): PyInstaller 70MB, `SKC_translation.spec`, `build_exe.bat` | ✅ 완료 |
 | 14 | 운영자 이벤트 로그(`app/events.py`), 상태 스트립, `/api/events`, `/admin/logs` 개발자 진단 | ✅ 완료 |
 | 15 | 제한된 자동 복구(Auto-Restart) 루프, 예외 수신 상세화, 운영자 경고 알림 및 27분 GoAway 근본 원인 규명 완료 | ✅ 완료 |
-| V0–V5, V14–V18 | 검증 프로토콜 | ✅ 전체 통과 |
+| 16 | mDNS 호스트네임 광고 (`python-zeroconf`), 동적 URL 리졸버, 운영자 콘솔 주/비상용 접속 주소 표시 | ✅ 완료 |
+| 17 | UI 외부 템플릿 리팩토링: `attendee.html` 및 `operator.html`을 `server.py`에서 분리하고, 개발 환경 실시간 핫 리로드를 위한 동적 로더 구현 | ✅ 완료 |
+| V0–V5, V14–V19 | 검증 프로토콜 | ✅ 전체 통과 |
 
 ---
 
@@ -189,7 +191,9 @@ gemini:
 
 network:
   host: 0.0.0.0   # 모든 인터페이스 수신 (로컬 + WiFi 참석자)
-  port: 8001
+  hostname: skc-live.local
+  port: 8080
+  # public_url: "http://192.168.1.x:8080"  # override if auto-detect picks wrong interface
 
 logging:
   log_dir: logs
@@ -201,17 +205,17 @@ logging:
 
 ## 8. 향후 확장 계획 (Future Phases)
 
-### Phase 16 — 다국어 동시 통역 (중국어 등)
+### Phase 18 — 다국어 동시 통역 (중국어 등)
 - Gemini Live 번역 모델은 현재 세션당 `target_language_code` 하나만 지원.
 - 두 언어 동시 지원 시 `GeminiSession` 인스턴스를 병렬로 두 개 구동 (`"en"` / `"zh"`).
 - 참석자 페이지(`/live`)에 언어 선택기 추가 (`/stream?lang=en` vs `/stream?lang=zh`).
 
-### Phase 17 — 원격 참석자용 클라우드 브리지
+### Phase 19 — 원격 참석자용 클라우드 브리지
 - `main.py`를 소형 클라우드 VM에 배포 (Google Cloud Run, Railway 등).
 - 오디오는 클라우드에서 캡처 불가 — PC가 PCM 청크를 경량 WebSocket으로 클라우드에 전송.
 - 클라우드가 Gemini Live에 오디오를 파이프하고 전 세계 온라인 참석자에게 자막을 팬아웃.
 
-### Phase 18 — GoAway 시 병렬 세션 핸드오버 (Lever 2 재연결 최적화)
+### Phase 20 — GoAway 시 병렬 세션 핸드오버 (Lever 2 재연결 최적화)
 - 기존 세션과 신규 세션을 백그라운드에서 중첩 가동하여 재연결 지연 시간을 거의 제로(near-zero)에 가깝게 최적화합니다.
 - `GoAway` 경고 신호 수신 시 (SDK 응답에 `time_left` 필드가 존재할 경우 활용), 백그라운드에서 신규 병렬 `GeminiSession`을 즉시 실행합니다.
 - 신규 세션의 연결이 완전히 성립될 때까지 기존 세션에 오디오 입력을 계속 밀어 넣습니다.

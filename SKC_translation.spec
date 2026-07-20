@@ -10,7 +10,7 @@
 # Build environment setup (one-time):
 #   conda create -n skc_build python=3.11 --yes
 #   conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy \
-#       python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy pyinstaller
+#       python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf pyinstaller
 
 import sys
 from pathlib import Path
@@ -26,9 +26,11 @@ datas += collect_data_files("google.auth")
 datas += collect_data_files("grpc")
 datas += collect_data_files("certifi")
 datas += collect_data_files("sse_starlette")
-# Bundle glossary config and PCA logo asset
+# Bundle glossary config, PCA logo asset, and HTML templates
 datas += [("config/glossary.yaml", "config")]
 datas += [("app/pca-logo-white-small.webp", "app")]
+datas += [("app/templates/attendee.html", "app/templates")]
+datas += [("app/templates/operator.html", "app/templates")]
 
 # ── Hidden imports PyInstaller's static analysis misses ──────────────────────
 hiddenimports = []
@@ -40,6 +42,7 @@ hiddenimports += collect_submodules("google.api_core")
 hiddenimports += collect_submodules("google.auth")
 hiddenimports += collect_submodules("grpc")
 hiddenimports += collect_submodules("sse_starlette")
+hiddenimports += collect_submodules("zeroconf")
 hiddenimports += [
     "uvicorn.logging",
     "uvicorn.loops",
