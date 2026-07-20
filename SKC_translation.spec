@@ -31,6 +31,7 @@ datas += [("config/glossary.yaml", "config")]
 datas += [("app/pca-logo-white-small.webp", "app")]
 datas += [("app/templates/attendee.html", "app/templates")]
 datas += [("app/templates/operator.html", "app/templates")]
+datas += [("CHANGELOG.md", ".")]
 
 # ── Hidden imports PyInstaller's static analysis misses ──────────────────────
 hiddenimports = []

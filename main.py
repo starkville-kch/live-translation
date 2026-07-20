@@ -29,6 +29,19 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")
+    
+    # If running as a frozen executable, copy the bundled CHANGELOG.md next to the EXE
+    if getattr(sys, "frozen", False):
+        import shutil
+        from pathlib import Path
+        _mei_changelog = Path(sys._MEIPASS) / "CHANGELOG.md"
+        _dest_changelog = Path(sys.executable).parent / "CHANGELOG.md"
+        if _mei_changelog.exists() and not _dest_changelog.exists():
+            try:
+                shutil.copy(_mei_changelog, _dest_changelog)
+            except Exception:
+                pass
+
     import threading
     import webbrowser
     import uvicorn

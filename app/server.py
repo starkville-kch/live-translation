@@ -363,7 +363,12 @@ async def lifespan(app: FastAPI):
     if hostname:
         if not hostname.endswith(".local"):
             hostname = f"{hostname}.local"
-        _register_zeroconf(hostname, port, ip_addr)
+        import threading
+        threading.Thread(
+            target=_register_zeroconf,
+            args=(hostname, port, ip_addr),
+            daemon=True
+        ).start()
 
     primary_url, fallback_url = _get_live_urls()
     _qr_png_cache = _build_qr(primary_url)
