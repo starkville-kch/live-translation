@@ -245,8 +245,8 @@ build_exe.bat
 또는 직접:
 ```bat
 conda run -n skc_build pyinstaller SKC_translation.spec --noconfirm ^
-    --workpath .agent\scratch\exe\build ^
-    --distpath .agent\scratch\exe\dist
+    --workpath .agent\build ^
+    --distpath .agent\dist
 ```
 
 모듈 누락 오류가 발생하면 패턴은 항상 같다:

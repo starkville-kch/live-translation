@@ -245,8 +245,8 @@ build_exe.bat
 Or manually:
 ```bat
 conda run -n skc_build pyinstaller SKC_translation.spec --noconfirm ^
-    --workpath .agent\scratch\exe\build ^
-    --distpath .agent\scratch\exe\dist
+    --workpath .agent\build ^
+    --distpath .agent\dist
 ```
 
 If the build fails with a missing module error, the pattern is always:

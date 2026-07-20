@@ -6,14 +6,14 @@
 ::   conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy ^
 ::       python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy pyinstaller
 ::
-:: Output: .agent\scratch\exe\dist\SKC_translation.exe
+:: Output: .agent\dist\SKC_translation.exe
 :: Deploy: copy SKC_translation.exe + config.yaml + .env to any folder
 
 setlocal
 set "CONDA_ROOT=D:\Program_Files\miniconda3"
 set "CONDA_ENV=skc_build"
 set "SPEC=SKC_translation.spec"
-set "OUT_DIR=%~dp0.agent\scratch\exe"
+set "OUT_DIR=%~dp0.agent"
 
 if not exist "%CONDA_ROOT%\Scripts\activate.bat" (
     echo [ERROR] Conda not found at %CONDA_ROOT%

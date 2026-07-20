@@ -761,7 +761,10 @@ async def get_events(since: int = -1):
 # ── Pages ─────────────────────────────────────────────────────────────────────
 @app.get("/help", response_class=HTMLResponse)
 async def help_page():
-    help_path = Path(__file__).parent.parent / "how_to_use.html"
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        help_path = Path(sys._MEIPASS) / "how_to_use.html"
+    else:
+        help_path = Path(__file__).parent.parent / "how_to_use.html"
     if not help_path.exists():
         return HTMLResponse("Help file not found", status_code=404)
     return HTMLResponse(help_path.read_text(encoding="utf-8"))
