@@ -408,6 +408,8 @@ async def _sse_generator(request: Request, q: asyncio.Queue) -> AsyncIterator[st
                     runtime = _runtime_seconds()
                     m, s = divmod(int(runtime), 60)
                     payload["time_str"] = f"{m:02d}:{s:02d}"
+                    if event.ko:
+                        payload["ko"] = event.ko
                 yield f"data: {json.dumps(payload)}\n\n"
             except asyncio.TimeoutError:
                 yield ": keepalive\n\n"

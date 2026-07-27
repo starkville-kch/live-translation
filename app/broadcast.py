@@ -57,6 +57,7 @@ _BOUNDARY_LOOKBACK = 60  # search the last N chars for a natural split point
 class CaptionEvent:
     kind: str  # "update" | "commit" | "source" | "unavailable" | "ping" | "paused" | "resumed"
     text: str = ""
+    ko: str = ""  # matched Korean source text, populated on commit events only
 
 
 class CaptionBroadcaster:
@@ -123,7 +124,7 @@ class CaptionBroadcaster:
                 to_commit = self._glossary.correct(self._current_ko, to_commit)
             if self._commit_task and not self._commit_task.done():
                 self._commit_task.cancel()
-            self._push(CaptionEvent(kind="commit", text=to_commit))
+            self._push(CaptionEvent(kind="commit", text=to_commit, ko=self._current_ko))
             self._current_line = remainder
             self._current_ko = ""  # reset KO buffer after commit
             if remainder:
@@ -170,7 +171,7 @@ class CaptionBroadcaster:
                 text = self._current_line
                 if self._glossary and self._current_ko:
                     text = self._glossary.correct(self._current_ko, text)
-                self._push(CaptionEvent(kind="commit", text=text))
+                self._push(CaptionEvent(kind="commit", text=text, ko=self._current_ko))
                 self._current_line = ""
                 self._current_ko = ""
         except asyncio.CancelledError:

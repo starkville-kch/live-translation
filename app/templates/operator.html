@@ -46,17 +46,23 @@
   header {
     background: var(--color-navy-800);
     color: var(--color-text-inverse);
-    padding: 14px 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     border-bottom: 3px solid var(--color-gold-300);
     flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-row {
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
   .header-content {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-shrink: 0;
   }
   .church-logo {
     width: 22px;
@@ -85,6 +91,8 @@
     display: flex;
     align-items: center;
     gap: 12px;
+    margin-left: auto;
+    flex-shrink: 0;
   }
   
   .badge {
@@ -300,11 +308,11 @@
   .stat-val.err  { color: var(--color-error); }
   .stat-val.cost { color: var(--color-navy-700); font-weight: bold; }
 
-  /* Compact status grid — 4 columns: label | val | label | val
-     Full-width rows (long values) span all 4 cols via .sg-wide */
+  /* Compact status grid — 6 columns: label|val × 3
+     Full-width rows span all 6 cols via .sg-wide */
   .stat-grid {
     display: grid;
-    grid-template-columns: auto 1fr auto 1fr;
+    grid-template-columns: auto 1fr auto 1fr auto 1fr;
     gap: 0 10px;
     margin-top: 4px;
   }
@@ -328,9 +336,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* Full-width label: col 1, value: cols 2-4 */
+  /* Full-width label: col 1, value: cols 2-6 */
   .sg-label.sg-wide          { grid-column: 1; }
-  .sg-val.sg-wide            { grid-column: 2 / span 3; }
+  .sg-val.sg-wide            { grid-column: 2 / span 5; }
   /* Remove bottom border on last row */
   .sg-label.sg-last, .sg-val.sg-last { border-bottom: none; }
   .sg-val.ok   { color: var(--color-success); }
@@ -380,6 +388,25 @@
   .tooltip:hover .tooltiptext {
     visibility: visible;
     opacity: 1;
+  }
+  /* Responsive title: show full name when wide, short when narrow */
+  .title-short { display: none; }
+  @media (max-width: 760px) {
+    .title-full  { display: none; }
+    .title-short { display: inline; }
+  }
+
+  /* Right-panel tooltips open leftward to avoid clipping */
+  .tooltip-left .tooltiptext {
+    left: auto;
+    right: 0;
+    margin-left: 0;
+    transform: none;
+  }
+  .tooltip-left .tooltiptext::after {
+    left: auto;
+    right: 16px;
+    margin-left: 0;
   }
 
   /* Caption preview */
@@ -497,16 +524,13 @@
     text-decoration: underline;
   }
 
-  /* Status strip */
+  /* Status strip — inline center of header row */
   #status-strip {
-    background: var(--color-navy-800);
-    border-bottom: 2px solid var(--color-navy-700);
-    padding: 6px 20px;
+    flex: 1;
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
     flex-wrap: wrap;
     overflow: visible;
     position: relative;
@@ -583,21 +607,16 @@
 </div>
 
 <header>
-  <div class="header-content">
-    <img src="/logo.webp" alt="PCA Logo" class="church-logo">
-    <div class="church-titles">
-      <span class="kr-title" style="font-family: 'Source Serif 4', Georgia, serif;">Starkville Korean Church (PCA)</span>
+  <div class="header-row">
+    <div class="header-content">
+      <img src="/logo.webp" alt="PCA Logo" class="church-logo">
+      <div class="church-titles">
+        <span class="kr-title title-full" style="font-family: 'Source Serif 4', Georgia, serif;">Starkville Korean Church (PCA)</span>
+        <span class="kr-title title-short" style="font-family: 'Source Serif 4', Georgia, serif;">SKC (PCA)</span>
+      </div>
     </div>
-  </div>
-  <div class="header-side">
-    <a href="/help" target="_blank" style="font-size:12px; color:var(--color-gold-500); text-decoration:underline; font-weight:600; margin-right:16px;">📖 사용 가이드 (Guide)</a>
-    <span style="font-size:12px; opacity:0.8; font-weight:500;">Live Translation Console</span>
-    <span id="hdr-badge" class="badge badge-gray">Stopped</span>
-  </div>
-</header>
-
-<div id="status-strip">
-  <div class="ss-item" id="ss-audio">🔵 Audio
+    <div id="status-strip">
+    <div class="ss-item" id="ss-audio">🔵 Audio
     <span class="ss-tip">
       <strong>Audio (USB Mixer)</strong><br>
       🟢 Signal detected<br>
@@ -640,7 +659,8 @@
       (If you see this page, the server is up)
     </span>
   </div>
-</div>
+  </div>
+</header>
 
 <main>
 
@@ -648,7 +668,11 @@
 
     <!-- Input device + level meter -->
     <div class="card">
-      <h2>입력 장치 설정 (Input Device)</h2>
+      <h2>
+        <span class="tooltip">입력 장치 설정 (Input Device)
+          <span class="tooltiptext">번역에 사용할 오디오 입력 장치를 선택합니다. USB 믹서 또는 마이크를 선택하세요. 아래 레벨 미터로 신호 수신 여부를 확인할 수 있습니다. (Select the audio input device for translation. Use the level meter below to confirm signal.)</span>
+        </span>
+      </h2>
       <select id="device-select"><option>Loading…</option></select>
       <div class="meter-wrap"><div class="meter-bar" id="level-bar"></div></div>
       <div class="meter-label" id="level-label">입력 레벨 (Input level)</div>
@@ -656,7 +680,11 @@
 
     <!-- Status (compact grid) -->
     <div class="card" id="status-card">
-      <h2>상태 모니터 (Status)</h2>
+      <h2>
+        <span class="tooltip">상태 모니터 (Status)
+          <span class="tooltiptext">현재 번역 시스템의 오디오, Gemini AI 연결, 세션 통계를 실시간으로 표시합니다. (Real-time display of audio, Gemini AI connection, and session statistics.)</span>
+        </span>
+      </h2>
       <div class="stat-grid">
         <!-- Row 1: Audio (full width) -->
         <span class="sg-label sg-wide tooltip">오디오 입력
@@ -668,12 +696,12 @@
           <span class="tooltiptext">구글 Gemini Live API 서버와의 실시간 웹소켓 번역 연결 상태입니다. (WebSocket connection status to Google Gemini Live API.)</span>
         </span>
         <span class="sg-val sg-wide" id="stat-session">—</span>
-        <!-- Row 3: Model (full width, right below Gemini) -->
+        <!-- Row 3: Model (full width) -->
         <span class="sg-label sg-wide tooltip">모델
           <span class="tooltiptext">번역과 음성 스트리밍을 수행하고 있는 구글 제미나이 인공지능 모델 번호입니다. (Gemini model ID performing the live translation.)</span>
         </span>
         <span class="sg-val sg-wide" id="stat-model" style="font-size:11px;color:var(--color-text-muted)">—</span>
-        <!-- Row 4: Latency | Attendees -->
+        <!-- Row 4: Latency | Attendees | Reconnects -->
         <span class="sg-label tooltip">지연
           <span class="tooltiptext">입력된 음성이 번역되어 폰 화면에 표시될 때까지 소요되는 지체 시간입니다. (Time lag from audio capture to caption output.)</span>
         </span>
@@ -682,16 +710,15 @@
           <span class="tooltiptext">현재 와이파이를 통해 자막(/live) 페이지에 접속해 있는 실시간 기기 수입니다. (Number of devices currently viewing the live captions.)</span>
         </span>
         <span class="sg-val" id="stat-attendees">0</span>
-        <!-- Row 5: Reconnects | Captions -->
         <span class="sg-label tooltip">재연결
           <span class="tooltiptext">Gemini Live API의 연결 불안정 혹은 10분 만료로 인해 재설정된 자동 복구 횟수입니다. (Auto-recovery count due to Gemini API connection drops.)</span>
         </span>
         <span class="sg-val" id="stat-reconnects">0</span>
-        <span class="sg-label tooltip">자막 수
+        <!-- Row 5: Captions | Runtime | Cost -->
+        <span class="sg-label tooltip sg-last">자막 수
           <span class="tooltiptext">현재 세션 동안 번역되어 전송 완료된 자막 라인의 총 개수입니다. (Total translated caption paragraphs sent in this session.)</span>
         </span>
-        <span class="sg-val" id="stat-captions">0</span>
-        <!-- Row 6: Runtime | Cost -->
+        <span class="sg-val sg-last" id="stat-captions">0</span>
         <span class="sg-label tooltip sg-last">시간
           <span class="tooltiptext">예배 번역 시스템이 시작된 이후 총 가동 시간입니다. (Total active runtime of the translation server.)</span>
         </span>
@@ -705,15 +732,28 @@
 
     <!-- Caption preview (Korean + English paired) -->
     <div class="card">
-      <h2>실시간 자막 미리보기 (Preview)</h2>
+      <h2>
+        <span class="tooltip">실시간 자막 미리보기 (Preview)
+          <span class="tooltiptext">Gemini가 번역한 한국어 원문과 영어 번역문을 실시간으로 쌍으로 보여줍니다. 참석자 화면에 표시되는 내용과 동일합니다. (Live paired Korean source and English translation, identical to what attendees see.)</span>
+        </span>
+      </h2>
       <div id="preview-wrap"><div id="preview"></div></div>
     </div>
 
     <!-- Control buttons -->
     <div class="ctrl-bar">
-      <button class="primary"  id="btn-start">▶ Start</button>
-      <button class="warning"  id="btn-pause" disabled>⏸ Pause</button>
-      <button class="danger"   id="btn-stop"  disabled>■ Stop</button>
+      <span class="tooltip" style="flex:1;">
+        <button class="primary" id="btn-start" style="width:100%;">▶ Start</button>
+        <span class="tooltiptext">번역 서비스를 시작합니다. 선택된 오디오 장치로 캡처를 시작하고 Gemini AI에 연결합니다. (Start translation: begins audio capture and connects to Gemini AI.)</span>
+      </span>
+      <span class="tooltip" style="flex:1;">
+        <button class="warning" id="btn-pause" disabled style="width:100%;">⏸ Pause</button>
+        <span class="tooltiptext">번역을 일시 중지합니다. Gemini 연결은 유지되며 Resume을 누르면 즉시 재개됩니다. (Pause translation. Gemini stays connected — press Resume to continue instantly.)</span>
+      </span>
+      <span class="tooltip" style="flex:1;">
+        <button class="danger" id="btn-stop" disabled style="width:100%;">■ Stop</button>
+        <span class="tooltiptext">번역 서비스를 완전히 종료하고 세션 로그를 저장합니다. (Stop translation and save the session log. Gemini connection is closed.)</span>
+      </span>
     </div>
 
     <!-- Auto-Stop + Exit System side by side -->
@@ -730,19 +770,32 @@
         <option value="20">20분 (20 Min)</option>
         <option value="30">30분 (30 Min)</option>
       </select>
-      <button id="btn-shutdown" class="secondary" style="flex: 1; border-color: var(--color-error); color: var(--color-error); font-weight: 600; padding: 7px 12px;">
-        🔴 Exit System
-      </button>
+      <span class="tooltip" style="flex:1;">
+        <button id="btn-shutdown" class="secondary" style="width:100%; border-color: var(--color-error); color: var(--color-error); font-weight: 600; padding: 7px 12px;">
+          🔴 Exit System
+        </button>
+        <span class="tooltiptext" style="left:auto; right:0; margin-left:0;">서버 프로그램 전체를 종료합니다. 다시 사용하려면 바탕화면의 시작 파일을 실행해야 합니다. (Exits the server program entirely. Restart via the desktop launcher to use again.)</span>
+      </span>
     </div>
 
   </div><!-- /col-left -->
 
   <div class="col-right">
 
+    <!-- Guide link -->
+    <div class="card">
+      <h2>
+        <span class="tooltip tooltip-left">📖 사용 가이드 (Guide)
+          <span class="tooltiptext">번역 시스템 운영 방법, 장치 설정, 문제 해결 방법을 안내하는 운영자 가이드입니다. (Operator guide covering setup, device configuration, and troubleshooting.)</span>
+        </span>
+      </h2>
+      <a href="/help" target="_blank" style="font-size:13px; color:var(--color-gold-500); text-decoration:underline; font-weight:600; display:block; margin-top:4px;">가이드 열기 (Open Guide) →</a>
+    </div>
+
     <!-- Audio playback -->
     <div class="card">
       <h2>
-        <span class="tooltip">음성 통역 모니터 (Audio)
+        <span class="tooltip tooltip-left">음성 통역 모니터 (Audio)
           <span class="tooltiptext">관리자가 이어폰을 꽂고 번역된 실시간 영어 음성 스트림을 모니터링하기 위한 볼륨 조절 영역입니다. (Volume control for checking English voice outputs using headphones.)</span>
         </span>
       </h2>
@@ -761,7 +814,10 @@
     <!-- Event log (foldable, collapsed by default) -->
     <div class="card">
       <h2 class="card-toggle" id="log-toggle">
-        이벤트 로그 (Event Log) <span class="chevron">▼</span>
+        <span class="tooltip tooltip-left">이벤트 로그 (Event Log)
+          <span class="tooltiptext">오디오 연결, Gemini 세션 상태 변화, 접속자 입퇴장 등 시스템 이벤트 기록입니다. 클릭하여 펼치거나 접을 수 있습니다. (System event log: audio, Gemini session changes, attendee joins/leaves. Click to expand.)</span>
+        </span>
+        <span class="chevron">▼</span>
       </h2>
       <div class="card-body hidden" id="log-body">
         <div id="log"><div class="log-placeholder" style="color:var(--color-text-muted); padding:3px 0;">No events yet…</div></div>
@@ -771,7 +827,10 @@
     <!-- QR code (bottom of right column) -->
     <div class="card">
       <h2 class="card-toggle open" id="qr-toggle">
-        접속 QR 코드 <span class="chevron">▼</span>
+        <span class="tooltip tooltip-left">접속 QR 코드
+          <span class="tooltiptext">참석자들이 스마트폰으로 스캔하여 실시간 자막(/live) 페이지에 접속할 수 있는 QR 코드입니다. 슬라이드에 표시하거나 직접 안내해 주세요. (QR code for attendees to scan and open the live caption page on their phones.)</span>
+        </span>
+        <span class="chevron">▼</span>
       </h2>
       <div class="card-body" id="qr-body">
         <img id="qr-img" src="/api/qr.png" alt="QR code" style="width:100%;height:auto;display:block;margin-bottom:12px;">
@@ -1220,9 +1279,7 @@ function startStatusPoll() {
     else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'ss-err', '🔴 Translation');
     else ssSet('ss-translation', '', '🔵 Translation');
 
-    const badge = document.getElementById('hdr-badge');
     if (!st.service_running) {
-      badge.textContent = 'Stopped'; badge.className = 'badge badge-gray';
       btnStart.disabled = false; btnStart.textContent = '▶ Start';
       btnPause.disabled = true; btnPause.textContent = '⏸ Pause'; btnPause.className = 'warning';
       btnStop.disabled = true; btnStop.textContent = '■ Stop';
@@ -1235,16 +1292,8 @@ function startStatusPoll() {
       _paused = st.paused;
       if (_paused) {
         btnPause.textContent = '▶ Resume'; btnPause.className = 'primary';
-        badge.textContent = 'Paused'; badge.className = 'badge badge-blue';
       } else {
         btnPause.textContent = '⏸ Pause'; btnPause.className = 'warning';
-        if (st.session.status === 'connected') {
-          badge.textContent = 'Live'; badge.className = 'badge badge-green';
-        } else if (st.session.status === 'failed') {
-          badge.textContent = 'Error'; badge.className = 'badge badge-red';
-        } else {
-          badge.textContent = 'Starting'; badge.className = 'badge badge-amber';
-        }
       }
     }
   }, 1000);
@@ -1269,7 +1318,11 @@ function connectSSE() {
       p.enEl.textContent = msg.text;
 
     } else if (msg.kind === 'commit') {
-      // Finalize the live pair: remove live styling, prepend timestamp
+      // Sync EN text to the actual committed portion (msg.text) before finalizing.
+      // The live pair's enEl holds the full accumulated _current_line; on a
+      // force-commit the backend cuts it and the remainder becomes the next line,
+      // so without this the operator would show the remainder text twice.
+      if (livePair && msg.text) livePair.enEl.textContent = msg.text;
       commitLivePair(msg.time_str || null);
 
     } else if (msg.kind === 'unavailable') {

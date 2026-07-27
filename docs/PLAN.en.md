@@ -40,6 +40,7 @@ Windows PC (this app)
     │
     ├─ app/broadcast.py ─────── in-memory SSE fanout (captions) + audio queue fanout (PCM)
     │                            current-line replace UX (1.5s commit threshold)
+    │                            commit payload includes matched Korean (`ko` field)
     │                            separate audio client list for WS /audio-stream
     │
     └─ app/server.py ─────────── FastAPI
@@ -67,7 +68,7 @@ Windows PC (this app)
 ### Model selection
 - **`gemini-3.5-live-translate-preview`** — selected at startup by querying the API.
 - Uses `response_modalities=["AUDIO"]` + `translation_config`; translation text arrives via `server_content.output_transcription.text`.
-- Korean source arrives via `server_content.input_transcription.text` (log only, never shown to attendees).
+- Korean source arrives via `server_content.input_transcription.text`; accumulated in `_current_ko` and attached to `commit` SSE events as `ko` field for attendee tap-reveal.
 - `gemini-3.1-flash-live-preview` crashed after ~30s of continuous audio (error 1011) in Phase 12 Round 3 — unsuitable for a 60–90 min service.
 - `system_instruction` is accepted by the translate model but ignored by its internal engine (Phase 12 Round 2).
 
@@ -188,6 +189,7 @@ Windows PC (this app)
 | 15 | Bounded auto-recovery loop, detailed close reason logging, operator warning alerts, and 27-min GoAway root cause resolution | ✅ Done |
 | 16 | mDNS hostname advertisement (`python-zeroconf`), dynamic URL resolver, primary/fallback display on operator console | ✅ Done |
 | 17 | UI refactoring to external templates: `attendee.html` and `operator.html` separated from `server.py`, with dynamic loader enabling hot-reload in development | ✅ Done |
+| 18 | Operator console UX: sticky header, status strip merged into header, responsive title, 6-column stat grid, tooltips on all elements, 사용 가이드 as right-panel card. Attendee page: Korean tap-reveal (backend `ko` field on `commit`), paragraph grouping, timestamp removal, font range 20–40px. GoAway log demoted to INFO. Operator preview duplicate text fix. | ✅ Done |
 | V0–V5, V14–V19 | Verification protocol | ✅ All passed |
 
 ---

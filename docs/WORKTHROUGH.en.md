@@ -115,6 +115,38 @@ This document serves as the chronological build record, verification test log, a
   * Enhanced diagnostics in `GeminiSession._run_session` exception handler to log exception class names, websocket close codes, and raw error messages.
   * Distinguished auto-stop logs (`AUTO_STOP_TIMER fired` / `Service automatically stopped: no audio signal for {N} min`) from session crashes.
 
+### Session 16 — Operator Console UX Overhaul & Attendee Korean Reveal (Phase 18)
+
+* **Goal:** Reduce vertical space consumption on the operator console, improve readability on the attendee page, and add a Korean source reveal feature for attendees.
+
+* **Operator console changes:**
+  * Merged the status strip into the `<header>` row (logo left, 5 pills centered, nothing right), making the header `position: sticky` so both title and status indicators scroll-lock together. Saved a full row of screen height.
+  * Removed the "Live Translation Console" label and the Stopped/Live/Paused/Error badge — the status strip conveys state sufficiently.
+  * Added a CSS media-query responsive title: "Starkville Korean Church (PCA)" at ≥760px, "SKC (PCA)" below — prevents the status pills from wrapping at narrow widths.
+  * Compacted 상태 모니터 from a 4-column grid (3 rows of 2 pairs) to a 6-column grid (2 rows of 3 pairs), saving another row.
+  * Added bilingual hover tooltips to every card heading, stat label, and control button (Start, Pause, Stop, Exit System, Auto-Stop).
+  * Moved 사용 가이드 from the header to a dedicated card in the right panel, consistent with other cards.
+  * Right-panel tooltips use a `.tooltip-left` CSS variant that opens leftward to avoid viewport clipping at narrow widths.
+
+* **Operator preview duplicate text fix:**
+  * Diagnosed: on force-commits (150-char boundary), `broadcast.py` cuts `_current_line` and sends only the cut portion as `msg.text`, but the operator's `enEl` still held the full line. The next live pair then opened with the remainder, duplicating it. Fix: `livePair.enEl.textContent = msg.text` before `commitLivePair()`. The attendee page was immune because it reads `msg.text` directly.
+
+* **GoAway log level fix:**
+  * `SESSION_FAILURE` in `GeminiSession._run_session` now logs at `INFO` when the exception is a GoAway, eliminating misleading ERROR noise in `ops.log`. GoAway is a normal server-side refresh, not a failure.
+
+* **Attendee page — Korean tap-reveal:**
+  * Added `ko: str = ""` field to `CaptionEvent` dataclass. Both commit paths in `broadcast.py` now pass `self._current_ko` as the `ko` field. `server.py` forwards it in the SSE JSON payload. The attendee page uses `msg.ko` directly on each commit — no client-side delta accumulation needed.
+  * Tapping/clicking a committed paragraph toggles the Korean original beneath it (smaller font, muted color, gold left border).
+  * Note: KO/EN alignment is approximate — Gemini streams both on independent timers with no explicit sentence boundary markers. The match is the best achievable without API-side alignment data.
+
+* **Attendee page — paragraph grouping:**
+  * Consecutive commits now append to the same `<div>` until the last committed text ends with `.` `!` or `?`, then a new paragraph begins. Eliminates visual fragmentation from the 1.5s silence-commit cadence (e.g., "restaurant, we don't answer" no longer appears as a stranded new line).
+
+* **Attendee page — other UX:**
+  * Removed `[MM:SS]` timestamps from committed caption lines.
+  * Font size range reduced from 20–56px to 20–40px; default changed from 28px to 20px; live "Font XXpx" label added next to slider.
+  * Added "Tap sentence for Korean" hint in the control bar.
+
 ---
 
 ## 2. Verification Protocol Results (V0–V6, V14–V18)

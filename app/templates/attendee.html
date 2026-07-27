@@ -190,18 +190,24 @@
   }
   .line {
     font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
-    font-size: var(--fs, 28px);
-    line-height: 1.75;
+    font-size: var(--fs, 20px);
+    line-height: 1.6;
     color: var(--color-text-secondary);
     animation: slideUp 0.4s ease-out;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
-  .timestamp {
-    color: var(--color-gold-500);
-    font-size: 0.75em;
-    font-family: 'Inter', sans-serif;
-    margin-right: 12px;
-    font-weight: 500;
+  .line-ko {
+    display: none;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 0.6em;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    margin-top: 4px;
+    padding: 4px 8px;
+    border-left: 2px solid var(--color-gold-300);
   }
+  .line.ko-open .line-ko { display: block; }
 
   #current-wrapper {
     background: var(--color-warm-50);
@@ -216,7 +222,7 @@
     padding: 20px 24px;
     box-sizing: border-box;
     font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
-    font-size: var(--fs, 28px);
+    font-size: var(--fs, 20px);
     line-height: 1.75;
     color: var(--color-navy-900);
     font-weight: 500;
@@ -320,10 +326,14 @@
 
 <div id="controls">
   <div class="control-group">
-    <span class="control-label">Font Size</span>
-    <input id="font-range" type="range" min="20" max="56" value="28">
+    <span class="control-label">Font <span id="font-size-label" style="font-variant-numeric:tabular-nums;">20px</span></span>
+    <input id="font-range" type="range" min="16" max="40" value="20">
   </div>
   <button id="audio-btn" class="ctl-btn" title="Enable audio translation">🔇 Audio Off</button>
+</div>
+
+<div id="tap-hint" style="text-align:center; font-size:12px; color:var(--color-text-muted); padding:4px 20px; background:var(--color-warm-50); border-bottom:1px solid var(--color-warm-100); flex-shrink:0;">
+  Tap a sentence to see the original Korean
 </div>
 
 <div id="history">
@@ -345,9 +355,13 @@ const audioBtn = document.getElementById('audio-btn');
 const modal = document.getElementById('earphone-modal');
 
 // ── Font size ──────────────────────────────────────────────────────────────
-fontRange.addEventListener('input', () => {
-  document.documentElement.style.setProperty('--fs', fontRange.value + 'px');
-});
+const fontSizeLabel = document.getElementById('font-size-label');
+function applyFontSize(v) {
+  document.documentElement.style.setProperty('--fs', v + 'px');
+  fontSizeLabel.textContent = v + 'px';
+}
+applyFontSize(fontRange.value);
+fontRange.addEventListener('input', () => applyFontSize(fontRange.value));
 
 // ── Wake Lock ──────────────────────────────────────────────────────────────
 async function requestWakeLock() {
@@ -456,21 +470,32 @@ function connect() {
     if (msg.kind === 'update') {
       current.textContent = msg.text;
     } else if (msg.kind === 'commit') {
-      if (msg.text.trim()) {
-        const div = document.createElement('div');
-        div.className = 'line';
-        if (msg.time_str) {
-          const span = document.createElement('span');
-          span.className = 'timestamp';
-          span.textContent = `[${msg.time_str}] `;
-          div.appendChild(span);
+      const text = msg.text.trim();
+      const ko = (msg.ko || '').trim();
+      if (text) {
+        let para = historyInner.lastElementChild;
+        const needsNew = !para || /[.!?]$/.test(para.dataset.last || '');
+        if (needsNew) {
+          para = document.createElement('div');
+          para.className = 'line';
+          const koDiv = document.createElement('div');
+          koDiv.className = 'line-ko';
+          para.appendChild(koDiv);
+          para.addEventListener('click', () => para.classList.toggle('ko-open'));
+          historyInner.appendChild(para);
+          while (historyInner.children.length > 12) historyInner.removeChild(historyInner.firstChild);
         }
-        const textSpan = document.createElement('span');
-        textSpan.textContent = msg.text;
-        div.appendChild(textSpan);
-        historyInner.appendChild(div);
+        const koDiv = para.querySelector('.line-ko');
+        // Insert EN text as a text node before the ko div
+        const existing = [...para.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
+        if (existing) {
+          existing.textContent += ' ' + text;
+        } else {
+          para.insertBefore(document.createTextNode(text), koDiv);
+        }
+        if (ko) koDiv.textContent = (koDiv.textContent ? koDiv.textContent + ' ' : '') + ko;
+        para.dataset.last = text;
         historyEl.scrollTop = historyEl.scrollHeight;
-        while (historyInner.children.length > 25) historyInner.removeChild(historyInner.firstChild);
       }
       current.textContent = '';
     } else if (msg.kind === 'unavailable') {

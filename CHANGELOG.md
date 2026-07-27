@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.0] - 2026-07-26
+
+### Added
+- **Korean source reveal on attendee page**: tap/click any committed English paragraph to toggle the original Korean text beneath it, displayed in a smaller muted font with a gold left border. Korean text is now sent as a `ko` field in the SSE `commit` payload from the backend (`broadcast.py` + `server.py`), replacing the previous unreliable client-side delta accumulation.
+- **Operator console sticky header**: header (`<header>`) is now `position: sticky; top: 0` so the title bar and status strip scroll-lock together while reviewing long caption previews.
+- **Responsive title**: header shows "Starkville Korean Church (PCA)" at normal widths; switches to "SKC (PCA)" below 760px when the status strip would start wrapping.
+- **Tooltips on all operator console elements**: every card heading, stat label, control button (Start, Pause, Stop, Exit System), and right-panel card now has a bilingual Korean/English hover tooltip explaining its function.
+
+### Changed
+- **Status strip merged into header**: the 5 status pill indicators (Audio, Gemini, Internet, Translation, Web Server) moved from a separate row below the header into the header row itself, centered between logo and right edge. Saves one full row of vertical space.
+- **Operator console header simplified**: removed "Live Translation Console" label and the `#hdr-badge` (Stopped/Live/Paused/Error) badge — the status strip indicators convey state sufficiently.
+- **사용 가이드 link**: moved from header to a dedicated card in the right panel, styled consistently with other cards.
+- **상태 모니터 grid compacted to 6 columns**: numeric stats (지연, 접속자, 재연결, 자막 수, 시간, 비용) now pack into 2 rows of 3 pairs instead of 3 rows of 2 pairs. Full-width rows (오디오 입력, Gemini 세션, 모델) span all 6 columns.
+- **Operator preview duplicate text fix**: `commit` handler in operator preview now sets `enEl.textContent = msg.text` before finalizing, preventing repeated phrases after force-commits at the 150-char boundary.
+- **Attendee page — timestamps removed**: committed caption lines no longer show `[MM:SS]` timestamps.
+- **Attendee page — paragraph flow**: consecutive caption commits append to the same `<div>` until a sentence-ending punctuation (`.` `!` `?`) is reached, then start a new paragraph — reducing visual fragmentation.
+- **Attendee page — font size range**: reduced from 20–56px to 20–40px; default changed from 28px to 20px. Live `Font XXpx` label added next to the slider.
+- **Attendee page — "Tap sentence for Korean" hint**: added as a small label in the control bar between the font slider and the Audio button.
+- **GoAway log level demoted**: `SESSION_FAILURE` log entry in `gemini_session.py` now logs at `INFO` (not `ERROR`) when the exception is a GoAway, eliminating misleading error noise in `ops.log`.
+
+---
+
 ## [2.0.0] - 2026-07-19
 
 ### Changed

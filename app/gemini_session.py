@@ -423,7 +423,8 @@ class GeminiSession:
         except Exception as e:
             if "1000" in str(e) and self._stop_event.is_set():
                 return
-            server_log.error(
+            log_fn = server_log.info if "GoAway" in str(e) else server_log.error
+            log_fn(
                 "SESSION_FAILURE: type=%s close_code=%s message=%s",
                 type(e).__name__,
                 getattr(e, 'code', 'unknown'),
