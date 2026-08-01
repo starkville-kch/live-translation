@@ -79,6 +79,7 @@ hiddenimports += [
     "scipy.signal",
     "scipy.signal._upfirdn",
     "scipy.signal._upfirdn_apply",
+    "app.tunnel",
 ]
 
 a = Analysis(
@@ -129,4 +130,5 @@ exe = EXE(
     entitlements_file=None,
     onefile=True,
     icon=None,
+    version="version_info.txt",
 )

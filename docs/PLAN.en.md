@@ -42,6 +42,7 @@ Windows PC (this app)
     │                            current-line replace UX (1.5s commit threshold)
     │                            commit payload includes matched Korean (`ko` field)
     │                            separate audio client list for WS /audio-stream
+    ├─ app/tunnel.py ────────── Cloudflare HTTPS Quick Tunnel manager (auto-download cloudflared.exe, zero-blocking startup)
     │
     └─ app/server.py ─────────── FastAPI
           │
@@ -190,7 +191,9 @@ Windows PC (this app)
 | 16 | mDNS hostname advertisement (`python-zeroconf`), dynamic URL resolver, primary/fallback display on operator console | ✅ Done |
 | 17 | UI refactoring to external templates: `attendee.html` and `operator.html` separated from `server.py`, with dynamic loader enabling hot-reload in development | ✅ Done |
 | 18 | Operator console UX: sticky header, status strip merged into header, responsive title, 6-column stat grid, tooltips on all elements, 사용 가이드 as right-panel card. Attendee page: Korean tap-reveal (backend `ko` field on `commit`), paragraph grouping, timestamp removal, font range 20–40px. GoAway log demoted to INFO. Operator preview duplicate text fix. | ✅ Done |
-| V0–V5, V14–V19 | Verification protocol | ✅ All passed |
+| 19 | Cloudflare HTTPS Tunnel (`app/tunnel.py`), Production Named Tunnel (`live.starkvillekoreanchurch.org`), Dual QR Code operator architecture, pre-flight check script `check_skc_live.bat` | ✅ Done |
+| V0–V5, V14–V20 | Verification protocol | ✅ All passed |
+
 
 ---
 

@@ -42,6 +42,7 @@ Windows PC (본 애플리케이션)
     │                            실시간 커밋 자막 처리 (1.5초 대기 임계값)
     │                            커밋 이벤트에 매칭된 한국어 원문 (`ko` 필드) 포함
     │                            오디오 출력용 WebSocket 클라이언트 팬아웃
+    ├─ app/tunnel.py ────────── Cloudflare HTTPS 터널 관리자 (cloudflared.exe 비동기 구동/다운로드)
     │
     └─ app/server.py ─────────── FastAPI 웹 서버
           │
@@ -175,7 +176,9 @@ Windows PC (본 애플리케이션)
 | 16 | mDNS 호스트네임 광고 (`python-zeroconf`), 동적 URL 리졸버, 운영자 콘솔 주/비상용 접속 주소 표시 | ✅ 완료 |
 | 17 | UI 외부 템플릿 리팩토링: `attendee.html` 및 `operator.html`을 `server.py`에서 분리하고, 개발 환경 실시간 핫 리로드를 위한 동적 로더 구현 | ✅ 완료 |
 | 18 | 운영자 콘솔 UX: 고정 헤더, 상태 스트립 헤더 통합, 반응형 타이틀, 6열 통계 그리드, 전체 요소 툴팁, 사용 가이드 카드. 참석자 화면: 한국어 탭 보기 (백엔드 `ko` 필드), 단락 그루핑, 타임스탬프 제거, 폰트 범위 20–40px. GoAway 로그 INFO 레벨 수정. 운영자 미리보기 중복 텍스트 버그 수정. | ✅ 완료 |
-| V0–V5, V14–V19 | 검증 프로토콜 | ✅ 전체 통과 |
+| 19 | Cloudflare HTTPS 터널 (`app/tunnel.py`), 프로덕션 네임드 터널 (`live.starkvillekoreanchurch.org`), 이중 QR 코드 시스템 (현장/온라인), 사전 점검 헬스 체크 스크립트 `check_skc_live.bat` | ✅ 완료 |
+| V0–V5, V14–V20 | 검증 프로토콜 | ✅ 전체 통과 |
+
 
 ---
 

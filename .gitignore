@@ -1,4 +1,9 @@
 .env
+.env.*
+*.json
+.cloudflared/
+credentials/
+secrets/
 __pycache__/
 *.pyc
 *.pyo

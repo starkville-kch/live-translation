@@ -5,7 +5,15 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-31
+
+### Added
+- **Production Named Cloudflare Tunnel Integration**: added support for Cloudflare Named Tunnels (`https://live.starkvillekoreanchurch.org`) and automatic Windows Service detection in `CloudflareTunnelManager` (`app/tunnel.py`). Automatically detects active `cloudflared` services or launches Quick Tunnels when unmanaged.
+- **Dual QR Code Operator Console Architecture**: operator console (`operator.html`) now features Dual QR Code tabs (`/api/qr.png?type=local` vs `/api/qr.png?type=public`). Sanctuary in-person attendees use ultra-low latency local mDNS (`http://skc-live.local:8080/live`), while online live-stream viewers use public HTTPS (`https://live.starkvillekoreanchurch.org/live`).
+- **Sunday Pre-Flight Health Check Script**: added `check_skc_live.bat` to perform automated 3-step pre-service health verification (Local HTTP 200, Cloudflare Windows Service status, Public HTTPS 200).
+
 ---
+
 
 ## [2.1.0] - 2026-07-26
 

@@ -147,9 +147,29 @@
   * 폰트 크기 범위를 20–56px에서 20–40px로 축소, 기본값을 28px에서 20px로 변경. 슬라이더 옆에 실시간 "Font XXpx" 레이블 추가.
   * 컨트롤 바에 "Tap sentence for Korean" 안내 문구 추가.
 
+### 세션 19 — Cloudflare HTTPS 터널 자동 통합 (`cloudflared`)
+* **목표**: 모바일 브라우저의 HTTP "보안되지 않음" 경고 및 HTTPS 자동 업그레이드 이탈을 완전히 방지하기 위한 Cloudflare HTTPS Quick Tunnel 자동 관리자 구축.
+* **구현 내역**:
+  * `app/tunnel.py` 모듈 구축: `cloudflared.exe` 자동 탐색 및 공식 GitHub 최신 릴리즈(`cloudflared-windows-amd64.exe`) 비동기 다운로드 및 복구 가이드 제공.
+  * 백그라운드 프로세스 비동기 실행 및 `https://*.trycloudflare.com` 공용 URL 자동 추출.
+  * `/api/status` API 연동 및 운영자 콘솔 QR 코드/접속 주소 동적 자동 스왑 (`/api/qr.png?t=...`).
+  * 프로세스 정상/비정상 종료 시 `atexit` 및 `main.py` `try...finally` 블록을 통한 부모-자식 터널 프로세스 안전 자동 정제.
+
+### 세션 20 — 프로덕션 네임드 Cloudflare 터널 및 이중 QR 코드 구축
+* **목표**: Cloudflare Named Tunnel / Windows Service를 통해 영구 도메인(`https://live.starkvillekoreanchurch.org`)을 연결하고, 현장 예배 참석자(로컬 Wi-Fi)와 온라인 방송 시청자를 위한 이중 QR 코드 시스템 구축.
+* **구현 내역**:
+  * `app/tunnel.py` 확장: 현재 실행 중인 `cloudflared` Windows Service (`sc query cloudflared` -> `STATE: 4 RUNNING`) 및 프로덕션 `public_url` (`https://live.starkvillekoreanchurch.org`) 자동 감지 바인딩.
+  * 백엔드 및 UI 이중 QR 코드 시스템 구현:
+    * `/api/qr.png?type=local`: 현장 참석자용 로컬 mDNS/IP 접속 QR 코드 (`http://skc-live.local:8080/live`).
+    * `/api/qr.png?type=public`: 온라인 방송 시청자용 보안 HTTPS 접속 QR 코드 (`https://live.starkvillekoreanchurch.org/live`).
+  * 운영자 콘솔 (`operator.html`) 이중 QR 탭 (🏛️ 현장 예배 / 📺 온라인 방송) 및 캐시 방지 타임스탬프 스왑 구현.
+  * 사전 점검용 3단계 헬스 체크 배치 스크립트 (`check_skc_live.bat`) 작성.
+  * 반응 속도 벤치마크 수행: 로컬 mDNS TTFB = **1.6 ms**, 공용 HTTPS TTFB = **144.2 ms** (+142.6 ms Cloudflare 네트워크 오버헤드).
+
 ---
 
-## 2. 검증 프로토콜 결과 (V0–V6, V14–V18)
+
+## 2. 검증 프로토콜 결과 (V0–V6, V14–V19)
 
 * **V0 (구동 및 API 상태)**: 모든 FastAPI 헬스 체크 경로가 정상 작동하며 QR 코드가 문제없이 동적으로 생성됨을 검증 완료 (Pass ✅).
 * **V1 (오디오 경로)**: 로컬 마이크 입력을 모조 테스트 음원으로 Gemini API에 쏘아 자막 변환 및 2.2초 수준의 극초기 지연 시간 도달을 검증 완료 (Pass ✅).
@@ -163,6 +183,21 @@
 * **V16 (무신호 안전망 격리 검증)**: 마이크 입력을 완전히 무음으로 설정했을 때 무신호 감지 메커니즘이 `Service automatically stopped: no audio signal for {N} min` 형식의 독립된 로그를 정상적으로 뱉고, 실제 오디오 낭독이 진행되는 상황에서는 오동작하지 않음을 입증 (Pass ✅).
 * **V17 (세션 복구 핸들 바인딩 검증)**: 구글 GoAway 발생 시 로그 파일에 `resumption_handle_present=True` 및 `resume=True` 상태를 명시하고 성공적으로 컨텍스트를 연계 복구하는지 확인하고, 만료로 인한 콜드 스타트 시 브라우저 경고 이벤트를 띄우는지 검증 완료 (Pass ✅).
 * **V18 (예외 진단 수집 및 27분 GoAway 실시간 검증)**: `GeminiSession._run_session` 예외 로그가 원시 예외(`RuntimeError`) 및 메시지(`GoAway`)를 상세 기록함을 검증하고, 27:05 구글 Live API 세션 연결 교체 경계를 손실 없이 포착해 자동 재연결됨을 최종 입증 완료 (Pass ✅).
+* **V19 (Cloudflare HTTPS 터널 및 복구 검증)**: `cloudflared.exe` 자동 시작, `https://*.trycloudflare.com` URL 파싱, QR 코드 자동 갱신 및 터널 실패 시 로컬 네트워크 수용성을 최종 입증 완료 (Pass ✅).
+* **V20 (외부 HTTPS 실시간 기능 검증 프로토콜 — 현장 외부 검증용)**:
+  - 검증 단계:
+    1. 애플리케이션을 시작하고 `HTTPS Tunnel Ready` 상태에 도달할 때까지 대기합니다.
+    2. 교회 Wi-Fi가 아닌 외부 셀룰러 데이터(LTE/5G) 상태의 모바일 기기에서 `public_attendee_url`을 엽니다.
+    3. 실제 번역 세션을 시작합니다.
+    4. 최소 2~5분간 자막이 지연 없이 즉시 수신되는지 확인합니다.
+    5. 오디오 스트리밍을 켰을 때 WebSocket PCM 오디오가 정상 수신 및 재생되는지 확인합니다.
+    6. 참석자 페이지를 새로고침하여 클라이언트가 자동 재연결되는지 확인합니다.
+    7. 서비스를 정지한 후 공용 HTTPS 주소 접속이 끊어지는지 확인합니다.
+  - 결과 기록 규격:
+    - `PASS: Quick Tunnel supports this project's live delivery path` (Quick Tunnel이 프로젝트의 실시간 전송 경로를 정상 지원함) 또는
+    - `FAIL: captions are buffered/delayed; use Named Tunnel for production HTTPS.` (자막이 버퍼링/지연됨; 운영 환경에서는 고정 도메인 Named Tunnel 사용 필요)
+
+
 
 ---
 

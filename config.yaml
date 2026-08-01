@@ -12,6 +12,8 @@ logging:
   log_dir: logs
   max_bytes: 10485760
 network:
+  enable_tunnel: true
   host: 0.0.0.0
   hostname: skc-live.local
   port: 8080
+  public_url: https://live.starkvillekoreanchurch.org

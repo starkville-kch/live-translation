@@ -64,6 +64,13 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 - **Operator preview duplicate text bug**: on force-commits (150-char boundary), the operator's `enEl` held the full `_current_line` including the remainder that would start the next live pair. Fix: set `enEl.textContent = msg.text` inside the `commit` handler before calling `commitLivePair()`. The attendee page was immune because it reads `msg.text` directly.
 - **GoAway is INFO not ERROR**: `SESSION_FAILURE` in `gemini_session.py._run_session` is logged at `ERROR` for real failures but demoted to `INFO` when `"GoAway"` is in the exception message. GoAway is a normal server-side session refresh, not an error. Do not revert this to blanket `ERROR`.
 - **Attendee paragraph grouping**: commits append to the current `<div>` until the last committed text ends with `.`, `!`, or `?`, then a new paragraph begins. This prevents visual fragmentation from the 1.5s silence-based commit cadence. The `data-last` attribute on each paragraph tracks the last appended text for the punctuation check.
+- **Cloudflare HTTPS Tunnel (`app/tunnel.py`)**: `CloudflareTunnelManager` manages non-blocking `cloudflared.exe` execution in a background worker thread (0ms app startup delay) and detects running `cloudflared` Windows Services. Supports both temporary Quick Tunnels (`trycloudflare.com`) and Production Named Tunnels (`https://live.starkvillekoreanchurch.org/live`). Captures early process exits, sends `Cache-Control: no-store` on `/api/qr.png`, and falls back non-fatally to local network access on failure. Port is fixed at 8080. The Named Tunnel URL/QR code is permanent as long as: (1) the DNS route remains attached, (2) the Windows service is running, (3) the route targets `127.0.0.1:8080`, and (4) the translation server app is running.
+- **Dual QR Code Architecture**: Operator console (`operator.html`) provides two distinct QR code tabs (`/api/qr.png?type=local` vs `/api/qr.png?type=public`). In-person sanctuary attendees use local mDNS (`http://skc-live.local:8080/live` — ultra-low 1.6ms TTFB latency), while online stream/remote viewers use public HTTPS (`https://live.starkvillekoreanchurch.org/live`).
+- **Sunday Pre-Flight Health Check (`check_skc_live.bat`)**: 3-step automated script verifying local HTTP 200, `cloudflared` Windows Service state, and public HTTPS 200 before services.
+
+
+
+
 
 ---
 

@@ -38,11 +38,19 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 
+copy /y "%~dp0config.yaml" "%OUT_DIR%\dist\config.yaml" >nul
+if exist "%~dp0.env" (
+    copy /y "%~dp0.env" "%OUT_DIR%\dist\.env" >nul
+) else if exist "%~dp0.env.example" (
+    copy /y "%~dp0.env.example" "%OUT_DIR%\dist\.env" >nul
+)
+
 echo.
 echo [2/2] Done.
 echo Output: %OUT_DIR%\dist\SKC_translation.exe
+echo (Copied config.yaml and .env template to %OUT_DIR%\dist\)
 echo.
-echo To deploy, copy these 3 files to any folder:
+echo To deploy to another computer, copy these 3 files to any folder:
 echo   SKC_translation.exe
 echo   config.yaml
 echo   .env

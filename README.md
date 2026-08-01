@@ -53,7 +53,11 @@
 * **단일 실행 파일 빌드 기록** — PyInstaller 빌드 7회 시도 기록, spec 설정, frozen exe 코드 변경
   * **[🇰🇷 한국어](docs/BUILD_EXE.ko.md)** · **[🇺🇸 English](docs/BUILD_EXE.en.md)**
 
+* **Cloudflare HTTPS 터널 운영 가이드** — 도메인 연결, 점검 명령, 장애 진단, 보안 지침
+  * **[🇰🇷 한국어](docs/cloudflare-tunnel.ko.md)** · **[🇺🇸 English](docs/cloudflare-tunnel.md)**
+
 ### 🔐 3. 운영 및 소유권 관리
+
 
 * **사이트 운영 및 비밀키 관리**
   * **API 키 발급 및 등록**: [Google AI Studio](https://aistudio.google.com/)에서 API 키를 발급받고 결제 정보(Billing)를 등록해야 합니다. 무료 키는 60분 연속 가동 시 분당 한도 초과로 자막 중단이 발생할 수 있습니다.
@@ -272,11 +276,51 @@ conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyau
 
 # Run the single executable build script
 build_exe.bat
+### 4.2 Pre-Flight System Health Check
+Before Sunday services, run the automated health checker batch script:
+
+```bat
+# Run the pre-flight check script (Windows Batch)
+check_skc_live.bat
 ```
-* **Output Binary**: `.agent\dist\SKC_translation.exe` (~70 MB)
-* **Deployment Setup**: Copy `SKC_translation.exe`, `config.yaml`, and `.env` into the same folder on the target machine.
+
+Or run the Python health diagnostic script:
+```bash
+python .agent/scripts/check_health.py
+```
+
+Expected status codes:
+- **Local Server (`http://127.0.0.1:8080/live`)**: `200` OK
+- **Cloudflare Service (`sc query cloudflared`)**: `STATE: 4 RUNNING`
+- **Public HTTPS Domain (`https://live.starkvillekoreanchurch.org/live`)**: `200` OK
 
 ---
+
+
+### 4.3 Public HTTPS Access & Cloudflare Tunnel
+For remote viewers, YouTube live stream attendees, and cellular devices, the service is accessible over public HTTPS:
+
+* **Public URL**: `https://live.starkvillekoreanchurch.org/live`
+* **Local In-Person URL**: `http://skc-live.local:8080/live`
+
+For complete operational details, failure troubleshooting, and security guidelines, see the **Cloudflare Tunnel Operational Guide**:
+* **[🇰🇷 한국어 운영 가이드](docs/cloudflare-tunnel.ko.md)** · **[🇺🇸 English Guide](docs/cloudflare-tunnel.md)**
+
+> [!WARNING]
+
+> **Cloudflare HTTPS Tunnel & External Access Security**:
+> When `network.enable_tunnel: true` is enabled in `config.yaml`, the system connects via Cloudflare Tunnel.
+> 1. **Share only `/live`**: Only share the attendee endpoint URL (`https://.../live`) with attendees. Do not share the admin root (`/`), as the operator console does not require a password by default.
+> 2. **Production Domain Stability**: Named Tunnels provide a stable hostname (`https://live.starkvillekoreanchurch.org/live`) across server restarts. The QR code remains constant as long as:
+>    - The `live.starkvillekoreanchurch.org` DNS route remains attached to the named tunnel in Cloudflare.
+>    - The `cloudflared` Windows Service remains installed, enabled, and connected on the PC.
+>    - The tunnel route targets `http://127.0.0.1:8080`.
+>    - The translation PC and application are running.
+
+---
+
+
+
 
 
 ## 5. Service Operational Cost Analysis

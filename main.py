@@ -17,11 +17,14 @@ Do NOT run ``--reload`` in production; the audio capture thread does not
 survive hot-reload safely.
 """
 from app.server import app  # noqa: F401  — re-exported for `uvicorn main:app`
+from app.tunnel import CloudflareTunnelManager
+
 
 def _port_in_use(port: int) -> bool:
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("127.0.0.1", port)) == 0
+
 
 if __name__ == "__main__":
     import sys
@@ -47,7 +50,11 @@ if __name__ == "__main__":
     import uvicorn
     from app.config import network_cfg
     cfg = network_cfg()
-    port = cfg.get("port", 8000)
+    port = 8080  # Fixed server port 8080 per requirement
+    enable_tunnel = cfg.get("enable_tunnel", True)
+
+    tunnel_mgr = CloudflareTunnelManager(port=port, enabled=enable_tunnel)
+    app.state.tunnel_manager = tunnel_mgr
 
     if _port_in_use(port):
         url = f"http://localhost:{port}/"
@@ -64,6 +71,9 @@ if __name__ == "__main__":
         print()
         webbrowser.open(url)
         raise SystemExit(0)
+
+    # Start Cloudflare Tunnel non-blockingly
+    tunnel_mgr.start()
 
     def _open_browser():
         import time; time.sleep(2)
@@ -82,6 +92,8 @@ if __name__ == "__main__":
     print(_banner_line())
     print(_banner_line(f"Operator console  ->  http://localhost:{port}/"))
     print(_banner_line(f"Attendee page     ->  http://localhost:{port}/live"))
+    if enable_tunnel:
+        print(_banner_line("HTTPS Cloudflare Tunnel -> Initializing background tunnel..."))
     print(_banner_line())
     print(_banner_line("STEPS TO START SERVICE:"))
     print(_banner_line("  1. Browser opens automatically - wait a moment"))
@@ -95,5 +107,9 @@ if __name__ == "__main__":
     print("╚" + "═" * W + "╝")
     print()
 
-    # Pass the app object directly (not a string) so PyInstaller frozen builds work.
-    uvicorn.run(app, host=cfg.get("host", "0.0.0.0"), port=port, reload=False, access_log=False)
+    try:
+        # Pass the app object directly (not a string) so PyInstaller frozen builds work.
+        uvicorn.run(app, host=cfg.get("host", "0.0.0.0"), port=port, reload=False, access_log=False)
+    finally:
+        tunnel_mgr.stop()
+

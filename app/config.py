@@ -58,18 +58,134 @@ _CONFIG_PATH = _ROOT / "config.yaml"
 load_dotenv(_ROOT / ".env")
 
 
+def _print_error_box(title: str, lines: list[str]) -> None:
+    w = 72
+    print()
+    print("╔" + "═" * w + "╗")
+    print("║" + title.center(w).upper() + "║")
+    print("╠" + "═" * w + "╣")
+    print("║" + " " * w + "║")
+    for line in lines:
+        print("║  " + line.ljust(w - 4) + "  ║")
+    print("║" + " " * w + "║")
+    print("╚" + "═" * w + "╝")
+    print()
+
+
+DEFAULT_CONFIG = {
+    "audio": {
+        "auto_stop_timeout_min": 10,
+        "channels": 1,
+        "chunk_ms": 100,
+        "device_index": 1,
+        "sample_rate": 16000,
+    },
+    "gemini": {
+        "context_seed": True,
+        "model": "gemini-3.5-live-translate-preview",
+    },
+    "logging": {
+        "backup_count": 5,
+        "log_dir": "logs",
+        "max_bytes": 10485760,
+    },
+    "network": {
+        "enable_tunnel": True,
+        "host": "0.0.0.0",
+        "hostname": "skc-live.local",
+        "port": 8080,
+    },
+}
+
+
 def _load() -> dict:
-    with open(_CONFIG_PATH) as f:
-        return yaml.safe_load(f)
+    if not _CONFIG_PATH.exists():
+        try:
+            _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
+                yaml.dump(DEFAULT_CONFIG, f, default_flow_style=False, sort_keys=False)
+            print(f"[INFO] Created default 'config.yaml' at:\n       {_CONFIG_PATH}\n")
+            return DEFAULT_CONFIG
+        except Exception as err:
+            exe_name = Path(sys.executable).name if getattr(sys, "frozen", False) else "main.py"
+            lines = [
+                "Could not create default 'config.yaml':",
+                f"  {err}",
+                "",
+                "Expected location:",
+                f"  {_CONFIG_PATH}",
+                "",
+                "HOW TO FIX THIS:",
+                f"Please ensure '{_ROOT}' has write permissions or place",
+                "a 'config.yaml' file there manually.",
+            ]
+            _print_error_box("ERROR: Missing config.yaml File", lines)
+            if getattr(sys, "frozen", False):
+                try:
+                    input("Press Enter to exit...")
+                except (EOFError, KeyboardInterrupt):
+                    pass
+            sys.exit(1)
+
+    try:
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            return data if isinstance(data, dict) else DEFAULT_CONFIG
+    except Exception as err:
+        lines = [
+            "Failed to parse 'config.yaml':",
+            f"  {err}",
+            "",
+            "Please check the YAML formatting in your config.yaml file.",
+        ]
+        _print_error_box("ERROR: Invalid config.yaml File", lines)
+        if getattr(sys, "frozen", False):
+            try:
+                input("Press Enter to exit...")
+            except (EOFError, KeyboardInterrupt):
+                pass
+        sys.exit(1)
 
 
 _cfg = _load()
 
 
+DEFAULT_ENV_TEMPLATE = """# Starkville Korean Church (PCA) - Live Translation System
+# Please paste your Google Gemini API Key below:
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+"""
+
+
 def gemini_api_key() -> str:
     key = os.environ.get("GEMINI_API_KEY", "")
-    if not key:
-        raise RuntimeError("GEMINI_API_KEY not set in environment or .env file")
+    if not key or key.strip() == "YOUR_GEMINI_API_KEY_HERE":
+        env_path = _ROOT / ".env"
+        created_note = ""
+        if not env_path.exists():
+            try:
+                env_path.write_text(DEFAULT_ENV_TEMPLATE, encoding="utf-8")
+                created_note = "Created instructional '.env' file"
+            except Exception:
+                pass
+
+        lines = [
+            "GEMINI_API_KEY is not set (or is using the placeholder).",
+            "",
+            f"Location: {env_path}",
+            f"Note:     {created_note}" if created_note else f"Found:    {env_path}",
+            "",
+            "HOW TO FIX THIS:",
+            "1. Open the '.env' file in a text editor.",
+            "2. Replace 'YOUR_GEMINI_API_KEY_HERE' with your real key:",
+            "   GEMINI_API_KEY=AIzaSyYourActualKeyHere",
+        ]
+        _print_error_box("ERROR: Missing GEMINI_API_KEY", lines)
+        if getattr(sys, "frozen", False):
+            try:
+                input("Press Enter to exit...")
+            except (EOFError, KeyboardInterrupt):
+                pass
+        sys.exit(1)
     return key
 
 
@@ -78,7 +194,12 @@ def audio_cfg() -> dict:
 
 
 def network_cfg() -> dict:
-    return _cfg.get("network", {})
+    cfg = dict(_cfg.get("network", {}))
+    env_public_url = os.environ.get("CLOUDFLARE_PUBLIC_URL", "").strip()
+    if env_public_url:
+        cfg["public_url"] = env_public_url
+    return cfg
+
 
 
 def logging_cfg() -> dict:

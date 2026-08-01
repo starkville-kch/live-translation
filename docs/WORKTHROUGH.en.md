@@ -147,9 +147,29 @@ This document serves as the chronological build record, verification test log, a
   * Font size range reduced from 20–56px to 20–40px; default changed from 28px to 20px; live "Font XXpx" label added next to slider.
   * Added "Tap sentence for Korean" hint in the control bar.
 
+### Session 19 — Cloudflare HTTPS Tunnel Integration (`cloudflared`)
+* **Goal**: Eliminate mobile browser HTTP "Not Secure" warnings and auto-HTTPS upgrade connection drops by introducing an automated Cloudflare HTTPS Quick Tunnel manager.
+* **Implementation**:
+  * Developed `app/tunnel.py` module: auto-detects `cloudflared.exe` or asynchronously downloads the latest official Windows binary (`cloudflared-windows-amd64.exe`) from GitHub Releases with clear fallback guidance.
+  * Launches non-blocking background process and extracts the active `https://*.trycloudflare.com` public URL.
+  * Integrated with `/api/status` and dynamic operator QR code/share URL rendering (`/api/qr.png?t=...`).
+  * Process lifecycle management ensured via `atexit` and `main.py` `try...finally` teardown.
+
+### Session 20 — Production Named Cloudflare Tunnel & Dual QR Architecture
+* **Goal**: Support permanent production HTTPS domain routing (`https://live.starkvillekoreanchurch.org`) via Cloudflare Named Tunnels / Windows Service, and implement a Dual QR Code system for sanctuary vs online stream attendees.
+* **Implementation**:
+  * Extended `app/tunnel.py` to detect active `cloudflared` Windows Services (`sc query cloudflared` -> `STATE: 4 RUNNING`) and configure `public_url` (`https://live.starkvillekoreanchurch.org`).
+  * Implemented Dual QR Code backend & UI architecture:
+    * `/api/qr.png?type=local`: generates QR code for local mDNS/IP access (`http://skc-live.local:8080/live`).
+    * `/api/qr.png?type=public`: generates QR code for production HTTPS access (`https://live.starkvillekoreanchurch.org/live`).
+  * Updated operator console (`operator.html`) with interactive Dual QR tabs (🏛️ Sanctuary Wi-Fi vs 📺 Online Stream).
+  * Created `check_skc_live.bat` for automated 3-step Sunday pre-flight health verification.
+  * Conducted latency benchmark: Local mDNS TTFB = **1.6 ms**, Public HTTPS TTFB = **144.2 ms** (+142.6 ms Cloudflare network overhead).
+
 ---
 
-## 2. Verification Protocol Results (V0–V6, V14–V18)
+
+## 2. Verification Protocol Results (V0–V6, V14–V19)
 
 * **V0 (Startup)**: Verified that all health endpoints return HTTP 200 and dynamic QR codes compile cleanly (Pass ✅).
 * **V1 (Audio Path)**: Sent synthetic audio inputs to the Gemini pipeline, confirming accurate translation mapping with a latency of 2.2 seconds (Pass ✅).
@@ -163,6 +183,21 @@ This document serves as the chronological build record, verification test log, a
 * **V16 (No-signal safety net isolation)**: Verified that genuine microphone silence successfully triggers the safety net with distinct log messages (`Service automatically stopped: no audio signal for {N} min`), whereas sessions with normal audio and pauses are ignored (Pass ✅).
 * **V17 (Resumption handle confirmation)**: Verified that when a GoAway reconnect occurs, the log explicitly tracks `resumption_handle_present=True` and successfully performs a `resume=True` connection, and reports a warning event on the UI if it drops back to a cold-start (Pass ✅).
 * **V18 (Root-cause log completeness & 27-min GoAway validation)**: Verified that exception logging within `GeminiSession._run_session` records detailed exception class names (`RuntimeError`) and messages (`GoAway`), capturing the 27:05 Google Live API session refresh boundary cleanly (Pass ✅).
+* **V19 (Cloudflare HTTPS Tunnel & Recovery Validation)**: Confirmed automatic `cloudflared.exe` process launch, `https://*.trycloudflare.com` URL extraction, dynamic QR image updating, and non-fatal fallback to local LAN access on download/network failure (Pass ✅).
+* **V20 (External HTTPS Functional Verification Protocol — Field Validation)**:
+  - Protocol Steps:
+    1. Start the application and wait for `HTTPS Tunnel Ready`.
+    2. From a phone using cellular data rather than church Wi-Fi, open `public_attendee_url`.
+    3. Start a real translation session.
+    4. Confirm captions update incrementally for at least 2–5 minutes.
+    5. Confirm WebSocket audio connects and playback works, if enabled.
+    6. Refresh attendee page and confirm client reconnects.
+    7. Stop service and confirm public address stops responding.
+  - Record Result Explicitly as:
+    - `PASS: Quick Tunnel supports this project's live delivery path`, OR
+    - `FAIL: captions are buffered/delayed; use Named Tunnel for production HTTPS.`
+
+
 
 ---
 

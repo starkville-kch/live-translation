@@ -827,23 +827,67 @@
     <!-- QR code (bottom of right column) -->
     <div class="card">
       <h2 class="card-toggle open" id="qr-toggle">
-        <span class="tooltip tooltip-left">접속 QR 코드
-          <span class="tooltiptext">참석자들이 스마트폰으로 스캔하여 실시간 자막(/live) 페이지에 접속할 수 있는 QR 코드입니다. 슬라이드에 표시하거나 직접 안내해 주세요. (QR code for attendees to scan and open the live caption page on their phones.)</span>
+        <span class="tooltip tooltip-left">접속 QR 코드 (Dual QR Access)
+          <span class="tooltiptext">현장 참석자용(초고속 로컬 Wi-Fi)과 온라인 방송 참석자용(HTTPS 보안 터널) 2가지 QR 코드를 제공합니다. (Provides Dual QR codes: Local Wi-Fi for sanctuary & Public HTTPS for stream.)</span>
         </span>
         <span class="chevron">▼</span>
       </h2>
       <div class="card-body" id="qr-body">
-        <img id="qr-img" src="/api/qr.png" alt="QR code" style="width:100%;height:auto;display:block;margin-bottom:12px;">
-        <div id="qr-urls" style="font-size:12px; word-break:break-all; display:flex; flex-direction:column; gap:8px;"></div>
+        <!-- Dual QR Tabs -->
+        <div style="display:flex; gap:6px; margin-bottom:12px;">
+          <button id="qr-tab-local" class="primary" style="flex:1; padding:6px; font-size:12px; font-weight:600;" onclick="switchQrTab('local')">🏛️ 현장 (Sanctuary)</button>
+          <button id="qr-tab-public" class="secondary" style="flex:1; padding:6px; font-size:12px; font-weight:600;" onclick="switchQrTab('public')">📺 온라인 (Stream)</button>
+        </div>
+
+        <!-- Local QR Panel -->
+        <div id="qr-panel-local">
+          <img id="qr-img-local" src="/api/qr.png?type=local" alt="Local QR Code" style="width:100%;height:auto;display:block;margin-bottom:8px;border-radius:4px;border:1px solid var(--color-gold-500);">
+          <div style="font-size:11px; color:var(--color-text-muted); margin-bottom:6px; text-align:center; font-weight:600;">⚡ 성전 Wi-Fi 전용 — 초고속 1~2ms 반응 속도</div>
+          <div id="qr-urls-local" style="font-size:12px; word-break:break-all; display:flex; flex-direction:column; gap:6px;"></div>
+        </div>
+
+        <!-- Public QR Panel -->
+        <div id="qr-panel-public" style="display:none;">
+          <img id="qr-img-public" src="/api/qr.png?type=public" alt="Public QR Code" style="width:100%;height:auto;display:block;margin-bottom:8px;border-radius:4px;border:1px solid var(--color-success);">
+          <div style="font-size:11px; color:var(--color-success); margin-bottom:6px; text-align:center; font-weight:600;">🔒 유튜브/원격 방송 시청자용 (HTTPS 보안)</div>
+          <div id="qr-urls-public" style="font-size:12px; word-break:break-all; display:flex; flex-direction:column; gap:6px;"></div>
+        </div>
       </div>
     </div>
+
 
   </div><!-- /col-right -->
 
 </main>
 
 <script>
+function switchQrTab(mode) {
+  const btnLocal = document.getElementById('qr-tab-local');
+  const btnPublic = document.getElementById('qr-tab-public');
+  const pnlLocal = document.getElementById('qr-panel-local');
+  const pnlPublic = document.getElementById('qr-panel-public');
+  const imgLocal = document.getElementById('qr-img-local');
+  const imgPublic = document.getElementById('qr-img-public');
+  const t = Date.now();
+
+  if (mode === 'local') {
+    btnLocal.className = 'primary';
+    btnPublic.className = 'secondary';
+    pnlLocal.style.display = 'block';
+    pnlPublic.style.display = 'none';
+    if (imgLocal) imgLocal.src = '/api/qr.png?type=local&t=' + t;
+  } else {
+    btnLocal.className = 'secondary';
+    btnPublic.className = 'primary';
+    pnlLocal.style.display = 'none';
+    pnlPublic.style.display = 'block';
+    if (imgPublic) imgPublic.src = '/api/qr.png?type=public&t=' + t;
+  }
+}
+
+
 let polling = null;
+
 let captionEs = null;
 let hasInitializedAutoStop = false;
 let lastEventId = -1;
@@ -1181,7 +1225,9 @@ function startEventPoll() {
 
 function startStatusPoll() {
   if (polling) clearInterval(polling);
+  window.addEventListener('beforeunload', () => { if (polling) clearInterval(polling); });
   polling = setInterval(async () => {
+
     let st;
     try { st = await fetch('/api/status').then(r => r.json()); } catch { return; }
 
@@ -1227,29 +1273,34 @@ function startStatusPoll() {
     document.getElementById('stat-captions').textContent = st.captions || 0;
     document.getElementById('stat-model').textContent = st.session.model || '—';
 
-    // Update QR URLs under the QR code card
-    const urlsEl = document.getElementById('qr-urls');
-    if (urlsEl && st.live_url_primary) {
-      if (st.live_url_primary === st.live_url_fallback) {
-        urlsEl.innerHTML = `
-          <div>
-            <div style="font-weight:600; color:var(--color-navy-900); margin-bottom: 2px;">접속 주소 (URL):</div>
-            <a href="${st.live_url_primary}" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">${st.live_url_primary}</a>
-          </div>
-        `;
-      } else {
-        urlsEl.innerHTML = `
-          <div>
-            <div style="font-weight:600; color:var(--color-navy-900); margin-bottom: 2px;">기본 주소 (Primary - 슬라이드용):</div>
-            <a href="${st.live_url_primary}" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">${st.live_url_primary}</a>
-          </div>
-          <div style="margin-top: 4px;">
-            <div style="font-weight:600; color:var(--color-navy-900); margin-bottom: 2px;">비상용 주소 (Fallback - IP):</div>
-            <a href="${st.live_url_fallback}" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">${st.live_url_fallback}</a>
-          </div>
-        `;
-      }
+    // Update Dual QR URLs under the QR code card
+    const urlsLocal = document.getElementById('qr-urls-local');
+    const urlsPublic = document.getElementById('qr-urls-public');
+
+    if (urlsLocal && st.live_url_local) {
+      urlsLocal.innerHTML = `
+        <div>
+          <div style="font-weight:600; color:var(--color-navy-900); margin-bottom: 2px;">기본 로컬 주소 (mDNS):</div>
+          <a href="${st.live_url_local}" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">${st.live_url_local}</a>
+        </div>
+        <div>
+          <div style="font-weight:600; color:var(--color-navy-900); margin-bottom: 2px;">비상 IP 주소 (Fallback IP):</div>
+          <a href="${st.live_url_fallback}" target="_blank" style="color:var(--color-text-muted); text-decoration:underline;">${st.live_url_fallback}</a>
+        </div>
+      `;
     }
+
+    if (urlsPublic) {
+      const pubUrl = st.public_attendee_url || st.live_url_public || "https://live.starkvillekoreanchurch.org/live";
+      urlsPublic.innerHTML = `
+        <div>
+          <div style="font-weight:600; color:var(--color-success); margin-bottom: 2px;">🔒 공용 HTTPS 주소 (Cloudflare Domain):</div>
+          <a href="${pubUrl}" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">${pubUrl}</a>
+        </div>
+      `;
+    }
+
+
 
     if (st.service_running) {
       document.getElementById('stat-runtime').textContent = fmtRuntime(st.runtime_s);

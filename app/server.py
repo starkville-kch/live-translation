@@ -169,7 +169,7 @@ def _unregister_zeroconf() -> None:
             _zc_info = None
 
 
-def _get_live_urls() -> tuple[str, str]:
+def _get_live_urls() -> tuple[str, str, str]:
     cfg = network_cfg()
     port = cfg.get("port", 8080)
     hostname = cfg.get("hostname", "")
@@ -178,17 +178,30 @@ def _get_live_urls() -> tuple[str, str]:
 
     ip_addr = _local_ip()
 
-    public_url = cfg.get("public_url")
-    if not public_url:
-        if hostname:
-            public_url = f"http://{hostname}:{port}"
-        else:
-            public_url = f"http://{ip_addr}:{port}"
-
-    live_url_primary = f"{public_url}/live"
+    live_url_local = f"http://{hostname}:{port}/live" if hostname else f"http://{ip_addr}:{port}/live"
     live_url_fallback = f"http://{ip_addr}:{port}/live"
+    
+    pub_url = cfg.get("public_url")
+    if pub_url:
+        live_url_public = f"{pub_url.rstrip('/')}/live"
+    else:
+        live_url_public = "https://live.starkvillekoreanchurch.org/live"
 
-    return live_url_primary, live_url_fallback
+    return live_url_local, live_url_fallback, live_url_public
+
+
+_tunnel_logged = False
+_tunnel_failed_logged = False
+
+
+def _get_active_attendee_share_url() -> tuple[str, str]:
+    local_url, fallback_url, public_url_cfg = _get_live_urls()
+    tunnel_mgr = getattr(app.state, "tunnel_manager", None)
+    if tunnel_mgr and tunnel_mgr.is_ready and tunnel_mgr.public_attendee_url:
+        return tunnel_mgr.public_attendee_url, fallback_url
+    return local_url, fallback_url
+
+
 
 
 def _build_qr(url: str) -> bytes:
@@ -370,15 +383,17 @@ async def lifespan(app: FastAPI):
             daemon=True
         ).start()
 
-    primary_url, fallback_url = _get_live_urls()
-    _qr_png_cache = _build_qr(primary_url)
-    server_log.info("QR code URL: %s", primary_url)
+    local_url, fallback_url, public_url_cfg = _get_live_urls()
+    _qr_png_cache = _build_qr(local_url)
+    server_log.info("Local QR code URL: %s", local_url)
+    server_log.info("Public QR code URL: %s", public_url_cfg)
     server_log.info("Fallback URL: %s", fallback_url)
 
     operator_events.add(
         "success", "System started",
-        {"port": port, "primary_url": primary_url, "fallback_url": fallback_url}
+        {"port": port, "primary_url": local_url, "fallback_url": fallback_url}
     )
+
 
     async def _ping():
         while True:
@@ -687,11 +702,30 @@ async def set_auto_stop(body: dict):
 
 @app.get("/api/status")
 async def get_status():
+    global _tunnel_logged, _tunnel_failed_logged
     a = audio.state
     s = session.state
     runtime = _runtime_seconds()
     cost = _billed_seconds * _COST_PER_AUDIO_SEC
-    primary_url, fallback_url = _get_live_urls()
+    local_url, fallback_url, public_url_cfg = _get_live_urls()
+
+    tunnel_mgr = getattr(app.state, "tunnel_manager", None)
+    tunnel_enabled = tunnel_mgr.enabled if tunnel_mgr else False
+    tunnel_ready = tunnel_mgr.is_ready if tunnel_mgr else False
+    tunnel_url = tunnel_mgr.tunnel_url if tunnel_mgr else None
+    public_attendee_url = tunnel_mgr.public_attendee_url if tunnel_mgr else public_url_cfg
+    tunnel_error = tunnel_mgr.error_message if tunnel_mgr else None
+
+    if tunnel_ready and public_attendee_url and not _tunnel_logged:
+        _tunnel_logged = True
+        operator_events.add("success", f"HTTPS Tunnel Ready: {public_attendee_url}")
+        server_log.info("HTTPS Tunnel Ready: %s", public_attendee_url)
+    elif tunnel_error and not _tunnel_failed_logged:
+        _tunnel_failed_logged = True
+        operator_events.add("warning", f"Cloudflare Tunnel unavailable ({tunnel_error}). Operating on local network.")
+
+    active_url = public_attendee_url if (tunnel_ready and public_attendee_url) else local_url
+
     return {
         "service_running": _state != ServiceState.STOPPED,
         "state": _state.value,
@@ -717,9 +751,17 @@ async def get_status():
         },
         "attendees": broadcaster.client_count,
         "captions": broadcaster.caption_count,
-        "live_url_primary": primary_url,
+        "live_url_primary": active_url,
+        "live_url_local": local_url,
         "live_url_fallback": fallback_url,
+        "live_url_public": public_attendee_url,
+        "tunnel_enabled": tunnel_enabled,
+        "tunnel_ready": tunnel_ready,
+        "tunnel_url": tunnel_url,
+        "public_attendee_url": public_attendee_url,
+        "tunnel_error": tunnel_error,
     }
+
 
 
 @app.get("/api/devices")
@@ -740,9 +782,15 @@ async def select_device(body: dict):
 
 @app.get("/api/qr.png")
 async def qr_png():
-    if _qr_png_cache is None:
-        return Response(status_code=503)
-    return Response(content=_qr_png_cache, media_type="image/png")
+    active_url, _ = _get_active_attendee_share_url()
+    qr_bytes = _build_qr(active_url)
+    return Response(
+        content=qr_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+    )
+
+
 
 
 @app.get("/logo.webp")
