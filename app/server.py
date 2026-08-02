@@ -70,6 +70,7 @@ from typing import AsyncIterator
 import qrcode
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.audio import AudioCapture, AudioStatus, list_input_devices
 from app.broadcast import CaptionBroadcaster, CaptionEvent
@@ -409,6 +410,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# ── Mount static files (CSS, JS) ──────────────────────────────────────────────
+import sys
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    _static_dir = Path(sys._MEIPASS) / "app" / "static"
+else:
+    _static_dir = Path(__file__).parent / "static"
+
+if not _static_dir.exists():
+    _static_dir = Path(__file__).parent.parent / "app" / "static"
+
+if _static_dir.exists():
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
 
 # ── SSE caption stream ────────────────────────────────────────────────────────
 async def _sse_generator(request: Request, q: asyncio.Queue) -> AsyncIterator[str]:
@@ -457,6 +471,31 @@ async def audio_stream(ws: WebSocket):
         pass
     finally:
         broadcaster.remove_audio_client(q)
+
+
+# ── WebSocket telemetry stream ───────────────────────────────────────────────
+@app.websocket("/ws/telemetry")
+async def telemetry_stream(ws: WebSocket):
+    await ws.accept()
+    try:
+        while True:
+            data = await ws.receive_json()
+            msg_type = data.get("type")
+            if msg_type == "latency_ping":
+                await ws.send_json({
+                    "type": "latency_pong",
+                    "client_sent_ms": data.get("client_sent_ms")
+                })
+            elif msg_type == "latency_report":
+                hostname = data.get("hostname", "")
+                rtt_ms = data.get("rtt_ms", 0)
+                client_id = data.get("client_id", "")
+                if rtt_ms > 0:
+                    broadcaster.record_rtt(hostname, rtt_ms, client_id=client_id)
+    except (WebSocketDisconnect, asyncio.TimeoutError):
+        pass
+    except Exception:
+        pass
 
 
 # ── Operator control API ───────────────────────────────────────────────────────
@@ -513,6 +552,14 @@ async def _auto_stop_check():
             silence_start = None
 
 
+@app.post("/api/reconnect")
+async def reconnect_service():
+    server_log.info("Manual Gemini reconnect requested")
+    operator_events.add("user", "Manual Gemini reconnect requested")
+    device_index = audio_cfg().get("device_index")
+    return await start_service({"device_index": device_index})
+
+
 @app.post("/api/start")
 async def start_service(body: dict = {}, from_auto_restart: bool = False):
     global _state, _paused, _service_start_time, _billed_seconds, _pause_start
@@ -525,11 +572,11 @@ async def start_service(body: dict = {}, from_auto_restart: bool = False):
         _auto_restart_reason = ""
     async with _state_lock:
         if _state in (ServiceState.RUNNING, ServiceState.STARTING):
-            server_log.warning("start_service called while service is already running. Ignoring.")
-            return {"ok": True, "info": "Service already running"}
+            server_log.info("start_service: tearing down active session to restart pipeline.")
+            await _teardown()
+
         _state = ServiceState.STARTING
         try:
-            await _teardown()
             device_index = body.get("device_index")
             audio.start(device_index=device_index)
             _service_start_time = time.monotonic()
@@ -726,6 +773,14 @@ async def get_status():
 
     active_url = public_attendee_url if (tunnel_ready and public_attendee_url) else local_url
 
+    telemetry = broadcaster.get_telemetry_stats()
+    gemini_lat = round(s.last_latency_ms, 1)
+    local_rtt = telemetry.get("local_rtt_ms")
+    public_rtt = telemetry.get("public_rtt_ms")
+
+    est_local_delay_s = round((gemini_lat + (local_rtt or 5) + 200) / 1000.0, 2) if gemini_lat > 0 else None
+    est_public_delay_s = round((gemini_lat + (public_rtt or 150) + 200) / 1000.0, 2) if gemini_lat > 0 else None
+
     return {
         "service_running": _state != ServiceState.STOPPED,
         "state": _state.value,
@@ -737,6 +792,15 @@ async def get_status():
         "device_index": audio_cfg().get("device_index", 0),
         "auto_restart_attempt": _auto_restart_attempt,
         "auto_restart_reason": _auto_restart_reason,
+        "telemetry": {
+            "gemini_latency_ms": gemini_lat,
+            "local_rtt_ms": local_rtt,
+            "local_samples": telemetry.get("local_samples", 0),
+            "public_rtt_ms": public_rtt,
+            "public_samples": telemetry.get("public_samples", 0),
+            "est_local_delay_s": est_local_delay_s,
+            "est_public_delay_s": est_public_delay_s,
+        },
         "audio": {
             "status": a.status,
             "level": round(a.level_rms, 1),
@@ -746,11 +810,12 @@ async def get_status():
             "status": s.status,
             "reconnect_count": s.reconnect_count,
             "last_event": s.last_event,
-            "latency_ms": round(s.last_latency_ms, 1),
+            "latency_ms": gemini_lat,
             "model": GEMINI_MODEL,
         },
-        "attendees": broadcaster.client_count,
+        "attendees": telemetry.get("total_listeners") if (telemetry.get("total_listeners") or 0) > 0 else broadcaster.client_count,
         "captions": broadcaster.caption_count,
+        "last_caption_ago_s": broadcaster.last_caption_ago_s,
         "live_url_primary": active_url,
         "live_url_local": local_url,
         "live_url_fallback": fallback_url,

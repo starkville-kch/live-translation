@@ -497,12 +497,21 @@ class GeminiSession:
 
                 # English translation — two paths:
                 # 1. Translate model: server_content.output_transcription.text
-                # 2. General model:   response.text
-                en_text = response.text or ""
-                if not en_text and sc:
+                # 2. General model:   parts text fallback
+                en_text = ""
+                if sc:
                     ot = getattr(sc, "output_transcription", None)
                     if ot and getattr(ot, "text", None):
                         en_text = ot.text
+
+                if not en_text:
+                    try:
+                        candidates = getattr(response, "candidates", None) or []
+                        if candidates and candidates[0]:
+                            parts = getattr(getattr(candidates[0], "content", None), "parts", None) or []
+                            en_text = "".join(getattr(p, "text", "") for p in parts if getattr(p, "text", None))
+                    except Exception:
+                        pass
 
                 if en_text:
                     if self._turn_start is None:

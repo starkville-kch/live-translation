@@ -71,10 +71,69 @@ class CaptionBroadcaster:
         self._unavailable = False
         self._caption_count = 0
         self._glossary = glossary
+        self._rtt_samples_local: list[tuple[float, float]] = []  # (timestamp, rtt_ms)
+        self._rtt_samples_public: list[tuple[float, float]] = [] # (timestamp, rtt_ms)
+        self._active_clients: dict[str, tuple[str, float]] = {}  # client_id -> (route, timestamp)
+
+    def record_rtt(self, hostname: str, rtt_ms: float, client_id: str = "") -> None:
+        now = time.monotonic()
+        h = (hostname or "").lower().strip()
+        is_local = (
+            not h or
+            h.endswith(".local") or
+            h in ("localhost", "127.0.0.1") or
+            h.startswith("192.168.") or
+            h.startswith("10.") or
+            h.startswith("172.16.")
+        )
+        route = "local" if is_local else "public"
+
+        if client_id:
+            self._active_clients[client_id] = (route, now)
+
+        # Prune active clients older than 30s
+        self._active_clients = {cid: val for cid, val in self._active_clients.items() if now - val[1] <= 30.0}
+
+        # Prune samples older than 60s
+        self._rtt_samples_local = [s for s in self._rtt_samples_local if now - s[0] <= 60.0]
+        self._rtt_samples_public = [s for s in self._rtt_samples_public if now - s[0] <= 60.0]
+
+        if is_local:
+            self._rtt_samples_local.append((now, float(rtt_ms)))
+        else:
+            self._rtt_samples_public.append((now, float(rtt_ms)))
+
+    def get_telemetry_stats(self) -> dict:
+        now = time.monotonic()
+        self._active_clients = {cid: val for cid, val in self._active_clients.items() if now - val[1] <= 30.0}
+
+        local_clients = sum(1 for cid, (route, ts) in self._active_clients.items() if route == "local")
+        public_clients = sum(1 for cid, (route, ts) in self._active_clients.items() if route == "public")
+
+        local_valid = [s[1] for s in self._rtt_samples_local if now - s[0] <= 60.0]
+        public_valid = [s[1] for s in self._rtt_samples_public if now - s[0] <= 60.0]
+
+        import statistics
+        local_rtt = round(statistics.median(local_valid)) if local_valid else None
+        public_rtt = round(statistics.median(public_valid)) if public_valid else None
+
+        return {
+            "local_rtt_ms": local_rtt,
+            "local_listeners": local_clients,
+            "public_rtt_ms": public_rtt,
+            "public_listeners": public_clients,
+            "total_listeners": local_clients + public_clients,
+        }
 
     @property
     def caption_count(self) -> int:
         return self._caption_count
+
+    @property
+    def last_caption_ago_s(self) -> float | None:
+        if self._last_token_at <= 0:
+            return None
+        return max(0.0, round(time.monotonic() - self._last_token_at, 1))
 
     def reset(self) -> None:
         self._current_line = ""
