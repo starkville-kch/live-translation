@@ -149,9 +149,9 @@ INFO  httpx     HTTP Request: GET .../v1beta/models "HTTP/1.1 200 OK"
 INFO  session   Auto-selected Gemini model: gemini-3.5-live-translate-preview
 INFO  ops       Glossary loaded: 14 direct entries, 5 review-only
 INFO            Started server process [...]
-INFO            Uvicorn running on http://0.0.0.0:8001
+INFO            Uvicorn running on http://0.0.0.0:8080
 ```
-2초 후 브라우저가 `http://localhost:8001/`에 자동으로 열린다.
+2초 후 브라우저가 `http://localhost:8080/`에 자동으로 열린다.
 
 ---
 

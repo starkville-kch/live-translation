@@ -1,165 +1,116 @@
-"""
-app/logger.py — Centralised Logging Setup
-==========================================
-Starkville Korean Church (PCA) — Live Translation System
----------------------------------------------------------
-Configures three named loggers, each writing to a dedicated rotating file
-plus a shared INFO-level console handler:
+"""Central logging configuration with volunteer-safe console output."""
+from __future__ import annotations
 
-Named loggers
--------------
-``session_log``
-    Gemini Live API session lifecycle events, GoAway signals, reconnection
-    attempts, latency measurements, and every Korean/English caption turn.
-    Written to ``logs/session.log`` (DEBUG and above, JSON Lines format).
-
-``audio_log``
-    PyAudio device open/close events, stream errors, and silence detection
-    state changes.  Written to ``logs/ops.log`` (INFO and above, JSON Lines).
-
-``server_log``
-    FastAPI lifecycle events (start/stop), operator API calls, and session
-    export notifications.  Written to ``logs/ops.log`` (INFO and above, JSON Lines).
-
-Output formats
---------------
-Log files — aligned plain text (no color codes):
-    2026-07-11 05:16:02.881  INFO      session     Session connected
-
-Console — ANSI-colored, fixed-width columns:
-    05:16:02  INFO      session     Session connected
-
-Console shows INFO and above; DEBUG (e.g. per-token caption deltas) goes to
-files only to keep the terminal readable during a live service.
-
-Log rotation
-------------
-Each log file rotates at ``max_bytes`` (default 10 MB) and keeps
-``backup_count`` (default 5) backup files.
-"""
+import copy
+import json
 import logging
-import logging.handlers
+import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
 from app.config import logging_cfg
 
+_SENSITIVE = re.compile(
+    r"(?i)(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+/=-]+|"
+    r"(?:AIza[A-Za-z0-9_-]+)|(?:CLOUDFLARE_TUNNEL_TOKEN\s*=\s*[^\s,;]+)|"
+    r"(?:[?&](?:key|api_key|apikey|token|secret|password|authorization)=[^&#\s]+)|"
+    r"(?:\b(?:key|api_key|apikey|token|secret|password|authorization)\s*[:=]\s*[^\s,;]+)|"
+    r"(?:[A-Za-z0-9+/=]{30,}\.[A-Za-z0-9+/=._-]{10,})"
+)
+_IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_IPV6 = re.compile(r"(?i)(?<![\w:])(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(?![\w:])")
+_EMAIL = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
 
-# ── Formatters ────────────────────────────────────────────────────────────────
 
-class _FileFormatter(logging.Formatter):
-    """Plain-text aligned columns for log files (no ANSI escape codes).
+def redact(value: object) -> str:
+    """Render and redact arbitrary logging values without changing record args."""
+    if isinstance(value, (dict, list, tuple)):
+        try:
+            value = json.dumps(value, ensure_ascii=False, default=str)
+        except Exception:
+            value = repr(value)
+    text = str(value)
+    safe = {
+        "http://127.0.0.1:8080/api/status": "__SAFE_LOCAL_HEALTH__",
+        "http://skc-live.local:8080/live": "__SAFE_LOCAL_LIVE__",
+        "https://live.starkvillekoreanchurch.org/live": "__SAFE_PUBLIC_LIVE__",
+        "gemini-3.5-live-translate-preview": "__SAFE_MODEL__",
+    }
+    for original, marker in safe.items():
+        text = text.replace(original, marker)
+    text = _SENSITIVE.sub("[REDACTED]", text)
+    text = _IPV4.sub("[REDACTED]", text)
+    text = _IPV6.sub("[REDACTED]", text)
+    text = _EMAIL.sub("[REDACTED]", text)
+    for original, marker in safe.items():
+        text = text.replace(marker, original)
+    return text
 
-    Columns
-    -------
-    YYYY-MM-DD HH:MM:SS.mmm  LEVEL     logger      message
-    ───────────────────────  ────────  ──────────  ────────────────────────
-    2026-07-11 05:16:02.881  INFO      session     Session connected
-    2026-07-11 05:16:03.012  WARNING   audio       Stream read error: …
-    """
+
+class _SafeFormatter(logging.Formatter):
+    def __init__(self, console: bool = False):
+        super().__init__()
+        self.console = console
+
     def format(self, record: logging.LogRecord) -> str:
-        record.message = record.getMessage()
-        ts    = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S") \
-                + f".{int(record.msecs):03d}"
-        level = f"{record.levelname:<9}"
-        name  = f"{record.name:<11}"
-        line  = f"{ts}  {level}  {name}  {record.message}"
+        try:
+            message = redact(record.getMessage())
+        except Exception:
+            message = "[REDACTED]"
+        if self.console:
+            return message
+        ts = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
+        line = f"{ts} | {record.levelname:<7} | {record.name} | {message}"
         if record.exc_info:
-            line += "\n" + self.formatException(record.exc_info)
+            line += "\n" + redact(self.formatException(record.exc_info))
         return line
 
 
-# ANSI escape helpers
-_RESET  = "\033[0m"
-_BOLD   = "\033[1m"
-_DIM    = "\033[2m"
-_LEVEL_COLOR = {
-    "DEBUG":    "\033[90m",   # dark grey
-    "INFO":     "\033[36m",   # cyan
-    "WARNING":  "\033[33m",   # amber
-    "ERROR":    "\033[31m",   # red
-    "CRITICAL": "\033[35m",   # magenta
-}
-_LOGGER_COLOR = {
-    "session": "\033[34m",    # blue
-    "audio":   "\033[32m",    # green
-    "server":  "\033[35m",    # magenta
-}
+class _VolunteerFilter(logging.Filter):
+    """Allow only explicitly volunteer-facing warnings/errors to the console."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno < logging.WARNING:
+            return False
+        try:
+            return redact(record.getMessage()).startswith(("[WARNING]", "[ERROR]"))
+        except Exception:
+            return False
 
 
-class _ConsoleFormatter(logging.Formatter):
-    """ANSI-colored, fixed-width column output for terminal readability.
-
-    Columns
-    -------
-    HH:MM:SS  LEVEL     logger      message
-    ────────  ────────  ──────────  ──────────────────────────
-    05:16:02  INFO      session     Session connected
-    05:16:03  WARNING   audio       Stream read error: [Errno 5]
-    """
-    def format(self, record: logging.LogRecord) -> str:
-        record.message = record.getMessage()
-        ts       = datetime.fromtimestamp(record.created).strftime("%H:%M:%S")
-        lc       = _LEVEL_COLOR.get(record.levelname, "")
-        nc       = _LOGGER_COLOR.get(record.name, "\033[37m")
-        level    = f"{lc}{record.levelname:<9}{_RESET}"
-        name     = f"{nc}{record.name:<11}{_RESET}"
-        msg      = record.message
-        line     = f"{_BOLD}{ts}{_RESET}  {level}  {name}  {msg}"
-        if record.exc_info:
-            line += "\n" + self.formatException(record.exc_info)
-        return line
-
-
-# ── Handlers ──────────────────────────────────────────────────────────────────
-
-import sys as _sys
-_cfg     = logging_cfg()
-# When frozen, write logs next to the exe rather than the CWD
-_log_base = Path(_sys.executable).parent if getattr(_sys, "frozen", False) else Path(".")
-_log_dir  = _log_base / _cfg.get("log_dir", "logs")
-_log_dir.mkdir(exist_ok=True)
-
-_file_fmt    = _FileFormatter()
-_console_fmt = _ConsoleFormatter()
+def configure_logging() -> Path:
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    # Avoid duplicate handlers when tests/import reload the module.
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+        handler.close()
+    cfg = logging_cfg()
+    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()
+    log_dir = base / cfg.get("log_dir", "logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    path = log_dir / f"live-translation-{datetime.now():%Y-%m-%d}.log"
+    file_handler = logging.FileHandler(path, encoding="utf-8", delay=True)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(_SafeFormatter())
+    console = logging.StreamHandler()
+    console.setLevel(logging.WARNING)
+    console.addFilter(_VolunteerFilter())
+    console.setFormatter(_SafeFormatter(console=True))
+    root.addHandler(file_handler)
+    root.addHandler(console)
+    return path
 
 
-def _rotating(filename: str) -> logging.Handler:
-    """Create a size-rotating file handler that writes aligned plain text."""
-    h = logging.handlers.RotatingFileHandler(
-        _log_dir / filename,
-        maxBytes=_cfg.get("max_bytes", 10 * 1024 * 1024),
-        backupCount=_cfg.get("backup_count", 5),
-        encoding="utf-8",
-    )
-    h.setFormatter(_file_fmt)
-    return h
-
-
-# ops.log    — server lifecycle + audio device events (INFO and above)
-# session.log — Gemini session events + caption text (DEBUG and above)
-_ops_handler     = _rotating("ops.log")
-_session_handler = _rotating("session.log")
-
-_console = logging.StreamHandler()
-_console.setFormatter(_console_fmt)
-_console.setLevel(logging.INFO)   # DEBUG stays in files only
-
-logging.basicConfig(level=logging.DEBUG, handlers=[_console])
-
-# ── Named loggers ─────────────────────────────────────────────────────────────
-
+LOG_PATH = configure_logging()
 session_log = logging.getLogger("session")
-session_log.addHandler(_session_handler)
-session_log.addHandler(_console)        # also echo to console at INFO+
-session_log.propagate = False           # don't forward to root handler
-
 audio_log = logging.getLogger("audio")
-audio_log.addHandler(_ops_handler)
-audio_log.addHandler(_console)
-audio_log.propagate = False
-
 server_log = logging.getLogger("server")
-server_log.addHandler(_ops_handler)
-server_log.addHandler(_console)
-server_log.propagate = False
+ops_log = logging.getLogger("ops")
+for _logger in (session_log, audio_log, server_log, ops_log, logging.getLogger("httpx"),
+                logging.getLogger("httpcore"), logging.getLogger("uvicorn"),
+                logging.getLogger("uvicorn.error"), logging.getLogger("uvicorn.access"),
+                logging.getLogger("websockets"), logging.getLogger("zeroconf")):
+    _logger.propagate = True
+for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "httpx", "httpcore", "websockets", "zeroconf"):
+    logging.getLogger(_name).setLevel(logging.WARNING)

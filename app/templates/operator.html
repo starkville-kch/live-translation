@@ -67,11 +67,12 @@
           🔵 Stopped
         </span>
       </div>
-      <div class="ss-item ss-ok">🟢 Web Server
+      <div class="ss-item" id="ss-public-https">Public
         <span class="ss-tip">
-          <strong>Web Server</strong><br>
-          🟢 Running — attendees can connect<br>
-          (If you see this page, the server is up)
+          <strong>Public attendee link</strong><br>
+          Connected through the Cloudflare public URL<br>
+          Reconnecting while the service recovers<br>
+          Unavailable does not affect local translation
         </span>
       </div>
     </div>
@@ -249,11 +250,11 @@
         </div>
 
         <!-- Public QR Panel -->
-        <div id="qr-panel-public" style="display:none;">
+      <div id="qr-panel-public" style="display:none;">
           <img id="qr-img-public" src="/api/qr.png?type=public" alt="Public QR Code" style="width:100%;height:auto;display:block;margin-bottom:8px;border-radius:4px;border:1px solid var(--color-success);">
           <div style="font-size:11px; color:var(--color-success); margin-bottom:6px; text-align:center; font-weight:600;">🔒 유튜브/원격 방송 시청자용 (HTTPS 보안)</div>
-          <div id="qr-urls-public" style="font-size:12px; word-break:break-all; display:flex; flex-direction:column; gap:6px;"></div>
-        </div>
+        <div id="qr-urls-public" style="font-size:12px; word-break:break-all; display:flex; flex-direction:column; gap:6px;"></div>
+      </div>
       </div>
     </div>
 

@@ -67,7 +67,7 @@ TARGET_RATE = 16000
 TARGET_CHANNELS = 1
 TARGET_WIDTH = 2  # PCM16 = 2 bytes per sample
 SILENCE_FLOOR_RMS = 50  # below this = silence (for disconnection detection)
-SILENCE_TIMEOUT_S = 10  # seconds of near-silence before "no signal" state
+SILENCE_TIMEOUT_S = 30  # seconds of silence after translation starts
 
 
 class _DirectSoundError(Exception):
@@ -189,6 +189,16 @@ class AudioCapture:
         self._queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._translation_active = False
+        self._last_silence_warning = 0.0
+
+    def begin_translation(self) -> None:
+        self._translation_active = True
+        self._last_silence_warning = 0.0
+
+    def end_translation(self) -> None:
+        self._translation_active = False
+        self._last_silence_warning = 0.0
 
     def _emit(self, **kwargs):
         for k, v in kwargs.items():
@@ -395,10 +405,18 @@ class AudioCapture:
                 if rms > SILENCE_FLOOR_RMS:
                     last_nonsilent = now
 
-                if now - last_nonsilent > SILENCE_TIMEOUT_S:
+                if self._translation_active and now - last_nonsilent > SILENCE_TIMEOUT_S:
                     status = AudioStatus.NO_SIGNAL
+                    if now - self._last_silence_warning >= 60:
+                        # Keep the diagnostic warning in the technical log;
+                        # silence is intentionally not shown in the volunteer console.
+                        audio_log.warning("Audio has been silent for 30 seconds.")
+                        audio_log.warning("Check the church mixer, cable, and Audio Input selection.")
+                        self._last_silence_warning = now
                 else:
                     status = AudioStatus.CONNECTED
+                    if rms > SILENCE_FLOOR_RMS:
+                        self._last_silence_warning = 0.0
 
                 if status != prev_audio_status:
                     if status == AudioStatus.NO_SIGNAL:

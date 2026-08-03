@@ -149,9 +149,9 @@ INFO  httpx     HTTP Request: GET .../v1beta/models "HTTP/1.1 200 OK"
 INFO  session   Auto-selected Gemini model: gemini-3.5-live-translate-preview
 INFO  ops       Glossary loaded: 14 direct entries, 5 review-only
 INFO            Started server process [...]
-INFO            Uvicorn running on http://0.0.0.0:8001
+INFO            Uvicorn running on http://0.0.0.0:8080
 ```
-Browser opens to `http://localhost:8001/` after 2 seconds.
+Browser opens to `http://localhost:8080/` after 2 seconds.
 
 ---
 

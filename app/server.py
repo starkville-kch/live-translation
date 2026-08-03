@@ -59,6 +59,7 @@ On /api/stop, ``_write_session_log()`` writes four files to
 import asyncio
 import io
 import json
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 import socket
 import time
@@ -117,6 +118,8 @@ _pause_start: float | None = None          # monotonic when paused
 _auto_restart_attempt = 0
 _auto_restart_reason = ""
 _auto_restart_task: asyncio.Task | None = None
+_audio_device_available = False
+_audio_device_name = ""
 
 
 
@@ -368,8 +371,20 @@ def _write_session_log() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _qr_png_cache
+    global _qr_png_cache, _audio_device_available, _audio_device_name
     cfg = network_cfg()
+    if not getattr(app.state, "tunnel_manager", None):
+        from app.tunnel import CloudflareTunnelManager
+        app.state.tunnel_manager = CloudflareTunnelManager(port=8080, enabled=cfg.get("enable_tunnel", True))
+        app.state.tunnel_manager.start()
+    try:
+        devices = list_input_devices()
+        _audio_device_available = bool(devices)
+        selected = audio_cfg().get("device_index")
+        device = next((d for d in devices if d.index == selected), devices[0] if devices else None)
+        _audio_device_name = device.name if device else ""
+    except Exception:
+        _audio_device_available = False
     port = cfg.get("port", 8080)
     hostname = cfg.get("hostname", "")
     ip_addr = _local_ip()
@@ -402,13 +417,69 @@ async def lifespan(app: FastAPI):
             broadcaster._push(CaptionEvent(kind="ping"))
 
     asyncio.create_task(_ping())
-    yield
+    try:
+        yield
+    finally:
+        tunnel_mgr = getattr(app.state, "tunnel_manager", None)
+        if tunnel_mgr:
+            tunnel_mgr.stop()
     _unregister_zeroconf()
     await session.stop()
     audio.stop()
 
 
+PUBLIC_HOST = "live.starkvillekoreanchurch.org"
+
+
+class PublicHostGuardMiddleware:
+    """Strict default-deny boundary for the public attendee hostname."""
+    _HTTP_GET = {"/", "/live", "/stream", "/logo.webp"}
+    _WEBSOCKETS = {"/audio-stream", "/ws/telemetry"}
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    @staticmethod
+    def _is_public_host(scope: Scope) -> bool:
+        headers = {key.lower(): value.decode("latin1") for key, value in scope.get("headers", [])}
+        host = headers.get(b"host", "")
+        forwarded_host = headers.get(b"x-forwarded-host", "")
+        forwarded = headers.get(b"forwarded", "")
+        candidates = [host, forwarded_host]
+        candidates.extend(part.split("=", 1)[1] for part in forwarded.split(";") if part.lower().startswith("host=") and "=" in part)
+        return any(value.split(":", 1)[0].strip().lower() == PUBLIC_HOST for value in candidates)
+
+    async def _not_found(self, send: Send) -> None:
+        body = b"Not Found"
+        await send({"type": "http.response.start", "status": 404,
+                    "headers": [(b"content-type", b"text/plain; charset=utf-8"), (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if not self._is_public_host(scope):
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        if scope["type"] == "http":
+            if scope.get("method") != "GET" or path not in self._HTTP_GET:
+                await self._not_found(send)
+                return
+            if path == "/":
+                scope = dict(scope)
+                scope["path"] = "/live"
+            await self.app(scope, receive, send)
+            return
+        if scope["type"] == "websocket" and path in self._WEBSOCKETS:
+            await self.app(scope, receive, send)
+            return
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        await self._not_found(send)
+
+
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(PublicHostGuardMiddleware)
 
 # ── Mount static files (CSS, JS) ──────────────────────────────────────────────
 import sys
@@ -501,6 +572,7 @@ async def telemetry_stream(ws: WebSocket):
 # ── Operator control API ───────────────────────────────────────────────────────
 async def _teardown():
     global _state
+    audio.end_translation()
     audio.stop()
     if audio._thread and audio._thread.is_alive():
         await asyncio.get_event_loop().run_in_executor(None, audio._thread.join, 1.5)
@@ -560,6 +632,16 @@ async def reconnect_service():
     return await start_service({"device_index": device_index})
 
 
+@app.post("/api/reconnect-public")
+async def reconnect_public_link():
+    """Trigger a safe, non-destructive public-link health check."""
+    tunnel_mgr = getattr(app.state, "tunnel_manager", None)
+    if tunnel_mgr:
+        tunnel_mgr.reconnect()
+    operator_events.add("user", "Public attendee link check requested")
+    return {"ok": True, "status": tunnel_mgr.status if tunnel_mgr else "unavailable"}
+
+
 @app.post("/api/start")
 async def start_service(body: dict = {}, from_auto_restart: bool = False):
     global _state, _paused, _service_start_time, _billed_seconds, _pause_start
@@ -579,6 +661,7 @@ async def start_service(body: dict = {}, from_auto_restart: bool = False):
         try:
             device_index = body.get("device_index")
             audio.start(device_index=device_index)
+            audio.begin_translation()
             _service_start_time = time.monotonic()
             _billed_seconds = 0.0
             _paused = False
@@ -769,7 +852,7 @@ async def get_status():
         server_log.info("HTTPS Tunnel Ready: %s", public_attendee_url)
     elif tunnel_error and not _tunnel_failed_logged:
         _tunnel_failed_logged = True
-        operator_events.add("warning", f"Cloudflare Tunnel unavailable ({tunnel_error}). Operating on local network.")
+        operator_events.add("warning", "Public HTTPS unavailable. Local translation remains ready.")
 
     active_url = public_attendee_url if (tunnel_ready and public_attendee_url) else local_url
 
@@ -796,8 +879,10 @@ async def get_status():
             "gemini_latency_ms": gemini_lat,
             "local_rtt_ms": local_rtt,
             "local_samples": telemetry.get("local_samples", 0),
+            "local_listeners": telemetry.get("local_listeners", 0),
             "public_rtt_ms": public_rtt,
             "public_samples": telemetry.get("public_samples", 0),
+            "public_listeners": telemetry.get("public_listeners", 0),
             "est_local_delay_s": est_local_delay_s,
             "est_public_delay_s": est_public_delay_s,
         },
@@ -805,6 +890,8 @@ async def get_status():
             "status": a.status,
             "level": round(a.level_rms, 1),
             "device": a.device_name,
+            "available": _audio_device_available,
+            "available_device": _audio_device_name,
         },
         "session": {
             "status": s.status,
@@ -813,7 +900,11 @@ async def get_status():
             "latency_ms": gemini_lat,
             "model": GEMINI_MODEL,
         },
-        "attendees": telemetry.get("total_listeners") if (telemetry.get("total_listeners") or 0) > 0 else broadcaster.client_count,
+        "attendees": max(
+            telemetry.get("total_listeners") or 0,
+            broadcaster.client_count,
+            broadcaster.audio_client_count,
+        ),
         "captions": broadcaster.caption_count,
         "last_caption_ago_s": broadcaster.last_caption_ago_s,
         "live_url_primary": active_url,
@@ -825,6 +916,8 @@ async def get_status():
         "tunnel_url": tunnel_url,
         "public_attendee_url": public_attendee_url,
         "tunnel_error": tunnel_error,
+        "local_translation_status": "ready",
+        "public_https_status": (tunnel_mgr.status if tunnel_mgr else "unavailable"),
     }
 
 
@@ -896,6 +989,11 @@ async def attendee_page():
 async def operator_page():
     if getattr(sys, "frozen", False):
         return _OPERATOR_HTML_CACHE
+    return _read_template("operator.html")
+
+
+@app.get("/operator", response_class=HTMLResponse)
+async def operator_alias():
     return _read_template("operator.html")
 
 

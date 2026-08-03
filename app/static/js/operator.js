@@ -25,6 +25,13 @@ function switchQrTab(mode) {
 
 let polling = null;
 
+const statusStrip = document.getElementById('status-strip');
+if (statusStrip) {
+  const geminiPill = document.getElementById('ss-gemini');
+  const translationPill = document.getElementById('ss-translation');
+  if (geminiPill && translationPill) statusStrip.insertBefore(geminiPill, translationPill);
+}
+
 let captionEs = null;
 let hasInitializedAutoStop = false;
 let lastEventId = -1;
@@ -421,9 +428,9 @@ function startStatusPoll() {
     }
 
     const auEl = document.getElementById('stat-audio');
-    const audioDev = st.audio.device || '';
+    const audioDev = st.audio.device || st.audio.available_device || '';
     if (auEl) {
-      if (st.audio.status === 'connected' || st.audio.level > 0) {
+      if (st.audio.status === 'connected' || st.audio.level > 0 || (st.audio.status === 'stopped' && st.audio.available)) {
         auEl.textContent = `🟢 ${audioDev ? audioDev : '마이크'} — 신호 수신 중`;
         auEl.className = 'sg-val sg-wide ok';
       } else if (st.audio.status === 'no_signal') {
@@ -541,7 +548,17 @@ function startStatusPoll() {
     else if (st.state === 'starting' || st.paused) ssSet('ss-translation', 'ss-warn', '🟡 Translation');
     else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'ss-err', '🔴 Translation');
     else ssSet('ss-translation', '', '🔵 Translation');
+    if (st.public_https_status === 'available') ssSet('ss-public-https', 'ss-ok', '🟢 Public');
+    else if (st.public_https_status === 'reconnecting') ssSet('ss-public-https', 'ss-warn', '🟡 Public');
+    else ssSet('ss-public-https', 'ss-err', '🔴 Public');
 
+    if (st.audio.status === 'stopped' && st.audio.available) ssSet('ss-audio', 'ss-ok', 'Audio');
+    else if (st.audio.status === 'stopped') ssSet('ss-audio', 'ss-warn', 'Audio');
+    if (st.public_https_status === 'available') ssSet('ss-internet', 'ss-ok', '🟢 Internet');
+    else if (st.public_https_status === 'reconnecting') ssSet('ss-internet', 'ss-warn', '🟡 Internet');
+    else if (st.public_https_status === 'unavailable' && st.session.status === 'stopped') ssSet('ss-internet', 'ss-err', '🔴 Internet');
+    if (st.state === 'running' && st.session.status === 'connected') ssSet('ss-internet', 'ss-ok', 'Internet');
+    if (st.paused) ssSet('ss-translation', 'ss-warn', '🟡 Translation');
     if (!st.service_running) {
       if (btnStart) { btnStart.disabled = false; btnStart.textContent = '▶ Start'; }
       if (btnPause) { btnPause.disabled = true; btnPause.textContent = '⏸ Pause'; btnPause.className = 'warning'; }
