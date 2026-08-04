@@ -23,7 +23,8 @@ config.yaml schema (abbreviated)
 
     network:
       host: "0.0.0.0"          # bind address
-      port: 8000
+      hostname: "skc"          # mDNS hostname base
+      port: 80
 
     gemini:
       model: "gemini-3.5-live-translate-preview"   # auto-updated by resolve_live_model()
@@ -57,10 +58,53 @@ _CONFIG_PATH = _ROOT / "config.yaml"
 
 load_dotenv(_ROOT / ".env")
 
+DEFAULT_CONFIG = {
+    "audio": {
+        "auto_stop_timeout_min": 10,
+        "channels": 1,
+        "chunk_ms": 100,
+        "device_index": 1,
+        "sample_rate": 16000,
+    },
+    "gemini": {
+        "context_seed": True,
+        "model": "gemini-3.5-live-translate-preview",
+    },
+    "logging": {
+        "backup_count": 5,
+        "log_dir": "logs",
+        "max_bytes": 10485760,
+    },
+    "network": {
+        "host": "0.0.0.0",
+        "hostname": "skc",
+        "port": 80,
+    },
+}
 
-def _load() -> dict:
-    with open(_CONFIG_PATH) as f:
-        return yaml.safe_load(f)
+
+def _ensure_config_file(path: Path | None = None) -> Path:
+    config_path = path or _CONFIG_PATH
+    if config_path.exists() and config_path.stat().st_size > 0:
+        return config_path
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(DEFAULT_CONFIG, f, default_flow_style=False, allow_unicode=True)
+    return config_path
+
+
+def _load(path: Path | None = None) -> dict:
+    config_path = _ensure_config_file(path)
+    with open(config_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+
+    if not data:
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.dump(DEFAULT_CONFIG, f, default_flow_style=False, allow_unicode=True)
+        return dict(DEFAULT_CONFIG)
+
+    return data
 
 
 _cfg = _load()
