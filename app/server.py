@@ -69,7 +69,7 @@ from typing import AsyncIterator
 
 import qrcode
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from app.audio import AudioCapture, AudioStatus, list_input_devices
 from app.broadcast import CaptionBroadcaster, CaptionEvent
@@ -138,20 +138,40 @@ def _register_zeroconf(hostname: str, port: int, ip_addr: str) -> None:
     global _zc, _zc_info
     try:
         from zeroconf import Zeroconf, ServiceInfo
-        dns_name = hostname if hostname.endswith(".") else f"{hostname}."
+
+        # Accept either "skc" or "skc.local" in config.yaml.
+        short_name = hostname.strip().rstrip(".")
+        if short_name.lower().endswith(".local"):
+            short_name = short_name[:-6]
+
+        if not short_name:
+            raise ValueError("mDNS hostname is empty")
+
+        mdns_name = f"{short_name}.local."
+
         _zc = Zeroconf()
         _zc_info = ServiceInfo(
             type_="_http._tcp.local.",
             name="SKC Live Translation._http._tcp.local.",
             addresses=[socket.inet_aton(ip_addr)],
-            port=port,
-            properties={},
-            server=dns_name,
+            port=int(port),
+            properties={
+                b"path": b"/",
+                b"live_path": b"/live",
+                b"admin_path": b"/admin",
+            },
+            server=mdns_name,
         )
-        _zc.register_service(_zc_info)
-        server_log.info("Registered mDNS hostname: %s pointing to %s", hostname, ip_addr)
-    except Exception as e:
-        server_log.warning("Could not register mDNS hostname via Zeroconf: %s", e)
+        _zc.register_service(_zc_info, allow_name_change=True)
+
+        server_log.info(
+            "Registered mDNS hostname: %s -> %s:%s",
+            mdns_name.rstrip("."),
+            ip_addr,
+            port,
+        )
+    except Exception:
+        server_log.exception("Could not register mDNS hostname via Zeroconf")
 
 
 def _unregister_zeroconf() -> None:
@@ -169,27 +189,140 @@ def _unregister_zeroconf() -> None:
             _zc_info = None
 
 
-def _get_live_urls() -> tuple[str, str]:
+def _get_public_base_url() -> str:
     cfg = network_cfg()
-    port = cfg.get("port", 8080)
-    hostname = cfg.get("hostname", "")
-    if hostname and not hostname.endswith(".local"):
-        hostname = f"{hostname}.local"
-
+    port = int(cfg.get("port", 8080))
+    hostname = (cfg.get("hostname", "") or "").strip()
     ip_addr = _local_ip()
 
     public_url = cfg.get("public_url")
-    if not public_url:
-        if hostname:
-            public_url = f"http://{hostname}:{port}"
-        else:
-            public_url = f"http://{ip_addr}:{port}"
+    if public_url:
+        return str(public_url).rstrip("/")
 
-    live_url_primary = f"{public_url}/live"
-    live_url_fallback = f"http://{ip_addr}:{port}/live"
+    if hostname:
+        host = hostname.rstrip(".")
+        if not host.lower().endswith(".local"):
+            host = f"{host}.local"
+    else:
+        host = ip_addr
 
-    return live_url_primary, live_url_fallback
+    if port == 80:
+        return f"http://{host}"
+    if port == 443:
+        return f"https://{host}"
 
+    return f"http://{host}:{port}"
+
+
+def _get_admin_url() -> str:
+    return f"{_get_public_base_url()}/admin"
+
+
+def _get_live_urls() -> tuple[str, str]:
+    base_url = _get_public_base_url()
+    ip_addr = _local_ip()
+    port = int(network_cfg().get("port", 8080))
+
+    if port == 80:
+        fallback_base = f"http://{ip_addr}"
+    elif port == 443:
+        fallback_base = f"https://{ip_addr}"
+    else:
+        fallback_base = f"http://{ip_addr}:{port}"
+
+    return base_url, fallback_base
+
+
+# def _build_qr(url: str) -> bytes:
+#     from PIL import Image, ImageDraw
+#     from qrcode.image.styledpil import StyledPilImage
+#     from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
+#     from qrcode.image.styles.colormasks import SolidFillColorMask
+
+#     # ERROR_CORRECT_H gives ~30% module recovery — required for a central logo overlay
+#     qr = qrcode.QRCode(
+#         version=None,
+#         error_correction=qrcode.constants.ERROR_CORRECT_H,
+#         box_size=10,
+#         border=2,
+#     )
+#     qr.add_data(url)
+#     qr.make(fit=True)
+
+#     # 1. Base: dark-blue rounded modules on white
+#     img = qr.make_image(
+#         image_factory=StyledPilImage,
+#         module_drawer=RoundedModuleDrawer(),
+#         color_mask=SolidFillColorMask(
+#             back_color=(255, 255, 255),
+#             front_color=(26, 42, 66),   # Presbyterian Navy
+#         ),
+#     ).convert("RGB")
+
+#     # 2. Pixel-level recolor: replace navy with gold (#b89445) in the three
+#     #    7×7 finder-pattern squares (top-left, top-right, bottom-left).
+#     #    We iterate each pixel in those rectangular areas and swap navy → gold.
+#     NAVY  = (26, 42, 66)
+#     GOLD  = (184, 148, 69)   # #b89445
+#     px    = img.load()
+#     bs    = qr.box_size
+#     border = qr.border
+#     n     = qr.modules_count   # total module count per side
+
+#     finder_origins = [
+#         (0, 0),            # top-left
+#         (n - 7, 0),        # top-right
+#         (0, n - 7),        # bottom-left
+#     ]
+
+#     for col, row in finder_origins:
+#         # pixel bounding box of this 7×7 finder pattern
+#         px1 = (col + border) * bs
+#         py1 = (row + border) * bs
+#         px2 = px1 + 7 * bs
+#         py2 = py1 + 7 * bs
+#         for x in range(px1, px2):
+#             for y in range(py1, py2):
+#                 if px[x, y] == NAVY:
+#                     px[x, y] = GOLD
+
+#     # 3. Embed central PCA logo with a mandatory white quiet-zone circle buffer
+#     logo_path = Path(__file__).parent / "pca-logo-white-small.webp"
+#     if logo_path.exists():
+#         img = img.convert("RGBA")
+#         logo = Image.open(logo_path).convert("RGBA")
+
+#         total_w, total_h = img.size
+#         # Logo must not exceed 20 % of the QR width (per spec)
+#         logo_size = int(total_w * 0.20)
+#         logo = logo.resize((logo_size, logo_size), Image.Resampling.LANCZOS)
+
+#         cx, cy = total_w // 2, total_h // 2
+#         draw = ImageDraw.Draw(img)
+
+#         # Draw a solid white circle as a quiet-zone buffer *before* pasting logo
+#         buf_margin = int(logo_size * 0.20)   # 20 % padding around logo
+#         buf_r      = logo_size // 2 + buf_margin
+#         draw.ellipse(
+#             [cx - buf_r, cy - buf_r, cx + buf_r, cy + buf_r],
+#             fill=(255, 255, 255, 255),
+#         )
+
+#         # Draw navy inner circle so the white logo is visible against it
+#         inner_r = logo_size // 2 + int(logo_size * 0.06)
+#         draw.ellipse(
+#             [cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r],
+#             fill=(26, 42, 66, 255),
+#         )
+
+#         # Paste the logo precisely centred inside the navy circle
+#         logo_x = cx - logo_size // 2
+#         logo_y = cy - logo_size // 2
+#         img.paste(logo, (logo_x, logo_y), logo)
+
+#     buf = io.BytesIO()
+#     img.save(buf, format="PNG")
+#     return buf.getvalue()
 
 def _build_qr(url: str) -> bytes:
     from PIL import Image, ImageDraw
@@ -197,91 +330,88 @@ def _build_qr(url: str) -> bytes:
     from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
     from qrcode.image.styles.colormasks import SolidFillColorMask
 
-    # ERROR_CORRECT_H gives ~30% module recovery — required for a central logo overlay
+    NAVY = (26, 42, 66)
+    GOLD = (184, 148, 69)
+
     qr = qrcode.QRCode(
         version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=10,
+        error_correction=qrcode.constants.ERROR_CORRECT_Q,  # ~15% recovery is sufficient for a small logo
+        box_size=14,
         border=2,
     )
     qr.add_data(url)
     qr.make(fit=True)
 
-    # 1. Base: dark-blue rounded modules on white
     img = qr.make_image(
         image_factory=StyledPilImage,
-        module_drawer=RoundedModuleDrawer(),
-        color_mask=SolidFillColorMask(
-            back_color=(255, 255, 255),
-            front_color=(26, 42, 66),   # Presbyterian Navy
-        ),
-    ).convert("RGB")
+        module_drawer=RoundedModuleDrawer(radius_ratio=0.6),
+        color_mask=SolidFillColorMask(back_color=(255, 255, 255), front_color=NAVY),
+    ).convert("RGBA")
 
-    # 2. Pixel-level recolor: replace navy with gold (#b89445) in the three
-    #    7×7 finder-pattern squares (top-left, top-right, bottom-left).
-    #    We iterate each pixel in those rectangular areas and swap navy → gold.
-    NAVY  = (26, 42, 66)
-    GOLD  = (184, 148, 69)   # #b89445
-    px    = img.load()
-    bs    = qr.box_size
-    border = qr.border
-    n     = qr.modules_count   # total module count per side
+    # Recolor the 3 finder patterns by drawing gold squares directly over
+    # the known module coordinates — no pixel scanning / color matching needed.
+    # Recolor the 3 finder patterns with rounded corners
+    draw = ImageDraw.Draw(img)
+    bs, border, n = qr.box_size, qr.border, qr.modules_count
+    corner_radius = int(bs * 1.2)
 
-    finder_origins = [
-        (0, 0),            # top-left
-        (n - 7, 0),        # top-right
-        (0, n - 7),        # bottom-left
-    ]
+    for col, row in [(0, 0), (n - 7, 0), (0, n - 7)]:
+        x1 = (col + border) * bs
+        y1 = (row + border) * bs
+        x2 = x1 + 7 * bs
+        y2 = y1 + 7 * bs
 
-    for col, row in finder_origins:
-        # pixel bounding box of this 7×7 finder pattern
-        px1 = (col + border) * bs
-        py1 = (row + border) * bs
-        px2 = px1 + 7 * bs
-        py2 = py1 + 7 * bs
-        for x in range(px1, px2):
-            for y in range(py1, py2):
-                if px[x, y] == NAVY:
-                    px[x, y] = GOLD
+        # Clear the full square first — erases the navy modules underneath,
+        # including the corners the rounded gold square won't cover
+        draw.rectangle([x1, y1, x2, y2], fill=(255, 255, 255, 255))
 
-    # 3. Embed central PCA logo with a mandatory white quiet-zone circle buffer
+        # outer gold ring
+        draw.rounded_rectangle([x1, y1, x2, y2], radius=corner_radius, fill=GOLD)
+        # inner white ring
+        draw.rounded_rectangle(
+            [x1 + bs, y1 + bs, x1 + 6 * bs, y1 + 6 * bs],
+            radius=corner_radius * 0.7, fill=(255, 255, 255, 255),
+        )
+        # gold core
+        draw.rounded_rectangle(
+            [x1 + 2 * bs, y1 + 2 * bs, x1 + 5 * bs, y1 + 5 * bs],
+            radius=corner_radius * 0.4, fill=GOLD,
+        )
+
+    # Embed central logo — 5:4 (height:width) rounded rectangular buffer
     logo_path = Path(__file__).parent / "pca-logo-white-small.webp"
     if logo_path.exists():
-        img = img.convert("RGBA")
         logo = Image.open(logo_path).convert("RGBA")
+        w, h = img.size
 
-        total_w, total_h = img.size
-        # Logo must not exceed 20 % of the QR width (per spec)
-        logo_size = int(total_w * 0.20)
-        logo = logo.resize((logo_size, logo_size), Image.Resampling.LANCZOS)
+        logo_w = int(w * 0.20)
+        logo_h = int(logo_w * 6 / 5)
+        logo = logo.resize((logo_w, logo_h), Image.Resampling.LANCZOS)
 
-        cx, cy = total_w // 2, total_h // 2
-        draw = ImageDraw.Draw(img)
+        cx, cy = w // 2, h // 2
+        logo_radius = int(logo_w * 0.25)   # tune to taste
 
-        # Draw a solid white circle as a quiet-zone buffer *before* pasting logo
-        buf_margin = int(logo_size * 0.20)   # 20 % padding around logo
-        buf_r      = logo_size // 2 + buf_margin
-        draw.ellipse(
-            [cx - buf_r, cy - buf_r, cx + buf_r, cy + buf_r],
-            fill=(255, 255, 255, 255),
+        # Quiet-zone buffer: white rounded rectangle, 20% padding around the logo
+        buf_half_w = logo_w // 2 + int(logo_w * 0.15)
+        buf_half_h = logo_h // 2 + int(logo_h * 0.15)
+        draw.rounded_rectangle(
+            [cx - buf_half_w, cy - buf_half_h, cx + buf_half_w, cy + buf_half_h],
+            radius=logo_radius, fill=(255, 255, 255, 255),
         )
 
-        # Draw navy inner circle so the white logo is visible against it
-        inner_r = logo_size // 2 + int(logo_size * 0.06)
-        draw.ellipse(
-            [cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r],
-            fill=(26, 42, 66, 255),
+        # Navy inner rounded rectangle so the white logo stands out
+        inner_half_w = logo_w // 2 + int(logo_w * 0.06)
+        inner_half_h = logo_h // 2 + int(logo_h * 0.06)
+        draw.rounded_rectangle(
+            [cx - inner_half_w, cy - inner_half_h, cx + inner_half_w, cy + inner_half_h],
+            radius=logo_radius * 0.8, fill=(*NAVY, 255),
         )
 
-        # Paste the logo precisely centred inside the navy circle
-        logo_x = cx - logo_size // 2
-        logo_y = cy - logo_size // 2
-        img.paste(logo, (logo_x, logo_y), logo)
+        img.paste(logo, (cx - logo_w // 2, cy - logo_h // 2), logo)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
-
 
 def _runtime_seconds() -> float:
     if _service_start_time is None:
@@ -357,12 +487,10 @@ async def lifespan(app: FastAPI):
     global _qr_png_cache
     cfg = network_cfg()
     port = cfg.get("port", 8080)
-    hostname = cfg.get("hostname", "")
+    hostname = (cfg.get("hostname", "") or "").strip()
     ip_addr = _local_ip()
 
     if hostname:
-        if not hostname.endswith(".local"):
-            hostname = f"{hostname}.local"
         import threading
         threading.Thread(
             target=_register_zeroconf,
@@ -578,7 +706,7 @@ async def shutdown_service(request: Request):
     import os
     import signal
     server_log.info("Shutdown requested via web interface")
-    
+
     if _state != ServiceState.STOPPED:
         await stop_service()
 
@@ -619,18 +747,18 @@ async def _auto_stop_on_failure(reason: str):
     global _state, _auto_restart_attempt, _auto_restart_reason
     MAX_AUTO_RESTART_ATTEMPTS = 3
     AUTO_RESTART_BACKOFF_SEC = [2, 5, 15]
-    
+
     try:
         server_log.warning("SESSION_FAILURE trigger: pipeline auto-restart loop initiated. Reason: %s", reason)
         operator_events.add("error", f"Session failure: {reason}")
-        
+
         # 1. Teardown and export the current session transcript
         async with _state_lock:
             if _state == ServiceState.RUNNING:
                 _state = ServiceState.STOPPING
                 await _teardown()
                 server_log.warning("Service automatically stopped: session failure (%s)", reason)
-        
+
         # 2. Run the bounded auto-restart loop
         _auto_restart_reason = reason
         for attempt, backoff in enumerate(AUTO_RESTART_BACKOFF_SEC, start=1):
@@ -649,7 +777,7 @@ async def _auto_stop_on_failure(reason: str):
                 return
             except Exception as e:
                 operator_events.add("error", f"Auto-restart attempt {attempt} failed: {e}")
-                
+
         # All attempts exhausted
         _auto_restart_attempt = 0
         _auto_restart_reason = ""
@@ -657,7 +785,7 @@ async def _auto_stop_on_failure(reason: str):
         broadcaster.set_unavailable()
         async with _state_lock:
             _state = ServiceState.FAILED
-            
+
     except asyncio.CancelledError:
         server_log.info("Auto-restart loop cancelled")
         _auto_restart_attempt = 0
@@ -703,6 +831,7 @@ async def get_status():
         "device_index": audio_cfg().get("device_index", 0),
         "auto_restart_attempt": _auto_restart_attempt,
         "auto_restart_reason": _auto_restart_reason,
+        "admin_url": _get_admin_url(),
         "audio": {
             "status": a.status,
             "level": round(a.level_rms, 1),
@@ -779,11 +908,16 @@ async def attendee_page():
     return _read_template("attendee.html")
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/admin", response_class=HTMLResponse)
 async def operator_page():
     if getattr(sys, "frozen", False):
         return _OPERATOR_HTML_CACHE
     return _read_template("operator.html")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def root_redirect():
+    return RedirectResponse(url="/live", status_code=307)
 
 
 def _read_template(filename: str) -> str:

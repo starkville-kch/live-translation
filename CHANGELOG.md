@@ -46,10 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **mDNS LAN Hostname Advertising via Zeroconf**:
-  - Dynamically registers the `network.hostname` (defaults to `skc-live.local`) on service startup using `python-zeroconf` and unregisters on teardown.
+  - Dynamically registers the `network.hostname` (defaults to `skc.live`) on service startup using `python-zeroconf` and unregisters on teardown.
   - Automatically maps to the host's current DHCP-assigned IP address on start, ensuring stable mDNS discovery across both home and church networks.
 - **Dual-URL Display on Operator Console**:
-  - Embedded dynamic URL information card under the QR code on the operator console displaying both the primary hostname URL (`http://skc-live.local:8080/live`) and the fallback raw IP URL.
+  - Embedded dynamic URL information card under the QR code on the operator console displaying both the primary hostname URL (`http://skc.live:8080/live`) and the fallback raw IP URL.
   - Updated status poll endpoint `/api/status` to return both `live_url_primary` and `live_url_fallback` so the console updates in real time.
 - **Dependencies**:
   - Added `zeroconf>=0.150.0` to `requirements.txt` to enable mDNS LAN service advertising.

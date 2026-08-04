@@ -23,13 +23,31 @@ def _port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
+
+def _format_url(host: str, port: int) -> str:
+    return f"http://{host}" if port == 80 else f"http://{host}:{port}"
+
+
+def _base_url(cfg: dict) -> str:
+    hostname = (cfg.get("hostname", "") or "").strip()
+    port = int(cfg.get("port", 8080))
+    if hostname:
+        host = hostname if hostname.endswith(".local") else f"{hostname}.local"
+        return _format_url(host, port)
+    return _format_url("localhost", port)
+
+
+def _admin_url(cfg: dict) -> str:
+    return f"{_base_url(cfg)}/admin"
+
+
 if __name__ == "__main__":
     import sys
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")
-    
+
     # If running as a frozen executable, copy the bundled CHANGELOG.md next to the EXE
     if getattr(sys, "frozen", False):
         import shutil
@@ -49,49 +67,60 @@ if __name__ == "__main__":
     cfg = network_cfg()
     port = cfg.get("port", 8000)
 
+    base_url = _base_url(cfg)
+    admin_url = _admin_url(cfg)
+    live_url = f"{base_url}/live"
+    browser_url = f"{_format_url('localhost', port)}/admin"
+    fallback_url = _format_url("192.168.0.169", port)
+
     if _port_in_use(port):
-        url = f"http://localhost:{port}/"
         print()
         print("╔══════════════════════════════════════════════════╗")
         print(f"║  Port {port} is already in use.                   ║")
         print("║                                                  ║")
         print("║  The service may already be running.             ║")
-        print(f"║  → Opening browser: {url:<29}║")
+        print(f"║  → Opening browser: {browser_url:<29}║")
         print("║                                                  ║")
         print("║  To restart: close the other console window      ║")
         print("║  (or press Ctrl+C there), then run this again.   ║")
         print("╚══════════════════════════════════════════════════╝")
         print()
-        webbrowser.open(url)
+        webbrowser.open(browser_url)
         raise SystemExit(0)
 
-    def _open_browser():
+    def _open_browser(url: str):
         import time; time.sleep(2)
-        webbrowser.open(f"http://localhost:{port}/")
+        webbrowser.open(url)
 
-    threading.Thread(target=_open_browser, daemon=True).start()
+    threading.Thread(target=_open_browser, args=(browser_url,), daemon=True).start()
 
-    W = 62  # inner width between the box walls
+    W = 72
+
     def _banner_line(text=""):
         return "║  " + text + " " * (W - 2 - len(text)) + "║"
 
     print()
     print("╔" + "═" * W + "╗")
-    print(_banner_line("Starkville Korean Church  -  Live Translation System"))
+    print(_banner_line("STARKVILLE KOREAN CHURCH — LIVE TRANSLATION"))
     print("╠" + "═" * W + "╣")
+    print(_banner_line("STATUS: Ready"))
     print(_banner_line())
-    print(_banner_line(f"Operator console  ->  http://localhost:{port}/"))
-    print(_banner_line(f"Attendee page     ->  http://localhost:{port}/live"))
+    print(_banner_line("ATTENDEES — Scan the QR code or open:"))
+    print(_banner_line(f"  {live_url}"))
     print(_banner_line())
-    print(_banner_line("STEPS TO START SERVICE:"))
-    print(_banner_line("  1. Browser opens automatically - wait a moment"))
-    print(_banner_line("  2. Select the USB mixer from the Input Device dropdown"))
-    print(_banner_line("  3. Press  [Start]  to begin live translation"))
+    print(_banner_line("OPERATOR CONSOLE — This laptop only:"))
+    print(_banner_line(f"  {admin_url}"))
     print(_banner_line())
-    print(_banner_line("When the service ends:  press  [Stop]  in the browser,"))
-    print(_banner_line("then close this window (or press Ctrl+C here)."))
+    print(_banner_line("FALLBACK — Same church Wi-Fi:"))
+    print(_banner_line(f"  {fallback_url}"))
     print(_banner_line())
-    print(_banner_line("Keep this window open for the entire service."))
+    print(_banner_line("START SERVICE"))
+    print(_banner_line("  1. Open the operator console"))
+    print(_banner_line("  2. Select the USB mixer under Input Device"))
+    print(_banner_line("  3. Press [Start]"))
+    print(_banner_line())
+    print(_banner_line("KEEP THIS WINDOW OPEN during the service."))
+    print(_banner_line("End of service: press [Stop], then press Ctrl+C here."))
     print("╚" + "═" * W + "╝")
     print()
 

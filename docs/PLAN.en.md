@@ -208,7 +208,7 @@ gemini:
 
 network:
   host: 0.0.0.0   # bind all interfaces (localhost + WiFi attendees)
-  hostname: skc-live.local
+  hostname: skc.live
   port: 8080
   # public_url: "http://192.168.1.x:8080"  # override if auto-detect picks wrong interface
 

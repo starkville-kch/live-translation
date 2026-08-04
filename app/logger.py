@@ -146,6 +146,7 @@ _console.setFormatter(_console_fmt)
 _console.setLevel(logging.INFO)   # DEBUG stays in files only
 
 logging.basicConfig(level=logging.DEBUG, handlers=[_console])
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # ── Named loggers ─────────────────────────────────────────────────────────────
 
