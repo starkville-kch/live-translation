@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.1] - 2026-08-03
+
+### Changed
+- **Operator and attendee URL display updated**: startup banner now shows the attendee URL and operator console URL using the configured hostname/port, with a fallback IP line that respects the active port.
+- **Automatic browser launch adjusted**: the launcher now opens the operator console at the local localhost admin URL instead of the mDNS-based address.
+- **QR card labels clarified**: the QR-code links under the operator page now display as “Operator (this page)” and “Attendee”.
+
+---
+
 ## [2.1.0] - 2026-07-26
 
 ### Added
