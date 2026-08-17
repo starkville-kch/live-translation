@@ -396,14 +396,37 @@ const SAMPLE_RATE = 24000;
 
 function ensureAudioCtx() {
   if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
-    nextPlayAt = audioCtx.currentTime;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      try {
+        audioCtx = new AudioContextClass({ sampleRate: SAMPLE_RATE });
+      } catch (e) {
+        // Fallback for iOS Safari / devices that do not support custom constructor sampleRate
+        audioCtx = new AudioContextClass();
+      }
+      nextPlayAt = audioCtx.currentTime;
+    }
   }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (audioCtx) {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    // Unlock iOS Audio: play a 1-sample silent buffer on user gesture
+    try {
+      const silentBuf = audioCtx.createBuffer(1, 1, 22050);
+      const src = audioCtx.createBufferSource();
+      src.buffer = silentBuf;
+      src.connect(audioCtx.destination);
+      src.start(0);
+    } catch (_) {}
+  }
 }
 
 function playPCM16(arrayBuffer) {
-  if (!audioEnabled || !audioCtx) return;
+  if (!audioEnabled || !audioCtx || !arrayBuffer || arrayBuffer.byteLength === 0) return;
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
   const raw = new Int16Array(arrayBuffer);
   const buf = audioCtx.createBuffer(1, raw.length, SAMPLE_RATE);
   const ch = buf.getChannelData(0);
@@ -418,21 +441,45 @@ function playPCM16(arrayBuffer) {
 }
 
 function connectAudio() {
-  if (audioWs) { audioWs.close(); audioWs = null; }
+  if (audioWs) {
+    try { audioWs.close(); } catch(_) {}
+    audioWs = null;
+  }
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream');
   audioWs.binaryType = 'arraybuffer';
+  audioWs.onopen = () => {
+    console.log("Audio WebSocket connected");
+    audioBtn.textContent = '🔊 Audio On';
+    audioBtn.classList.add('active');
+  };
   audioWs.onmessage = (e) => playPCM16(e.data);
-  audioWs.onerror = () => {};
+  audioWs.onerror = (err) => {
+    console.warn("Audio WebSocket error:", err);
+  };
   audioWs.onclose = () => {
     audioWs = null;
-    if (audioEnabled) setTimeout(connectAudio, 3000); // reconnect if still wanted
+    if (audioEnabled) {
+      setTimeout(connectAudio, 2000); // reconnect if still wanted
+    }
   };
 }
 
 function disconnectAudio() {
-  if (audioWs) { audioWs.close(); audioWs = null; }
+  if (audioWs) {
+    try { audioWs.close(); } catch(_) {}
+    audioWs = null;
+  }
 }
+
+// Auto-resume audio context on user touch if suspended
+['click', 'touchstart'].forEach(evt => {
+  document.addEventListener(evt, () => {
+    if (audioEnabled && audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }, { passive: true });
+});
 
 // ── Earphone modal ─────────────────────────────────────────────────────────
 function enableAudio() {

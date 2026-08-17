@@ -189,17 +189,18 @@ class CaptionBroadcaster:
             pass
 
     def on_audio_chunk(self, pcm: bytes) -> None:
-        dead = []
         for q in self._audio_clients:
             try:
                 q.put_nowait(pcm)
             except asyncio.QueueFull:
-                dead.append(q)
-        for q in dead:
-            try:
-                self._audio_clients.remove(q)
-            except ValueError:
-                pass
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    q.put_nowait(pcm)
+                except asyncio.QueueFull:
+                    pass
 
     @property
     def audio_client_count(self) -> int:

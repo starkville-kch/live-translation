@@ -939,23 +939,40 @@ const SAMPLE_RATE = 24000;
 
 function ensureAudioCtx() {
   if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
-    gainNode = audioCtx.createGain();
-    gainNode.gain.value = parseFloat(document.getElementById('vol-slider').value);
-    gainNode.connect(audioCtx.destination);
-    nextPlayAt = audioCtx.currentTime;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      try {
+        audioCtx = new AudioContextClass({ sampleRate: SAMPLE_RATE });
+      } catch (e) {
+        audioCtx = new AudioContextClass();
+      }
+      gainNode = audioCtx.createGain();
+      gainNode.gain.value = parseFloat(document.getElementById('vol-slider').value);
+      gainNode.connect(audioCtx.destination);
+      nextPlayAt = audioCtx.currentTime;
+    }
   }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (audioCtx) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    try {
+      const silentBuf = audioCtx.createBuffer(1, 1, 22050);
+      const src = audioCtx.createBufferSource();
+      src.buffer = silentBuf;
+      src.connect(gainNode || audioCtx.destination);
+      src.start(0);
+    } catch (_) {}
+  }
 }
 
 function playPCM16(arrayBuffer) {
-  if (!audioEnabled || !audioCtx) return;
+  if (!audioEnabled || !audioCtx || !arrayBuffer || arrayBuffer.byteLength === 0) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
   const raw = new Int16Array(arrayBuffer);
   const buf = audioCtx.createBuffer(1, raw.length, SAMPLE_RATE);
   const ch = buf.getChannelData(0);
   for (let i = 0; i < raw.length; i++) ch[i] = raw[i] / 32768;
   const src = audioCtx.createBufferSource();
-  src.buffer = buf; src.connect(gainNode);
+  src.buffer = buf; src.connect(gainNode || audioCtx.destination);
   const now = audioCtx.currentTime;
   if (nextPlayAt < now) nextPlayAt = now + 0.05;
   src.start(nextPlayAt);
@@ -963,7 +980,10 @@ function playPCM16(arrayBuffer) {
 }
 
 function connectAudio() {
-  if (audioWs) { audioWs.close(); audioWs = null; }
+  if (audioWs) {
+    try { audioWs.close(); } catch(_) {}
+    audioWs = null;
+  }
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream');
   audioWs.binaryType = 'arraybuffer';
@@ -971,12 +991,15 @@ function connectAudio() {
   audioWs.onerror = () => {};
   audioWs.onclose = () => {
     audioWs = null;
-    if (audioEnabled) setTimeout(connectAudio, 3000);
+    if (audioEnabled) setTimeout(connectAudio, 2000);
   };
 }
 
 function disconnectAudio() {
-  if (audioWs) { audioWs.close(); audioWs = null; }
+  if (audioWs) {
+    try { audioWs.close(); } catch(_) {}
+    audioWs = null;
+  }
 }
 
 const modal   = document.getElementById('earphone-modal');

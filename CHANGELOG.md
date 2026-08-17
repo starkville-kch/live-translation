@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.1.1] - 2026-08-03
+## [2.1.2] - 2026-08-17
+
+### Fixed
+- **Attendee voice playback on mobile browsers**: Added `AudioContext` constructor fallback for mobile browsers (iOS Safari in particular) that reject custom sample rates, added silent buffer unlocking for iOS audio sessions, and added automatic context resume on touch/click.
+- **WebSocket audio stream keepalive**: Updated `/audio-stream` WebSocket handler in `server.py` to send empty keepalive frames during silence periods instead of terminating on 30s timeout.
+- **Subscriber queue overflow handling**: Updated `broadcast.py` to drop oldest audio chunks instead of dropping client queues on network jitter.
 
 ### Changed
 - **Operator and attendee URL display updated**: startup banner now shows the attendee URL and operator console URL using the configured hostname/port, with a fallback IP line that respects the active port.

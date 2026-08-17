@@ -562,12 +562,16 @@ async def audio_stream(ws: WebSocket):
     q = broadcaster.add_audio_client()
     try:
         while True:
-            pcm = await asyncio.wait_for(q.get(), timeout=30.0)
-            await ws.send_bytes(pcm)
-    except (WebSocketDisconnect, asyncio.TimeoutError):
+            try:
+                pcm = await asyncio.wait_for(q.get(), timeout=10.0)
+                await ws.send_bytes(pcm)
+            except asyncio.TimeoutError:
+                # Keepalive: send empty bytes frame during silence to prevent disconnect
+                await ws.send_bytes(b"")
+    except (WebSocketDisconnect, asyncio.CancelledError):
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        server_log.debug("WebSocket audio client disconnected: %s", e)
     finally:
         broadcaster.remove_audio_client(q)
 
