@@ -337,7 +337,7 @@ def _build_qr(url: str) -> bytes:
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_Q,  # ~15% recovery is sufficient for a small logo
         box_size=14,
-        border=2,
+        border=4,  # Standard 4 modules quiet zone
     )
     qr.add_data(url)
     qr.make(fit=True)
@@ -408,6 +408,18 @@ def _build_qr(url: str) -> bytes:
         )
 
         img.paste(logo, (cx - logo_w // 2, cy - logo_h // 2), logo)
+
+    # Outer rounded navy boundary (defines the quiet zone frame)
+    w, h = img.size
+    border_radius = int(bs * 1.5)
+    border_width = 4
+    inset = 2
+    draw.rounded_rectangle(
+        [inset, inset, w - 1 - inset, h - 1 - inset],
+        radius=border_radius,
+        outline=(*NAVY, 255),
+        width=border_width,
+    )
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
