@@ -88,6 +88,7 @@ DEFAULT_CONFIG = {
         "sample_rate": 16000,
     },
     "gemini": {
+        "auto_drift_correction": False,
         "context_seed": True,
         "fallback_model": "gemini-3.5-live-translate-preview",
         "preferred_model": "gemini-3.5-live-translate-preview",
@@ -190,6 +191,7 @@ def logging_cfg() -> dict:
 def gemini_cfg() -> dict:
     g = _cfg.get("gemini", {})
     return {
+        "auto_drift_correction": bool(g.get("auto_drift_correction", False)),
         "preferred_model": g.get("preferred_model", "gemini-3.5-live-translate-preview"),
         "fallback_model": g.get("fallback_model", "gemini-3.5-live-translate-preview"),
         "voice": g.get("voice", "orus"),
@@ -242,6 +244,14 @@ def save_gemini_preferred_model(preferred_model: str) -> None:
     if "gemini" not in _cfg:
         _cfg["gemini"] = {}
     _cfg["gemini"]["preferred_model"] = preferred_model.strip()
+    _atomic_yaml_write(_CONFIG_PATH, _cfg)
+
+
+def save_auto_drift_correction(enabled: bool) -> None:
+    """Save auto_drift_correction setting to config.yaml atomically."""
+    if "gemini" not in _cfg:
+        _cfg["gemini"] = {}
+    _cfg["gemini"]["auto_drift_correction"] = bool(enabled)
     _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
 

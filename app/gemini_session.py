@@ -9,16 +9,19 @@ duration of a church service (typically 60–90 minutes).
 Session lifecycle
 -----------------
 1. ``model_resolver.get_candidate_sequence()`` determines the priority
-   of models to try on service start (Recommended / Auto / Manual).
+   of models to try on service start.
 2. ``GeminiSession.start()`` spawns ``_run_with_retry()`` as an asyncio Task.
 3. Once an initial candidate establishes a connection, it is LOCKED for the
    duration of the service session.
 4. On first verified translation output (audio or text), the model is recorded
-   as Last Known Good (LKG).
-5. Subsequent in-session reconnects (e.g. GoAway) always use the locked model.
-6. On ``stop()``, transcript is flushed, and the model is unlocked.
+   as Last Verified Model.
+5. In-session reconnects (e.g. GoAway) strictly reuse the locked model and resume session.
+6. Clean resets (e.g. Pause -> Resume or language drift watchdog) discard resumption
+   tokens and create a fresh context on the same locked model with incremented session epoch.
+7. On ``stop()``, transcript is flushed, and the model is unlocked.
 """
 import asyncio
+import collections
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -52,7 +55,7 @@ class SessionStatus(str, Enum):
     CONNECTING = "connecting"
     CONNECTED = "connected"
     RECONNECTING = "reconnecting"
-    FAILED = "failed"  # sustained failure after max retries
+    FAILED = "failed"  # sustained failure after max retries or non-retryable config error
 
 
 @dataclass
@@ -68,6 +71,51 @@ class TranscriptEntry(NamedTuple):
     timestamp: float   # time.monotonic() of turn start
     korean: str
     english: str
+
+
+def evaluate_drift_score(
+    input_lang: str | None,
+    input_text: str,
+    output_lang: str | None,
+    output_text: str,
+) -> int:
+    """Evaluate language drift score for a completed turn in bilingual Korean/English church service.
+
+    Returns:
+        0: within expected Korean/English envelope.
+        1: weak drift (unexpected input language code or unexpected script).
+        2: strong drift (output language not English / malformed).
+    """
+    score = 0
+
+    # 1. Primary input check via Gemini's language_code
+    if input_lang:
+        in_clean = input_lang.strip().lower()
+        if not (in_clean.startswith("ko") or in_clean.startswith("en")):
+            score += 1
+    elif input_text:
+        # Fallback script heuristic if language_code is missing:
+        # Flag Japanese Hiragana (0x3040-0x309F) / Katakana (0x30A0-0x30FF) or Thai (0x0E00-0x0E7F)
+        for ch in input_text:
+            code = ord(ch)
+            if (0x3040 <= code <= 0x309F) or (0x30A0 <= code <= 0x30FF) or (0x0E00 <= code <= 0x0E7F):
+                score += 1
+                break
+
+    # 2. Target output check (must always be English)
+    if output_lang:
+        out_clean = output_lang.strip().lower()
+        if not out_clean.startswith("en"):
+            score += 2
+    elif output_text:
+        # If output text contains substantial Hangul/Japanese instead of English
+        for ch in output_text:
+            code = ord(ch)
+            if (0xAC00 <= code <= 0xD7A3) or (0x3040 <= code <= 0x30FF):
+                score += 2
+                break
+
+    return score
 
 
 class GeminiSession:
@@ -87,6 +135,7 @@ class GeminiSession:
         self._state = SessionState()
         self._stop_event = asyncio.Event()
         self._attempt = 0
+        self._session_epoch: int = 0
         self._resumption_handle: str | None = None
         self._audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=500)
         self._task: asyncio.Task | None = None
@@ -94,10 +143,16 @@ class GeminiSession:
         self._transcript: list[TranscriptEntry] = []
         self._current_ko: str = ""
         self._current_en: str = ""
+        self._turn_in_lang: str | None = None
+        self._turn_out_lang: str | None = None
         self._turn_start: float | None = None
         self._first_audio_in_turn_sent_at: float | None = None
         self._last_token_at: float = 0.0
         self._has_verified_output: bool = False
+        self._auto_drift_correction: bool = bool(gemini_cfg().get("auto_drift_correction", False))
+        self._drift_history: collections.deque = collections.deque(maxlen=3)
+        self._consecutive_clean_turns: int = 0
+        self._last_watchdog_reset_at: float = 0.0
 
     def _get_client(self) -> genai.Client:
         if self._client is None:
@@ -109,6 +164,25 @@ class GeminiSession:
         return model_resolver.active_model
 
     @property
+    def session_epoch(self) -> int:
+        return self._session_epoch
+
+    @property
+    def auto_drift_correction(self) -> bool:
+        return self._auto_drift_correction
+
+    @auto_drift_correction.setter
+    def auto_drift_correction(self, val: bool) -> None:
+        self._auto_drift_correction = bool(val)
+
+    def set_auto_drift_correction(self, enabled: bool) -> None:
+        self._auto_drift_correction = bool(enabled)
+
+    def clear_drift_state(self) -> None:
+        self._drift_history.clear()
+        self._consecutive_clean_turns = 0
+
+    @property
     def transcript(self) -> list[TranscriptEntry]:
         return list(self._transcript)
 
@@ -116,12 +190,15 @@ class GeminiSession:
         self._transcript.clear()
         self._current_ko = ""
         self._current_en = ""
+        self._turn_in_lang = None
+        self._turn_out_lang = None
         self._turn_start = None
         self._first_audio_in_turn_sent_at = None
         self._has_verified_output = False
+        self.clear_drift_state()
 
     def flush_current_turn(self) -> None:
-        """Commit any in-progress turn to the transcript (called on stop)."""
+        """Commit any in-progress turn to the transcript (called on stop/pause)."""
         self._commit_current_turn()
 
     def _commit_current_turn(self) -> None:
@@ -136,18 +213,58 @@ class GeminiSession:
                 english=en,
             ))
             session_log.info(
-                "[Turn committed] KO: %s | EN: %s",
+                "[Turn committed] KO (%s): %s | EN (%s): %s",
+                self._turn_in_lang or "auto",
                 ko,
+                self._turn_out_lang or "en",
                 en,
             )
+
+            # Score completed turn for language drift
+            turn_score = evaluate_drift_score(self._turn_in_lang, ko, self._turn_out_lang, en)
+            self._drift_history.append(turn_score)
+
+            if turn_score == 0:
+                self._consecutive_clean_turns += 1
+                if self._consecutive_clean_turns >= 2:
+                    self._drift_history.clear()
+            else:
+                self._consecutive_clean_turns = 0
+                session_log.warning(
+                    "[Drift] Completed turn flagged: in_lang=%s, out_lang=%s, score=+%d",
+                    self._turn_in_lang, self._turn_out_lang, turn_score
+                )
+
+            total_drift = sum(self._drift_history)
+            if total_drift >= 3:
+                now = time.monotonic()
+                if self._auto_drift_correction:
+                    if (now - self._last_watchdog_reset_at) >= 15.0:
+                        self._last_watchdog_reset_at = now
+                        server_log.warning("Auto drift recovery: score=%d >= 3. Resetting session.", total_drift)
+                        operator_events.add("warning", f"Auto drift recovery triggered (score {total_drift})")
+                        asyncio.create_task(self.reset_clean(reason="Language drift watchdog"))
+                else:
+                    session_log.info(
+                        "[Drift] Score=%d >= 3 (auto_drift_correction is OFF; operator manual Pause->Resume available)",
+                        total_drift
+                    )
+                    self._emit(last_event="⚠ 비정상 언어 감지 (수동 복구: Pause -> Resume)")
+                    operator_events.add(
+                        "warning",
+                        f"Language drift detected (score {total_drift}) — manual Pause -> Resume available"
+                    )
+
         self._current_ko = ""
         self._current_en = ""
+        self._turn_in_lang = None
+        self._turn_out_lang = None
         self._turn_start = None
         self._first_audio_in_turn_sent_at = None
 
-    async def _auto_commit_loop(self) -> None:
+    async def _auto_commit_loop(self, epoch: int) -> None:
         try:
-            while not self._stop_event.is_set():
+            while not self._stop_event.is_set() and epoch == self._session_epoch:
                 await asyncio.sleep(0.5)
                 if self._turn_start is not None and (self._current_ko or self._current_en):
                     silence_duration = time.monotonic() - self._last_token_at
@@ -169,19 +286,85 @@ class GeminiSession:
     def state(self) -> SessionState:
         return SessionState(**vars(self._state))
 
+    def _drain_audio_queue(self) -> None:
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except Exception:
+                break
+
     async def start(self) -> None:
         self._stop_event.clear()
         self._has_verified_output = False
+        self._session_epoch += 1
+        self._resumption_handle = None
+        self.clear_drift_state()
+        self._drain_audio_queue()
         self._task = asyncio.create_task(self._run_with_retry())
 
-    async def stop(self) -> None:
+    async def pause_clean(self) -> None:
+        """Pause service: closes Gemini session, discards resumption handle, drains queues.
+        Preserves model lock in model_resolver."""
         self._stop_event.set()
-        if self._task:
+        self.flush_current_turn()
+        self._resumption_handle = None
+        self._has_verified_output = False
+        self.clear_drift_state()
+        if self._task and not self._task.done():
             self._task.cancel()
             try:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        self._task = None
+        self._drain_audio_queue()
+        self._emit(status=SessionStatus.STOPPED, last_event="Paused (clean standby)")
+        operator_events.add("gemini", "Gemini translation paused (clean standby)")
+
+    async def resume_clean(self) -> None:
+        """Resume service: creates a fresh Gemini Live session with clean context and incremented epoch.
+        Reuses the existing locked model without re-resolving."""
+        self._session_epoch += 1
+        self._stop_event.clear()
+        self._resumption_handle = None
+        self._has_verified_output = False
+        self.clear_drift_state()
+        self._drain_audio_queue()
+        server_log.info("Resuming Gemini session cleanly (epoch %d) on locked model: %s", self._session_epoch, model_resolver.locked_model)
+        self._task = asyncio.create_task(self._run_with_retry(is_clean_resume=True))
+
+    async def reset_clean(self, reason: str = "Clean reset") -> None:
+        """Reset active session cleanly (destroys old context, increments epoch, reconnects locked model)."""
+        server_log.info("Performing clean Gemini reset (epoch %d -> %d): %s", self._session_epoch, self._session_epoch + 1, reason)
+        self._session_epoch += 1
+        self._stop_event.set()
+        self.flush_current_turn()
+        self._resumption_handle = None
+        self._has_verified_output = False
+        self.clear_drift_state()
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        self._drain_audio_queue()
+        self._stop_event.clear()
+        self._task = asyncio.create_task(self._run_with_retry(is_clean_resume=True))
+
+    async def stop(self) -> None:
+        self._stop_event.set()
+        self.flush_current_turn()
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        self._task = None
+        self._resumption_handle = None
+        self.clear_drift_state()
+        self._drain_audio_queue()
         model_resolver.unlock_session()
         self._emit(status=SessionStatus.STOPPED,
                    last_event="Stopped by operator")
@@ -193,7 +376,7 @@ class GeminiSession:
         except asyncio.QueueFull:
             pass  # drop under backpressure rather than stall
 
-    async def _run_with_retry(self) -> None:
+    async def _run_with_retry(self, is_clean_resume: bool = False) -> None:
         self._attempt = 0
         MAX_BACKOFF_SECONDS = 60.0
 
@@ -238,8 +421,9 @@ class GeminiSession:
         locked_model = model_resolver.locked_model or model_resolver.fallback_model
 
         while not self._stop_event.is_set():
+            current_epoch = self._session_epoch
             try:
-                is_resume = self._resumption_handle is not None
+                is_resume = self._resumption_handle is not None and not is_clean_resume
                 if self._attempt > 0 or is_resume:
                     status = SessionStatus.RECONNECTING
                     event_msg = f"Reconnecting to {locked_model} (attempt {self._attempt})" if self._attempt > 0 else f"Reconnecting to {locked_model} (resuming session)"
@@ -249,21 +433,34 @@ class GeminiSession:
                         operator_events.add("gemini", f"Resuming Gemini session ({locked_model})")
                 else:
                     status = SessionStatus.CONNECTING
-                    event_msg = f"Connected to {locked_model}"
-                    operator_events.add("gemini", f"Connected to {locked_model}")
+                    event_msg = f"Attempting connection to {locked_model}"
+                    operator_events.add("gemini", f"Attempting connection to {locked_model}")
 
                 self._emit(status=status, last_event=event_msg, reconnect_count=self._attempt)
                 server_log.info(event_msg)
                 session_log.debug(event_msg)
 
-                await self._run_session(model=locked_model, is_reconnect=(self._attempt > 0 or is_resume))
+                await self._run_session(model=locked_model, is_reconnect=(self._attempt > 0 or is_resume), epoch=current_epoch)
                 self._attempt = 0  # reset on clean run completion
                 if self._stop_event.is_set():
                     return
 
+            except (ValueError, TypeError) as e:
+                # Fatal non-retryable configuration error (e.g. invalid LiveConnectConfig / SDK schema incompatibility)
+                err_msg = f"Configuration error: {e}"
+                server_log.error("Non-retryable Gemini configuration error: %s", e)
+                session_log.error("Non-retryable Gemini configuration error: %s", e)
+                self._emit(
+                    status=SessionStatus.FAILED,
+                    last_event=err_msg,
+                    reconnect_count=self._attempt
+                )
+                operator_events.add("error", "Gemini configuration error — session stopped", {"error": str(e), "model": locked_model})
+                return
+
             except asyncio.CancelledError:
-                server_log.info("Retry loop cancelled — exiting cleanly")
-                session_log.debug("Retry loop cancelled — exiting cleanly")
+                server_log.info("Retry loop cancelled (epoch %d) — exiting cleanly", current_epoch)
+                session_log.debug("Retry loop cancelled (epoch %d) — exiting cleanly", current_epoch)
                 raise
 
             except Exception as e:
@@ -307,6 +504,7 @@ class GeminiSession:
         is_translate_model = "translate" in model_name.lower()
 
         if is_translate_model:
+            # Gemini Developer API Live Translate configuration
             return types.LiveConnectConfig(
                 response_modalities=["AUDIO"],
                 translation_config=types.TranslationConfig(
@@ -320,10 +518,16 @@ class GeminiSession:
                         )
                     )
                 ),
-                input_audio_transcription=types.AudioTranscriptionConfig(
-                    language_hints=types.LanguageHints(language_codes=["ko", "en"]),
-                ),
+                input_audio_transcription=types.AudioTranscriptionConfig(),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
+                realtime_input_config=types.RealtimeInputConfig(
+                    automatic_activity_detection=types.AutomaticActivityDetection(
+                        disabled=False,
+                        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+                        prefix_padding_ms=200,
+                        silence_duration_ms=700,
+                    ),
+                ),
                 context_window_compression=types.ContextWindowCompressionConfig(
                     sliding_window=types.SlidingWindow(),
                 ),
@@ -337,6 +541,14 @@ class GeminiSession:
                 response_modalities=["TEXT"],
                 system_instruction=SYSTEM_PROMPT,
                 input_audio_transcription=types.AudioTranscriptionConfig(),
+                realtime_input_config=types.RealtimeInputConfig(
+                    automatic_activity_detection=types.AutomaticActivityDetection(
+                        disabled=False,
+                        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+                        prefix_padding_ms=200,
+                        silence_duration_ms=700,
+                    ),
+                ),
                 context_window_compression=types.ContextWindowCompressionConfig(
                     sliding_window=types.SlidingWindow(),
                 ),
@@ -345,14 +557,15 @@ class GeminiSession:
                 ),
             )
 
-    async def _run_session(self, model: str, is_reconnect: bool) -> None:
+    async def _run_session(self, model: str, is_reconnect: bool, epoch: int) -> None:
         config = self._build_config(model)
         is_resuming = self._resumption_handle is not None
 
         server_log.info(
-            "Session connect starting: model=%s resumption_handle_present=%s",
+            "Session connect starting: model=%s resumption_handle_present=%s epoch=%d",
             model,
-            is_resuming
+            is_resuming,
+            epoch,
         )
 
         client = self._get_client()
@@ -366,36 +579,42 @@ class GeminiSession:
                     last_event="Connected to Gemini",
                     reconnect_count=0,
                 )
-                server_log.info("Gemini Live session connected successfully on model: %s", model)
+                server_log.info("Gemini Live session connected successfully on model: %s (epoch %d)", model, epoch)
                 operator_events.add("gemini", f"Live translation active ({model})")
 
                 async with asyncio.TaskGroup() as tg:
-                    tg.create_task(self._send_loop(session))
-                    tg.create_task(self._recv_loop(session, model))
-                    tg.create_task(self._auto_commit_loop())
-                    while not self._stop_event.is_set():
+                    tg.create_task(self._send_loop(session, epoch))
+                    tg.create_task(self._recv_loop(session, model, epoch))
+                    tg.create_task(self._auto_commit_loop(epoch))
+                    while not self._stop_event.is_set() and epoch == self._session_epoch:
                         await asyncio.sleep(0.1)
+        except (ValueError, TypeError) as e:
+            # Propagate configuration errors directly without swallowing as 1000/disconnect
+            raise e
         except asyncio.CancelledError:
-            if self._stop_event.is_set():
+            if self._stop_event.is_set() or epoch != self._session_epoch:
                 return
             raise
         except Exception as e:
-            if "1000" in str(e) and self._stop_event.is_set():
+            if "1000" in str(e) and (self._stop_event.is_set() or epoch != self._session_epoch):
                 return
             log_fn = server_log.info if "GoAway" in str(e) else server_log.error
             log_fn(
-                "SESSION_FAILURE: model=%s type=%s message=%s",
+                "SESSION_FAILURE: model=%s type=%s message=%s (epoch=%d)",
                 model,
                 type(e).__name__,
-                str(e)
+                str(e),
+                epoch,
             )
             raise e
 
-    async def _send_loop(self, session) -> None:
+    async def _send_loop(self, session, epoch: int) -> None:
         try:
-            while not self._stop_event.is_set():
+            while not self._stop_event.is_set() and epoch == self._session_epoch:
                 try:
                     chunk = await asyncio.wait_for(self._audio_queue.get(), timeout=1.0)
+                    if epoch != self._session_epoch:
+                        break
                     if self._turn_start is None and not self._current_ko:
                         self._first_audio_in_turn_sent_at = time.monotonic()
                     await session.send_realtime_input(
@@ -405,20 +624,20 @@ class GeminiSession:
                 except asyncio.TimeoutError:
                     continue
         except Exception:
-            if not self._stop_event.is_set():
+            if not self._stop_event.is_set() and epoch == self._session_epoch:
                 raise
 
-    async def _recv_loop(self, session, model: str) -> None:
+    async def _recv_loop(self, session, model: str, epoch: int) -> None:
         try:
             async for response in session.receive():
-                if self._stop_event.is_set():
+                if self._stop_event.is_set() or epoch != self._session_epoch:
                     break
 
                 if hasattr(response, "session_resumption_update") and response.session_resumption_update:
                     update = response.session_resumption_update
                     if hasattr(update, "handle") and update.handle:
                         self._resumption_handle = update.handle
-                        session_log.debug("Resumption handle updated")
+                        session_log.debug("Resumption handle updated (epoch %d)", epoch)
 
                 if hasattr(response, "go_away") and response.go_away:
                     server_log.info("GoAway received — initiating graceful reconnect")
@@ -429,33 +648,41 @@ class GeminiSession:
                 sc = getattr(response, "server_content", None)
 
                 # Audio PCM chunks (24kHz PCM16 mono)
-                if sc:
+                if sc and epoch == self._session_epoch:
                     for part in getattr(getattr(sc, "model_turn", None), "parts", None) or []:
                         blob = getattr(part, "inline_data", None)
-                        if blob and self._on_audio:
+                        if blob and self._on_audio and epoch == self._session_epoch:
                             self._on_audio(blob.data)
                             if not self._has_verified_output:
                                 self._has_verified_output = True
                                 model_resolver.record_verified_success(model)
 
-                # Korean source text
-                if sc:
+                # Incremental Source transcriptions
+                if sc and epoch == self._session_epoch:
                     it = getattr(sc, "input_transcription", None)
                     if it and getattr(it, "text", None):
-                        self._current_ko += it.text
+                        in_text = it.text
+                        in_lang = getattr(it, "language_code", None) or getattr(it, "languageCode", None)
+                        if in_lang:
+                            self._turn_in_lang = in_lang
+                        self._current_ko += in_text
                         self._last_token_at = time.monotonic()
-                        session_log.info("[KO] %s", it.text)
-                        if self._on_source:
-                            self._on_source(it.text)
+                        session_log.info("[KO (%s)] %s", in_lang or self._turn_in_lang or "auto", in_text)
+                        if self._on_source and epoch == self._session_epoch:
+                            self._on_source(in_text)
 
-                # English translated text
+                # Incremental English translated text
                 en_text = response.text or ""
-                if not en_text and sc:
+                if sc and epoch == self._session_epoch:
                     ot = getattr(sc, "output_transcription", None)
-                    if ot and getattr(ot, "text", None):
-                        en_text = ot.text
+                    if ot:
+                        out_lang = getattr(ot, "language_code", None) or getattr(ot, "languageCode", None)
+                        if out_lang:
+                            self._turn_out_lang = out_lang
+                        if getattr(ot, "text", None) and not en_text:
+                            en_text = ot.text
 
-                if en_text:
+                if en_text and epoch == self._session_epoch:
                     if not self._has_verified_output:
                         self._has_verified_output = True
                         model_resolver.record_verified_success(model)
@@ -467,14 +694,16 @@ class GeminiSession:
                             self._emit(last_latency_ms=latency_ms)
                     self._current_en += en_text
                     self._last_token_at = time.monotonic()
-                    self._on_caption(en_text)
-                    session_log.debug("[EN delta] %s", en_text)
+                    if self._on_caption and epoch == self._session_epoch:
+                        self._on_caption(en_text)
+                    session_log.debug("[EN delta (%s)] %s", self._turn_out_lang or "en", en_text)
 
-                if sc and getattr(sc, "turn_complete", False):
+                # Completed turn boundary from server
+                if sc and getattr(sc, "turn_complete", False) and epoch == self._session_epoch:
                     self._commit_current_turn()
 
         except Exception as e:
-            if "1000" in str(e) and self._stop_event.is_set():
+            if "1000" in str(e) and (self._stop_event.is_set() or epoch != self._session_epoch):
                 return
-            if not self._stop_event.is_set():
+            if not self._stop_event.is_set() and epoch == self._session_epoch:
                 raise

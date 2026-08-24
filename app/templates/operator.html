@@ -705,6 +705,14 @@
           <span id="stat-model-status" style="font-size:11px; font-weight:600; color:var(--color-success-700);">✓ Ready</span>
           <button class="btn btn-sm" id="btn-test-selected-model" style="background:#edf2f7; color:var(--color-navy-900); font-size:10px; padding:3px 7px; border-radius:3px;">Test</button>
         </div>
+        <!-- Row 4: Auto Drift Correction (full width) -->
+        <span class="sg-label sg-wide tooltip">자동 언어 오류 복구
+          <span class="tooltiptext">일본어/베트남어 등 잘못된 언어 감지가 계속될 때 세션을 자동으로 초기화합니다. (Automatically resets translation session if sustained language drift occurs.)</span>
+        </span>
+        <div class="sg-val sg-wide" style="display:flex; align-items:center; gap:8px; padding:2px 0;">
+          <button class="btn btn-sm" id="btn-toggle-drift-correction" style="background:#edf2f7; color:var(--color-navy-900); font-size:11px; padding:3px 10px; border-radius:4px; font-weight:700; border:1px solid var(--color-warm-200); cursor:pointer;">OFF</button>
+          <span id="stat-drift-status" style="font-size:11px; color:var(--color-text-muted);">수동 복구 모드 (Pause → Resume)</span>
+        </div>
         <!-- Row 4: Latency | Attendees | Reconnects -->
         <span class="sg-label tooltip">지연
           <span class="tooltiptext">입력된 음성이 번역되어 폰 화면에 표시될 때까지 소요되는 지체 시간입니다. (Time lag from audio capture to caption output.)</span>
@@ -1237,6 +1245,11 @@ function startStatusPoll() {
       hasInitializedAutoStop = true;
     }
 
+    if (st.auto_drift_correction !== undefined && st.auto_drift_correction !== autoDriftCorrectionEnabled) {
+      autoDriftCorrectionEnabled = st.auto_drift_correction;
+      updateDriftUI(autoDriftCorrectionEnabled);
+    }
+
     document.getElementById('level-bar').style.width = st.audio.level + '%';
     document.getElementById('level-label').textContent =
       st.audio.level > 0 ? '레벨: ' + Math.round(st.audio.level) + '%' : '입력 레벨 — 신호 없음';
@@ -1503,6 +1516,42 @@ document.getElementById('btn-test-selected-model').addEventListener('click', asy
     setTimeout(() => { isTestingModel = false; }, 3000);
   }
 });
+
+// ── Auto Drift Correction Handlers ──────────────────────────────────────────
+let autoDriftCorrectionEnabled = false;
+const btnToggleDrift = document.getElementById('btn-toggle-drift-correction');
+const statDriftStatus = document.getElementById('stat-drift-status');
+
+btnToggleDrift.addEventListener('click', async () => {
+  const nextState = !autoDriftCorrectionEnabled;
+  try {
+    await fetch('/api/config/auto-drift-correction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: nextState })
+    });
+    autoDriftCorrectionEnabled = nextState;
+    updateDriftUI(autoDriftCorrectionEnabled);
+  } catch (err) {
+    console.error('Failed to toggle auto drift correction:', err);
+  }
+});
+
+function updateDriftUI(enabled) {
+  if (enabled) {
+    btnToggleDrift.textContent = 'ON';
+    btnToggleDrift.style.background = 'var(--color-success)';
+    btnToggleDrift.style.color = '#fff';
+    btnToggleDrift.style.borderColor = 'var(--color-success)';
+    statDriftStatus.textContent = '자동 복구 활성화됨 (연속 오류 시 세션 초기화)';
+  } else {
+    btnToggleDrift.textContent = 'OFF';
+    btnToggleDrift.style.background = '#edf2f7';
+    btnToggleDrift.style.color = 'var(--color-navy-900)';
+    btnToggleDrift.style.borderColor = 'var(--color-warm-200)';
+    statDriftStatus.textContent = '수동 복구 모드 (Pause → Resume)';
+  }
+}
 
 loadDevices();
 startStatusPoll();

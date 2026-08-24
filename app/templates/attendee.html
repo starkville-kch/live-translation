@@ -507,6 +507,12 @@ audioBtn.addEventListener('click', () => {
   }
 });
 
+function clearAudioQueue() {
+  if (audioCtx) {
+    nextPlayAt = audioCtx.currentTime;
+  }
+}
+
 // ── SSE caption stream (captions only — audio is on WS /audio-stream) ─────
 let es;
 function connect() {
@@ -545,6 +551,12 @@ function connect() {
         historyEl.scrollTop = historyEl.scrollHeight;
       }
       current.textContent = '';
+    } else if (msg.kind === 'paused') {
+      current.textContent = '— Paused —';
+      clearAudioQueue();
+    } else if (msg.kind === 'resumed' || msg.kind === 'reset_clean') {
+      current.textContent = '';
+      clearAudioQueue();
     } else if (msg.kind === 'unavailable') {
       current.textContent = 'Translation unavailable';
       setStatus('err');

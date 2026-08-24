@@ -189,6 +189,7 @@ class AudioCapture:
         self._queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._paused: bool = False
 
     def _emit(self, **kwargs):
         for k, v in kwargs.items():
@@ -203,14 +204,36 @@ class AudioCapture:
         if device_index is not None:
             save_audio_device(device_index)
         self._device_index = device_index
+        self._paused = False
         self._stop_event.clear()
         self._loop = asyncio.get_event_loop()
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
 
+    def pause(self) -> None:
+        """Pause audio routing — reads continue for level metering but frames are dropped immediately."""
+        self._paused = True
+
+    def resume(self) -> None:
+        """Resume audio routing."""
+        self._paused = False
+
+    def drain(self) -> None:
+        """Purge all buffered audio chunks from the queue."""
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except Exception:
+                break
+
     def stop(self) -> None:
         self._stop_event.set()
+        self._paused = False
         self._emit(status=AudioStatus.STOPPED, level_rms=0.0)
+
+    @property
+    def is_paused(self) -> bool:
+        return self._paused
 
     @property
     def state(self) -> AudioState:
@@ -421,6 +444,8 @@ class AudioCapture:
                 pass
 
     async def _enqueue(self, data: bytes) -> None:
+        if self._paused:
+            return  # Discard frame immediately during pause
         try:
             self._queue.put_nowait(data)
         except asyncio.QueueFull:

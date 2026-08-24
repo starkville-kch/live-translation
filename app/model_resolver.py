@@ -154,9 +154,7 @@ async def verify_model_compatibility(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name),
             )
         ),
-        input_audio_transcription=types.AudioTranscriptionConfig(
-            language_hints=types.LanguageHints(language_codes=["ko", "en"]),
-        ),
+        input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
     )
 

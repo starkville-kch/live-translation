@@ -9,6 +9,7 @@ church:
   name: Starkville Korean Church
   short_name: SKC
 gemini:
+  auto_drift_correction: false
   context_seed: true
   fallback_model: gemini-3.5-live-translate-preview
   preferred_model: gemini-3.5-live-translate-preview

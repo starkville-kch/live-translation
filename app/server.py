@@ -746,9 +746,12 @@ async def pause_service():
     if _state == ServiceState.RUNNING and not _paused:
         _paused = True
         _pause_start = time.monotonic()
+        audio.pause()
+        await session.pause_clean()
+        broadcaster.drain_audio_clients()
         broadcaster._push(CaptionEvent(kind="paused"))
-        server_log.info("Service paused")
-        operator_events.add("user", "Translation paused")
+        server_log.info("Service paused (audio frames dropped, Gemini session closed, model lock preserved)")
+        operator_events.add("user", "Translation paused (clean standby)")
     return {"ok": True, "paused": _paused}
 
 
@@ -756,12 +759,26 @@ async def pause_service():
 async def resume_service():
     global _paused, _pause_start
     if _state == ServiceState.RUNNING and _paused:
+        audio.drain()
+        audio.resume()
+        broadcaster.drain_audio_clients()
+        await session.resume_clean()
         _paused = False
         _pause_start = None
         broadcaster._push(CaptionEvent(kind="resumed"))
-        server_log.info("Service resumed")
-        operator_events.add("user", "Translation resumed")
+        server_log.info("Service resumed (fresh Gemini session on locked model)")
+        operator_events.add("user", "Translation resumed (fresh context)")
     return {"ok": True, "paused": _paused}
+
+
+@app.post("/api/config/auto-drift-correction")
+async def set_auto_drift_correction(body: dict):
+    enabled = bool(body.get("enabled", False))
+    session.set_auto_drift_correction(enabled)
+    session.clear_drift_state()
+    server_log.info("Auto drift correction set to: %s (runtime-only)", enabled)
+    operator_events.add("config", f"Auto drift correction set to {'ON' if enabled else 'OFF'}")
+    return {"ok": True, "auto_drift_correction": enabled, "enabled": enabled}
 
 
 async def _auto_stop_on_failure(reason: str):
@@ -820,7 +837,12 @@ def _handle_session_state_change(s):
         broadcaster.set_unavailable()
         if _auto_restart_task and not _auto_restart_task.done():
             _auto_restart_task.cancel()
+        # Non-retryable configuration errors should stop once and NOT trigger auto-restart loops
+        if "Configuration error" in (s.last_event or ""):
+            server_log.error("Session failed with non-retryable configuration error — skipping auto-restart")
+            return
         _auto_restart_task = asyncio.create_task(_auto_stop_on_failure(s.last_event))
+
 
 session._on_state = _handle_session_state_change
 
@@ -850,6 +872,8 @@ async def get_status():
         "cost_usd": round(cost, 4),
         "billed_audio_s": round(_billed_seconds, 1),
         "auto_stop_timeout_min": audio_cfg().get("auto_stop_timeout_min", 10),
+        "auto_drift_correction": session.auto_drift_correction,
+        "session_epoch": session.session_epoch,
         "device_index": audio_cfg().get("device_index", 0),
         "auto_restart_attempt": _auto_restart_attempt,
         "auto_restart_reason": _auto_restart_reason,

@@ -8,26 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.3.0] - 2026-08-23
 
 ### Added
+- **Anti-Contamination & Clean Session Reset Architecture (`app/gemini_session.py`, `app/audio.py`, `app/server.py`, `app/broadcast.py`)**:
+  - **Developer API Live Translate Configuration**: Uses official Google Developer API schema with standard `AudioTranscriptionConfig()` (omitting Enterprise-only `language_codes` parameter).
+  - **Non-Retryable Configuration Error Handling**: Distinguishes deterministic configuration errors (`ValueError`, schema errors) from transient network failures; halts gracefully without entering reconnect loops or triggering cascading auto-restarts.
+  - **Immediate Audio Frame Dropping on Pause**: When service is paused during worship praise/music, the microphone device remains open for level metering but PCM frames are dropped immediately before entering downstream queues.
+  - **Clean Pause/Resume Context Boundary & Audio Queue Purging**:
+    - `Pause`: Closes active Gemini Live WebSocket connection, discards session resumption token, drains server and broadcaster client audio queues, and signals attendee clients to clear playback buffers. Attendee web/phone SSE connections remain active displaying `— Paused —`.
+    - `Resume`: Increments session epoch, drains residual queues, and starts a fresh Gemini Live session with clean context on the same locked model without model re-resolution.
+  - **Session Epoch Isolation**: Tagged all inbound server events and client states with session epoch to guarantee stale async responses from prior sessions are discarded immediately.
+  - **Conservative Server-Side Activity Detection**: Configured `RealtimeInputConfig` with `START_SENSITIVITY_LOW`, `silence_duration_ms=700`, and `prefix_padding_ms=200` to prevent post-praise ambient sounds and mic handling from triggering false speech starts.
+  - **Completed-Turn Asymmetric Language Drift Watchdog & Rolling Window**:
+    - Evaluates Gemini's native `input_transcription.language_code` (`ko`/`en` expected $\to 0$; `ja`/`vi`/`zh`/`th` flagged $\to +1$) and `output_transcription.language_code` (non-`en` $\to +2$) strictly on completed utterances/turns.
+    - Employs a bounded rolling deque (`maxlen=3`), where two consecutive clean turns reset the drift score to 0.
+  - **Switchable Automatic Drift Correction (Default: OFF, Runtime-Only)**:
+    - Default mode is safe manual recovery (`Pause` $\to$ `Resume`).
+    - Operator can toggle `자동 언어 오류 복구` (Auto Drift Reset) ON or OFF dynamically from the Status card during a running service (`POST /api/config/auto-drift-correction`).
+    - Toggling the setting clears drift history instantly without persisting to disk.
+    - When OFF, drift detection remains active for diagnostic logging and operator warnings without automatic intervention.
+    - When ON, triggers an automatic clean session reset, typically recovering within a few seconds (15s cooldown).
 - **Gemini Live Translation Model Selection Engine (`app/model_resolver.py`)**:
-  - Implemented administrator-controlled model selection with direct `preferred_model` configuration and automatic two-tier fallback:
-    $$\text{preferred\_model} \xrightarrow{\text{fail}} \text{Last Known Good (LKG)} \xrightarrow{\text{fail}} \text{fallback\_model}$$
+  - Direct `preferred_model` configuration with automated two-tier fallback:
+    $$\text{preferred\_model} \xrightarrow{\text{fail}} \text{Last Verified Model} \xrightarrow{\text{fail}} \text{fallback\_model}$$
   - Selecting another model from the operator dropdown immediately sets it as `preferred_model` for subsequent services.
 - **Strict Live Translate Candidate Classification**: Excludes general Flash/Pro models (e.g. `gemini-2.5-flash`, `gemini-1.5-pro`) and conversational dialogue models (`gemini-3.1-flash-live-preview`); only models with dedicated Live Translation capabilities are eligible.
-- **5-Tier Model Lifecycle**:
-  - *Discovered*: Returned by Gemini Models API (`client.models.list()`) via background discovery.
-  - *Candidate*: Validated as a translation model by name/description heuristics.
-  - *Compatible*: Capability handshake with `TranslationConfig` (KO $\to$ EN) and audio output succeeds.
-  - *Verified*: Model has successfully delivered real translated audio and captions during an active session.
-  - *Last Known Good (LKG)*: Most recently verified model, persisted in `var/runtime/model_state.json`.
-  - *Locked*: Model fixed for the active church service session.
 - **Separate Runtime State Isolation (`var/runtime/model_state.json`)**: `config.yaml` stores administrator intent only (`preferred_model`, `fallback_model`, `voice`), while runtime learned state (`last_known_good_model`, `last_verified_at`, `seen_models`, `dismissed_alerts`) is maintained separately without mutating configuration files.
 - **Session Model Locking & Long-Running Resumption**:
   - Operational model is locked upon initial session connection; all in-session reconnects strictly reuse the locked model.
   - The application uses `SessionResumptionConfig` to survive Live connection rotation and `ContextWindowCompressionConfig` with `SlidingWindow` to manage context during long-running worship services.
 - **Streamlined Status Card Integration (`app/templates/operator.html`)**:
   - Embedded model selection directly into the Status card's `모델` row with a compact dropdown, status badge (`✓ Ready`, `⚠ Fallback`, `🔒 Locked`), and inline `[Test]` capability handshake.
-- **API Endpoints in `app/server.py`**: Added `/api/models`, `/api/models/select`, `/api/models/test`, and `/api/models/dismiss-alert`.
-- **Comprehensive Unit & Integration Test Suite (`tests/test_model_resolver.py`)**: 12 dedicated automated tests covering classification, version ordering, selection sequence, session locking, error sanitization, API endpoints, and LKG isolation. Total repository tests: 19 passed.
+  - Added `자동 언어 오류 복구` toggle (`[ OFF ]` / `[ ON ]`) with real-time status indication.
+- **API Endpoints in `app/server.py`**: Added `/api/models`, `/api/models/select`, `/api/models/test`, `/api/models/dismiss-alert`, and `/api/config/auto-drift-correction`.
+- **Comprehensive Unit & Integration Test Suite**: 41 automated tests passing across model resolution, configuration persistence, frame dropping on pause, rolling drift scoring on completed turns, session epoch isolation, non-retryable fatal error classification, and runtime drift toggling (`tests/test_model_resolver.py`, `tests/test_setup_config.py`, `tests/test_anti_contamination.py`).
 
 ---
 

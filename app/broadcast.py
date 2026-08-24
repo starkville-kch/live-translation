@@ -202,6 +202,15 @@ class CaptionBroadcaster:
                 except asyncio.QueueFull:
                     pass
 
+    def drain_audio_clients(self) -> None:
+        """Purge all buffered audio chunks across all connected WebSocket client queues."""
+        for q in self._audio_clients:
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except Exception:
+                    break
+
     @property
     def audio_client_count(self) -> int:
         return len(self._audio_clients)
