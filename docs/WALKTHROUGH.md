@@ -1,7 +1,5 @@
 # 개발 빌드 및 히스토리 로그
 
-> **English version**: [WORKTHROUGH.en.md](WORKTHROUGH.en.md)
-
 이 문서는 실시간 한영 자막 및 음성 통역 시스템의 빌드 기록, 기능 검증 프로토콜 결과 및 개발 단계별 문제 해결 내역을 보관합니다.
 
 ---

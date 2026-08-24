@@ -73,15 +73,22 @@ These are the non-obvious decisions that can't be derived by reading the code. D
   - Strict Live Translate filtering: filters out general Flash/Pro non-translation models (`gemini-2.5-flash`, `gemini-1.5-pro`) and conversational models (`gemini-3.1-flash-live-preview`); only models matching Live Translation capabilities are eligible candidates.
   - 5-Tier lifecycle: Discovered Candidate $\to$ Compatible (handshake passed) $\to$ Verified (real translated output delivered in active session) $\to$ Last Known Good (LKG) $\to$ Locked (fixed for duration of service).
   - LKG persistence isolation: `config.yaml` stores administrator intent only (`preferred_model`, `fallback_model`, `voice`); runtime learned state (`last_known_good_model`, `last_verified_at`, `seen_models`, `dismissed_alerts`) is stored separately in `var/runtime/model_state.json`.
+- **Gemini Developer API language hints are unsupported**: Do not reintroduce `AudioTranscriptionConfig(language_codes=["ko", "en"])` for Live Translate. The Google GenAI SDK rejects this field in Developer API mode (`ValueError: language_codes parameter is only supported in Gemini Enterprise Agent Platform mode`); use empty `AudioTranscriptionConfig()`. Bilingual KO/EN handling uses automatic language detection plus clean Pause → Resume session resets. See `docs/STACK.md`.
 - **Anti-Contamination & Clean Session Reset Architecture (`app/gemini_session.py`, `app/audio.py`, `app/server.py`, `app/broadcast.py`)**:
-  - Developer API Live Translate Configuration: Uses standard `AudioTranscriptionConfig()` without Enterprise `language_codes` parameter.
+  - Why Stop → Start originally appeared to fix language drift: it destroyed the contaminated Gemini session context.
+  - Pause → Resume forms a hard clean session boundary: Pause drops audio frames, closes Gemini WebSocket, discards session resumption tokens, drains server/client queues, and preserves model lock; Resume increments `_session_epoch`, drains residual queues, and starts a fresh Gemini Live session on the locked model with clean context.
   - Non-Retryable Error Handling: Distinguishes fatal configuration/schema errors (`ValueError`, `TypeError`) from transient network disconnects (GoAway/timeout), halting immediately without entering infinite restart cascades.
-  - When service is paused during worship praise/music, audio capture device remains open for level metering but PCM frames are dropped immediately before entering downstream queues.
-  - Pause $\to$ Resume forms a hard clean session boundary: Pause closes Gemini WebSocket, discards session resumption tokens, drains server/client queues, and signals attendee phones to clear audio playback queues (preserving model lock and attendee web/phone connections); Resume increments `_session_epoch`, drains residual queues, and starts a fresh Gemini Live session on the locked model with clean context.
   - Session Epoch Isolation: All inbound server events and client states are tagged with `session_epoch`; responses from prior/stale sessions are dropped immediately to prevent async race conditions.
-  - Conservative Activity Detection: Configured with `START_SENSITIVITY_LOW`, `silence_duration_ms=700`, `prefix_padding_ms=200` to prevent post-praise ambient noise from triggering false speech starts.
   - Completed-Turn Language Drift Scoring & Rolling Window: Primary signal is Gemini's `input_transcription.language_code` (`ko`/`en` $\to 0$; `ja`/`vi`/`zh`/`th` $\to +1$) and `output_transcription.language_code` (non-`en` $\to +2$) scored strictly on completed utterances using a rolling `deque(maxlen=3)` (2 consecutive clean turns reset score to 0).
-  - Switchable Auto Drift Correction: Safe manual recovery (`Pause` $\to$ `Resume`) is default (`auto_drift_correction: false`). Operator can toggle Auto Drift Reset ON/OFF dynamically at runtime from the Status card (runtime-only).
+- **Operator Console Control Bar Separation & Pause Reminders (`app/templates/operator.html`, `app/server.py`)**:
+  - Separated non-clickable service status indicator from action buttons into a fixed 3-column layout (`Status Pill` | `Primary Action` | `Stop Action`):
+    - **Stopped**: `○ 대기 중 (STOPPED)` + `[ ▶ 번역 시작 (Start) ]` (green) + `[ ■ 서비스 종료 (Stop) ]` (neutral disabled gray, never red when disabled).
+    - **Starting / Resuming / Resetting**: `⟳ 번역 연결 중...` (spinner) + `[ ⏳ 연결 중… ]` + `[ ■ 서비스 종료 (Stop) ]`.
+    - **Running**: `● 번역 중 (RUNNING)` (static calm green dot, no distracting pulse) + `[ ⏸ 번역 일시정지 (Pause) ]` (amber) + `[ ■ 서비스 종료 (Stop) ]` (active red).
+    - **Paused**: `⏸ 일시정지 MM:SS` (gentle slow amber pulse glow + authoritative server pause timer) + `Resume 필요` (subtitle, escalating to `⚠ 번역 재시작을 확인하세요` in amber at > 3 min) + `[ ▶ 번역 다시 시작 (Resume) ]` (green) + `[ ■ 서비스 종료 (Stop) ]` (active red).
+    - **Browser Tab Title Notification**: While paused, browser tab title displays `⏸ [MM:SS] 일시정지 — ...` for off-tab operator awareness.
+    - **Accessibility Safeguards**: Added `role="status"` and `aria-live="polite"` to the status pill for screen readers, and `@media (prefers-reduced-motion: reduce)` to disable pulse animations for sensitive operators.
+    - **Failed**: `⚠ 번역 연결 오류 (Failed)` + `[ ▶ 다시 시도 (Retry) ]` + `[ ■ 서비스 종료 (Stop) ]`.
 
 ---
 
@@ -89,13 +96,15 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 
 | Document | Content | Read when |
 |---|---|---|
+| `docs/STACK.md` | 기술적 의사결정 및 영구 불변 원칙 (Language hints, Clean reset, LKG cascade) | 아키텍처 원칙 및 실패 경험 재발 방지 확인 시 |
 | `app/events.py` | `OperatorEventLog` — thread-safe ring buffer, 7 categories, `since(last_id)` API | Understanding operator event plumbing |
-| `docs/PLAN.en.md` | File map, phase history (0–14), tech stack, reliability matrix, config reference | System overview, what phases are done, which files do what |
-| `docs/PLAN.ko.md` | Same as above in Korean | — |
-| `docs/TECHNICAL.en.md` | Code-level: FastAPI routes, Gemini session config, audio pipeline, asyncio patterns | Code changes, debugging |
-| `docs/TECHNICAL.ko.md` | Same as above in Korean | — |
-| `docs/WORKTHROUGH.en.md` | Chronological build sessions, verification protocol results (V0–V6), known quirks | Understanding past decisions, known bugs |
-| `docs/WORKTHROUGH.ko.md` | Same as above in Korean | — |
-| `docs/BUILD_EXE.en.md` | PyInstaller build log (7 attempts), spec decisions, frozen-exe code changes, skc_build env | Rebuilding the exe |
-| `docs/BUILD_EXE.ko.md` | Same as above in Korean | — |
-| `CHANGELOG.md` | Version history (English) | What changed in each release |
+| `app/model_resolver.py` | Model discovery, candidate classification, 5-tier lifecycle, fallback cascade | Understanding model selection and fallback |
+| `app/gemini_session.py` | Gemini Live WebSocket session runner, anti-contamination boundaries, drift watchdog | Understanding Gemini Live integration |
+| `docs/PLAN.md` | 시스템 개요, 파일 맵, 단계별 개발 현황(0–22), 신뢰성 요구사항, 설정 참조 | 아키텍처 및 시스템 사양 확인 시 |
+| `docs/TECHNICAL.md` | 코드 레벨: FastAPI 라우트, Gemini 세션, 오디오 파이프라인, asyncio 패턴 | 코드 수정 및 디버깅 시 |
+| `docs/WALKTHROUGH.md` | 세션별 빌드 기록, 검증 프로토콜(V0–V22) 결과, 기술적 회고 | 과거 기술 의사결정 및 이슈 추적 시 |
+| `docs/BUILD_EXE.md` | PyInstaller 빌드 기록, spec 설정, 단일 실행 파일 패키징 | 독립 실행 파일 재빌드 시 |
+| `CHANGELOG.md` | 릴리즈 버전 히스토리 (Version history) | 버전별 변경점 확인 시 |
+| `tests/` | 모델 리졸버, 설정, 오염 방지, UI 접근성 등 44개 자동화 테스트 스위트 | 테스트 실행 및 코드 검증 시 |
+
+

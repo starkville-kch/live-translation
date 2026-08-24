@@ -36,22 +36,22 @@
 
 ### 👥 1. 봉사자 및 운영자용
 
-* **봉사자 운영 매뉴얼** — 마이크 입력 확인, 시작 및 중지 조작, QR 코드 제공 등 운영 절차 안내
-  * **[🇺🇸 영어 가이드](docs/HOW_TO_USE.en.md)** · **[🇰🇷 한국어 가이드](docs/HOW_TO_USE.ko.md)**
+* **봉사자 운영 매뉴얼 (Operator Manual)** — 마이크 입력 확인, 시작/일시정지/종료 조작, QR 코드 제공 안내
+  * **[🖥️ 웹 브라우저 가이드 (how_to_use.html)](how_to_use.html)**
 
 ### 🛠️ 2. 기술 유지보수자용
 
-* **기술 유지보수 및 아키텍처 플랜** — 파일 구조, 단계별 개발 현황, 기술 스택, 설정 참고
-  * **[🇰🇷 한국어](docs/PLAN.ko.md)** · **[🇺🇸 English](docs/PLAN.en.md)**
+* **기술 유지보수 및 아키텍처 플랜 (Architecture Plan)** — 파일 구조, 단계별 개발 현황, 기술 스택, 설정 참고
+  * **[📖 docs/PLAN.md](docs/PLAN.md)**
 
-* **개발 빌드 및 히스토리 로그** — 세션별 개발 기록, 검증 프로토콜(V0–V6), 기술 의사결정 회고
-  * **[🇰🇷 한국어](docs/WORKTHROUGH.ko.md)** · **[🇺🇸 English](docs/WORKTHROUGH.en.md)**
+* **개발 빌드 및 히스토리 로그 (Build Walkthrough)** — 세션별 개발 기록, 검증 프로토콜, 기술 의사결정 회고
+  * **[📖 docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)**
 
-* **기술 참고서 (코드 레벨 구현 상세)** — FastAPI 라우트, Gemini 세션, 오디오 파이프라인, asyncio 패턴
-  * **[🇰🇷 한국어](docs/TECHNICAL.ko.md)** · **[🇺🇸 English](docs/TECHNICAL.en.md)**
+* **기술 참고서 (Technical Reference)** — FastAPI 라우트, Gemini Live 세션, 오디오 파이프라인, asyncio 패턴
+  * **[📖 docs/TECHNICAL.md](docs/TECHNICAL.md)**
 
-* **단일 실행 파일 빌드 기록** — PyInstaller 빌드 7회 시도 기록, spec 설정, frozen exe 코드 변경
-  * **[🇰🇷 한국어](docs/BUILD_EXE.ko.md)** · **[🇺🇸 English](docs/BUILD_EXE.en.md)**
+* **단일 실행 파일 빌드 기록 (Build Executable Guide)** — PyInstaller spec 설정, frozen exe 코드 변경
+  * **[📖 docs/BUILD_EXE.md](docs/BUILD_EXE.md)**
 
 ### 🔐 3. 운영 및 소유권 관리
 
@@ -181,22 +181,22 @@ All detailed guides for running, maintaining, and editing the system are managed
 
 ### 👥 1. For Operators & Volunteers
 
-* **Volunteer & Operator Manual** — check mic inputs, start/stop translation, share the QR code
-  * **[🇺🇸 English Guide](docs/HOW_TO_USE.en.md)** · **[🇰🇷 Korean Guide](docs/HOW_TO_USE.ko.md)**
+* **Volunteer & Operator Manual** — check mic inputs, start/pause/stop translation, share the QR code
+  * **[🖥️ Interactive HTML Guide (how_to_use.html)](how_to_use.html)**
 
 ### 🛠️ 2. For Technical Maintainers
 
 * **Technical Maintainer & Architecture Plan** — file map, phase history, tech stack, config reference
-  * **[🇰🇷 Korean](docs/PLAN.ko.md)** · **[🇺🇸 English](docs/PLAN.en.md)**
+  * **[📖 docs/PLAN.md](docs/PLAN.md)**
 
-* **Build Workthrough & History Log** — chronological sessions, verification protocol (V0–V6), retrospective
-  * **[🇰🇷 Korean](docs/WORKTHROUGH.ko.md)** · **[🇺🇸 English](docs/WORKTHROUGH.en.md)**
+* **Build Walkthrough & History Log** — chronological sessions, verification protocol, retrospective
+  * **[📖 docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)**
 
-* **Technical Reference (Code-Level Details)** — FastAPI routes, Gemini session, audio pipeline, asyncio patterns
-  * **[🇰🇷 Korean](docs/TECHNICAL.ko.md)** · **[🇺🇸 English](docs/TECHNICAL.en.md)**
+* **Technical Reference (Code-Level Details)** — FastAPI routes, Gemini Live session, audio pipeline, asyncio patterns
+  * **[📖 docs/TECHNICAL.md](docs/TECHNICAL.md)**
 
-* **Single Executable Build Record** — PyInstaller 7-attempt log, spec decisions, frozen exe code changes
-  * **[🇰🇷 Korean](docs/BUILD_EXE.ko.md)** · **[🇺🇸 English](docs/BUILD_EXE.en.md)**
+* **Single Executable Build Record** — PyInstaller spec decisions, frozen exe code changes
+  * **[📖 docs/BUILD_EXE.md](docs/BUILD_EXE.md)**
 
 ### 🔐 3. Site Governance & API Key Registry
 

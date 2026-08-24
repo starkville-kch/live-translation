@@ -1,8 +1,6 @@
 # 기술 유지보수 및 아키텍처 플랜 / Technical Maintainer & Architecture Plan
 ### 실시간 예배 번역 시스템 / Live Translation System
 
-> **English version**: [PLAN.en.md](PLAN.en.md)
-
 이 문서는 실시간 한영 자막 및 음성 통역 시스템의 개발자, 시스템 관리자 및 기술 봉사자를 위한 시스템 설계 및 아키텍처 정보를 제공합니다.
 
 ---
@@ -70,6 +68,7 @@ Windows PC (본 애플리케이션)
 - `response_modalities=["AUDIO"]` + `translation_config` 조합으로 텍스트 자막(`output_transcription.text`)과 합성 오디오를 동시에 수신.
 - `gemini-3.1-flash-live-preview`는 Phase 12 벤치마크에서 30초 후 세션 충돌(오류 1011) — 60~90분 예배에 부적합.
 - `system_instruction`은 번역 모델에서 수락되지만 내부 엔진이 무시함 (Phase 12 Round 2에서 확인).
+- **`language_codes` 언어 힌트 설정 금지 (Developer API)**: `AudioTranscriptionConfig(language_codes=["ko", "en"])`는 Enterprise 모드 전용이며, Developer API 모드에서는 `ValueError`가 발생하여 연결이 차단됩니다. 반드시 빈 `AudioTranscriptionConfig()`를 전달해야 하며, 언어 이탈은 수신된 전사본의 롤링 감시로 처리합니다.
 
 ### 자막용 SSE & 오디오용 이진 웹소켓 분리
 - 실시간 자막은 SSE(`/stream`) — iOS Safari 백그라운드 전환 시 브라우저 수준 자동 재연결.
@@ -130,7 +129,7 @@ Windows PC (본 애플리케이션)
 | `docs/HOW_TO_USE.en.md` | 봉사자 운영 매뉴얼 (영어) |
 | `docs/HOW_TO_USE.ko.md` | 봉사자 운영 매뉴얼 (한국어) |
 | `docs/PLAN.md` | 아키텍처 플랜 및 기술 결정 (이 파일) |
-| `docs/WORKTHROUGH.md` | 세션별 개발 빌드 히스토리 (이중 언어) |
+| `docs/WALKTHROUGH.md` | 세션별 개발 빌드 히스토리 (이중 언어) |
 | `docs/TECHNICAL.md` | 코드 레벨 기술 참고서 (이중 언어) |
 | `docs/BUILD_EXE.md` | 단일 exe 빌드 시도 기록 (이중 언어) |
 | `logs/ops.log` | 운영 로그: 서버 시작/종료, 오디오, 일시정지/재개, 재연결 (INFO+) |
@@ -175,7 +174,11 @@ Windows PC (본 애플리케이션)
 | 16 | mDNS 호스트네임 광고 (`python-zeroconf`), 동적 URL 리졸버, 운영자 콘솔 주/비상용 접속 주소 표시 | ✅ 완료 |
 | 17 | UI 외부 템플릿 리팩토링: `attendee.html` 및 `operator.html`을 `server.py`에서 분리하고, 개발 환경 실시간 핫 리로드를 위한 동적 로더 구현 | ✅ 완료 |
 | 18 | 운영자 콘솔 UX: 고정 헤더, 상태 스트립 헤더 통합, 반응형 타이틀, 6열 통계 그리드, 전체 요소 툴팁, 사용 가이드 카드. 참석자 화면: 한국어 탭 보기 (백엔드 `ko` 필드), 단락 그루핑, 타임스탬프 제거, 폰트 범위 20–40px. GoAway 로그 INFO 레벨 수정. 운영자 미리보기 중복 텍스트 버그 수정. | ✅ 완료 |
-| V0–V5, V14–V19 | 검증 프로토콜 | ✅ 전체 통과 |
+| 19 | 독립 설정 마법사 GUI (`setup_gui.py` / `SKC_setup.exe`) 및 2개 실행 파일 배포 아키텍처 구현 | ✅ 완료 |
+| 20 | Gemini Live 실시간 번역 모델 선택 엔진 (`app/model_resolver.py`), 직접 `preferred_model` 설정, LKG 폴백, 검증 세션 저장 및 상태 카드 UI 연동 | ✅ 완료 |
+| 21 | 오염 방지 및 무결 세션 리셋 아키텍처: 일시정지 시 오디오 프레임 즉시 폐기, Pause → Resume 컨텍스트 완전 분리 및 재개 토큰 초기화, 세션 세대(Epoch) 격리, 완료 턴 기반 롤링 언어 이탈 감시 및 오디오 버퍼 플러시 | ✅ 완료 |
+| 22 | 운영자 콘솔 컨트롤 바 분리 및 일시정지 알림: 3열 고정 레이아웃, `role="status"` 및 `aria-live="polite"` 접근성 상태 배지, 일시정지 경과 타이머, 3분 경과 주황색 강조 알림, `prefers-reduced-motion` 지원 및 비활성 중립 회색 종료 버튼 | ✅ 완료 |
+| V0–V22 | 검증 프로토콜 및 자동화 테스트 스위트 (44개 테스트) | ✅ 전체 통과 |
 
 ---
 
@@ -187,9 +190,13 @@ audio:
   sample_rate: 16000      # Gemini 전송용 기본 주파수
   channels: 1
   chunk_ms: 100
+  auto_stop_timeout_min: 10
 
 gemini:
-  model: gemini-3.5-live-translate-preview  # 시작 시 자동 갱신
+  preferred_model: gemini-3.5-live-translate-preview
+  fallback_model: gemini-3.5-live-translate-preview
+  voice: "orus"
+  auto_drift_correction: false
 
 network:
   host: 0.0.0.0   # 모든 인터페이스 수신 (로컬 + WiFi 참석자)
@@ -207,17 +214,17 @@ logging:
 
 ## 8. 향후 확장 계획 (Future Phases)
 
-### Phase 18 — 다국어 동시 통역 (중국어 등)
+### Phase 23 — 다국어 동시 통역 (중국어 등)
 - Gemini Live 번역 모델은 현재 세션당 `target_language_code` 하나만 지원.
 - 두 언어 동시 지원 시 `GeminiSession` 인스턴스를 병렬로 두 개 구동 (`"en"` / `"zh"`).
 - 참석자 페이지(`/live`)에 언어 선택기 추가 (`/stream?lang=en` vs `/stream?lang=zh`).
 
-### Phase 19 — 원격 참석자용 클라우드 브리지
+### Phase 24 — 원격 참석자용 클라우드 브리지
 - `main.py`를 소형 클라우드 VM에 배포 (Google Cloud Run, Railway 등).
 - 오디오는 클라우드에서 캡처 불가 — PC가 PCM 청크를 경량 WebSocket으로 클라우드에 전송.
 - 클라우드가 Gemini Live에 오디오를 파이프하고 전 세계 온라인 참석자에게 자막을 팬아웃.
 
-### Phase 20 — GoAway 시 병렬 세션 핸드오버 (Lever 2 재연결 최적화)
+### Phase 25 — GoAway 시 병렬 세션 핸드오버 (Lever 2 재연결 최적화)
 - 기존 세션과 신규 세션을 백그라운드에서 중첩 가동하여 재연결 지연 시간을 거의 제로(near-zero)에 가깝게 최적화합니다.
 - `GoAway` 경고 신호 수신 시 (SDK 응답에 `time_left` 필드가 존재할 경우 활용), 백그라운드에서 신규 병렬 `GeminiSession`을 즉시 실행합니다.
 - 신규 세션의 연결이 완전히 성립될 때까지 기존 세션에 오디오 입력을 계속 밀어 넣습니다.

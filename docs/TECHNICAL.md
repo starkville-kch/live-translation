@@ -1,8 +1,6 @@
 # 기술 참고서
 ### 실시간 예배 번역 시스템
 
-> **English version**: [TECHNICAL.en.md](TECHNICAL.en.md)
-
 이 문서는 본 시스템의 핵심 구성요소별 구현 방식을 코드 수준에서 설명합니다. 새 기능을 추가하거나 기존 동작을 수정하는 개발자를 위한 참고서입니다.
 
 ---
@@ -78,64 +76,25 @@ async def lifespan(app: FastAPI):
 
 | 라우트 | 유형 | 반환값 | 역할 |
 |--------|------|--------|------|
-| `GET /` | HTTP | `HTMLResponse` | 운영자 콘솔 (임베디드 HTML) |
-| `GET /live` | HTTP | `HTMLResponse` | 참석자 자막 페이지 |
+| `GET /` / `GET /admin` | HTTP | `HTMLResponse` | 운영자 콘솔 (`app/templates/operator.html`에서 서빙) |
+| `GET /live` | HTTP | `HTMLResponse` | 참석자 자막 페이지 (`app/templates/attendee.html`에서 서빙) |
 | `GET /stream` | SSE | `EventSourceResponse` | 자막 이벤트 스트림 |
 | `WS /audio-stream` | WebSocket | binary frames | 24kHz PCM16 오디오 |
-| `GET /api/status` | HTTP | JSON | 시스템 상태 |
+| `GET /api/status` | HTTP | JSON | 시스템 상태 스냅샷 (`pause_duration_s` 포함) |
 | `POST /api/start` | HTTP | JSON | 번역 파이프라인 시작 |
 | `POST /api/stop` | HTTP | JSON | 파이프라인 정지 + 로그 저장 |
-| `POST /api/pause` | HTTP | JSON | 마이크 및 과금 일시정지 |
-| `POST /api/resume` | HTTP | JSON | 일시정지 해제 |
+| `POST /api/pause` | HTTP | JSON | 마이크 및 과금 일시정지 + 오디오 큐 비우기 |
+| `POST /api/resume` | HTTP | JSON | 신규 Gemini 컨텍스트로 일시정지 해제 |
+| `GET /api/models` | HTTP | JSON | 발견된 모델 목록 및 검증 상태 |
+| `POST /api/models/select` | HTTP | JSON | 선호 모델(Preferred Model) 설정 |
+| `POST /api/models/test` | HTTP | JSON | 실시간 호환성 핸드셰이크 테스트 |
+| `POST /api/models/dismiss-alert` | HTTP | JSON | 모델 변경 안내 배너 닫기 |
+| `POST /api/config/auto-drift-correction` | HTTP | JSON | 자동 언어 이탈 복구 런타임 토글 |
+| `POST /api/config/auto-stop` | HTTP | JSON | 자동 종료 타임아웃(분) 설정 |
 | `GET /api/events?since=N` | HTTP | JSON | 운영자 이벤트 증분 폴링 |
 
-### SSE 엔드포인트 구현 패턴
-
-`sse_starlette` 라이브러리를 사용합니다. 제너레이터 함수가 클라이언트 연결당 하나씩 생성됩니다.
-
-```python
-from sse_starlette.sse import EventSourceResponse
-
-@app.get("/stream")
-async def stream(request: Request):
-    async def event_generator():
-        queue = asyncio.Queue()
-        _broadcaster.register(queue)
-        try:
-            while True:
-                if await request.is_disconnected():
-                    break
-                event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                yield {"event": event["type"], "data": event["data"]}
-        except asyncio.TimeoutError:
-            yield {"event": "ping", "data": ""}  # keepalive
-        finally:
-            _broadcaster.unregister(queue)
-    return EventSourceResponse(event_generator())
-```
-
-클라이언트가 접속할 때마다 고유한 `asyncio.Queue`가 생성되어 브로드캐스터에 등록됩니다. 클라이언트가 연결을 끊으면 `finally` 블록에서 큐가 해제됩니다.
-
-### WebSocket 바이너리 오디오
-
-```python
-@app.websocket("/audio-stream")
-async def audio_stream(websocket: WebSocket):
-    await websocket.accept()
-    _broadcaster.register_audio(websocket)
-    try:
-        while True:
-            await websocket.receive_bytes()  # 연결 유지용 핑
-    except WebSocketDisconnect:
-        pass
-    finally:
-        _broadcaster.unregister_audio(websocket)
-```
-
-오디오 데이터는 서버→클라이언트 단방향으로만 흐릅니다. 클라이언트로부터의 수신(`receive_bytes`)은 오직 연결 상태 감지용입니다.
-
-### 임베디드 HTML 서빙
-별도 템플릿 엔진 없이 HTML 전체를 Python 문자열로 `server.py` 내에 정의합니다. 장점: 단일 파일 배포 가능. 단점: HTML이 길어질수록 유지보수성 하락. 향후 Jinja2 템플릿 분리 가능.
+### 외부 HTML 템플릿 서빙
+HTML 파일은 `app/templates/operator.html` 및 `app/templates/attendee.html`로 분리 관리됩니다. 동적 템플릿 로더를 통해 개발 환경에서는 서버 재시작 없이 실시간 수정(Hot-Reload)을 지원하며, PyInstaller 단일 실행 파일 배포 시에는 캐시된 에셋을 고속 서빙합니다.
 
 ---
 
@@ -206,9 +165,7 @@ types.LiveConnectConfig(
             prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="orus")
         )
     ),
-    input_audio_transcription=types.AudioTranscriptionConfig(
-        language_hints=types.LanguageHints(language_codes=["ko", "en"])
-    ),
+    input_audio_transcription=types.AudioTranscriptionConfig(),   # Developer API 모드에서는 빈 설정 객체 필수 (language_codes 전달 금지)
     output_audio_transcription=types.AudioTranscriptionConfig(),
     context_window_compression=types.ContextWindowCompressionConfig(
         sliding_window=types.SlidingWindow()
@@ -216,6 +173,10 @@ types.LiveConnectConfig(
     session_resumption=types.SessionResumptionConfig(handle=self._resumption_handle),
 )
 ```
+
+> **⚠️ `language_codes` 언어 힌트 설정 금지 (Developer API 제약사항)**:
+> Google GenAI SDK에서 `AudioTranscriptionConfig(language_codes=["ko", "en"])`는 Enterprise Agent Platform 전용이며, Google AI Studio Developer API 모드에서는 즉시 치명적 오류(`ValueError: language_codes parameter is only supported in Gemini Enterprise mode`)를 반환합니다.
+> 따라서 `input_audio_transcription` 및 `output_audio_transcription`에는 반드시 빈 `types.AudioTranscriptionConfig()`를 전달해야 합니다. 다국어/한국어/영어 이탈 감시는 API 내부 파라미터가 아닌, 서버 수신 루프의 완료 턴 검사(`evaluate_drift_score`)를 통해 수행됩니다.
 
 ### 응답 파싱 (`_recv_loop`)
 

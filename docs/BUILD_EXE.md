@@ -1,8 +1,6 @@
 # 단일 실행 파일 빌드 기록 / Single Executable Build Log
 ### 실시간 예배 번역 시스템 / Live Translation System
 
-> **English version**: [BUILD_EXE.en.md](BUILD_EXE.en.md)
-
 단일 `.exe` 빌드 과정에서 시도하고 실패하고 성공한 내용을 기록합니다. 재빌드 시 참고하세요.
 
 ---
