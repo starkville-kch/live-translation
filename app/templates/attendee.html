@@ -557,6 +557,18 @@ function connect() {
     setTimeout(connect, 3000);
   };
 }
+function loadChurchInfo() {
+  fetch('/api/status')
+    .then(r => r.json())
+    .then(st => {
+      if (st && st.church && st.church.name) {
+        const titleEl = document.querySelector('.church-titles .kr-title');
+        if (titleEl) titleEl.textContent = st.church.name;
+      }
+    })
+    .catch(() => {});
+}
+loadChurchInfo();
 connect();
 </script>
 </body>

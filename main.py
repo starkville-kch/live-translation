@@ -63,7 +63,40 @@ if __name__ == "__main__":
     import threading
     import webbrowser
     import uvicorn
-    from app.config import network_cfg
+    from app.config import church_cfg, gemini_api_key, get_app_root, network_cfg
+    app_root = get_app_root()
+
+    try:
+        gemini_api_key()
+    except RuntimeError:
+        print()
+        print("╔══════════════════════════════════════════════════════════════════════╗")
+        print("║  API key not found.                                                  ║")
+        print("║                                                                      ║")
+        print("║  Live Translation has not been configured.                           ║")
+        print("║  Opening SKC_setup.exe...                                            ║")
+        print("╚══════════════════════════════════════════════════════════════════════╝")
+        print()
+
+        setup_exe = app_root / "SKC_setup.exe"
+        setup_py = app_root / "setup_gui.py"
+        launched = False
+        if setup_exe.exists():
+            import subprocess
+            subprocess.Popen([str(setup_exe)], cwd=str(app_root))
+            launched = True
+        elif setup_py.exists():
+            import subprocess
+            subprocess.Popen([sys.executable, str(setup_py)], cwd=str(app_root))
+            launched = True
+
+        if not launched:
+            print("[ERROR] SKC_setup.exe could not be found.")
+            print("Please reinstall or extract the Live Translation package.")
+            print()
+            input("Press Enter to exit...")
+        raise SystemExit(1)
+
     cfg = network_cfg()
     port = cfg.get("port", 8000)
 
@@ -99,9 +132,14 @@ if __name__ == "__main__":
     def _banner_line(text=""):
         return "║  " + text + " " * (W - 2 - len(text)) + "║"
 
+    ch_name = church_cfg().get("name", "STARKVILLE KOREAN CHURCH").upper()
+    banner_title = f"{ch_name} — LIVE TRANSLATION"
+    if len(banner_title) > W - 4:
+        banner_title = banner_title[:W - 7] + "..."
+
     print()
     print("╔" + "═" * W + "╗")
-    print(_banner_line("STARKVILLE KOREAN CHURCH — LIVE TRANSLATION"))
+    print(_banner_line(banner_title))
     print("╠" + "═" * W + "╣")
     print(_banner_line("STATUS: Ready"))
     print(_banner_line())

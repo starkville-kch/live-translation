@@ -262,19 +262,26 @@ python -m app.audio --test 2 30
 # 6. 로컬 개발 서버 실행 / Start local dev server
 python main.py
 
-### 4.1 Compiling for a Single Executable (.exe)
-To compile a standalone `.exe` binary that runs on operator PCs without needing a Python environment, run the build batch script (see [BUILD_EXE.en.md](docs/BUILD_EXE.en.md) for full technical details):
+### 4.1 Standalone Distribution Package (.exe)
+To compile standalone `.exe` binaries that run on target Windows PCs without requiring Python installed, run the build batch script (see [BUILD_EXE.en.md](docs/BUILD_EXE.en.md) for full technical details):
 
 ```bat
 # One-time build environment setup (optional)
 conda create -n skc_build python=3.11 --yes
-conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy pyinstaller
+conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf pyinstaller
 
-# Run the single executable build script
+# Run the distribution build script (compiles both binaries)
 build_exe.bat
 ```
-* **Output Binary**: `.agent\dist\SKC_translation.exe` (~70 MB)
-* **Deployment Setup**: Copy `SKC_translation.exe`, `config.yaml`, and `.env` into the same folder on the target machine.
+* **Distribution Package Output** (`.agent\dist\`):
+  * `SKC_translation.exe` — Sunday live translation application (console + browser UI)
+  * `SKC_setup.exe` — Standalone setup wizard GUI for church branding, local URL, and Google AI Studio API key onboarding & testing
+  * `config.yaml` — Application & church identity configuration
+  * `branding/` — Church logo asset directory
+* **Deployment Workflow for Churches**:
+  1. Copy the package folder to the target Windows PC.
+  2. Run `SKC_setup.exe` once to configure church name, logo, local URL (`____.local`), and test the Google Gemini API key.
+  3. Run `SKC_translation.exe` every Sunday. If run before configuration, it automatically launches the setup wizard.
 
 ---
 

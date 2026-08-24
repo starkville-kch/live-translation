@@ -1251,18 +1251,29 @@ function startStatusPoll() {
     document.getElementById('stat-captions').textContent = st.captions || 0;
     document.getElementById('stat-model').textContent = st.session.model || '—';
 
+    if (st.church) {
+      if (st.church.name) {
+        document.querySelectorAll('.title-full').forEach(el => el.textContent = st.church.name);
+      }
+      if (st.church.short_name) {
+        document.querySelectorAll('.title-short').forEach(el => el.textContent = st.church.short_name);
+      }
+    }
+
     // Update QR URLs under the QR code card
     const urlsEl = document.getElementById('qr-urls');
     const qrImgEl = document.getElementById('qr-img');
+    const adminLink = st.admin_url || 'http://skc.local/admin';
+    const liveLink = st.live_url_primary || 'http://skc.local';
     if (urlsEl && st.live_url_primary) {
       urlsEl.innerHTML = `
         <div>
           <div style="font-weight:600; color:var(--color-navy-900); margin-bottom: 2px;">Operator (this page)</div>
-          <a href="http://skc.local/admin" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">http://skc.local/admin</a>
+          <a href="${adminLink}" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">${adminLink}</a>
         </div>
         <div style="margin-top: 4px;">
           <div style="font-weight:600; color:var(--color-navy-900); margin-bottom: 2px;">Attendee</div>
-          <a href="http://skc.local" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">http://skc.local</a>
+          <a href="${liveLink}" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">${liveLink}</a>
         </div>
       `;
     }

@@ -5,6 +5,21 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-08-23
+
+### Added
+- **Two-Executable Distribution Architecture**: Introduced a clean separation between daily Sunday volunteer operation (`SKC_translation.exe`) and initial/occasional church configuration (`SKC_setup.exe`), eliminating any Python or batch script dependency for recipient churches.
+- **Standalone Setup Wizard (`SKC_setup.exe`)**: Windowed desktop GUI built with Tkinter:
+  - **Church Identity**: Configures Church Name, Short Name, Local URL (`http://<hostname>.local`), and copies/normalizes custom church logos to `branding/church-logo.*`.
+  - **Google Gemini Onboarding**: Step-by-step guidance for Google AI Studio API key creation (Auth key migration notice) and billing setup ($10 minimum prepaid note).
+  - **Decoupled Key & Model Validation**: Threaded non-blocking validation testing API key authentication and confirming configured model availability (`gemini-3.5-live-translate-preview`).
+  - **Defensive & Atomic Persistence**: Atomic updates for `config.yaml` and `.env` using temporary files; preserves unrelated `.env` variables and comments; sanitizes all logs to never leak raw API keys.
+  - **Existing Key Security**: Masks configured keys (`AIzaSy••••••••4xQ9`) with dedicated `[ Test Existing Key ]` and `[ Replace Key ]` workflows.
+- **Main Application Fallback**: `main.py` / `SKC_translation.exe` detects missing API keys at startup and automatically offers to launch `SKC_setup.exe`.
+- **Dynamic Church Identity in Web UI**: Operator console, attendee page, and QR code dynamically reflect the configured church name, short name, and custom branding logo.
+
+---
+
 ## [2.1.3] - 2026-08-23
 
 ### Fixed

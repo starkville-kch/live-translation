@@ -73,7 +73,15 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from app.audio import AudioCapture, AudioStatus, list_input_devices
 from app.broadcast import CaptionBroadcaster, CaptionEvent
-from app.config import logging_cfg, network_cfg, save_audio_device, audio_cfg, save_auto_stop_timeout
+from app.config import (
+    audio_cfg,
+    church_cfg,
+    get_app_root,
+    logging_cfg,
+    network_cfg,
+    save_audio_device,
+    save_auto_stop_timeout,
+)
 from app.events import operator_events
 from app.gemini_session import GEMINI_MODEL
 from app.gemini_session import GeminiSession, SessionStatus
@@ -379,7 +387,13 @@ def _build_qr(url: str) -> bytes:
         )
 
     # Embed central logo — 5:4 (height:width) rounded rectangular buffer
-    logo_path = Path(__file__).parent / "pca-logo-white-small.webp"
+    logo_cfg = church_cfg().get("logo", "branding/church-logo.png")
+    custom_logo = get_app_root() / logo_cfg if logo_cfg else None
+    if custom_logo and custom_logo.exists():
+        logo_path = custom_logo
+    else:
+        logo_path = Path(__file__).parent / "pca-logo-white-small.webp"
+
     if logo_path.exists():
         logo = Image.open(logo_path).convert("RGBA")
         w, h = img.size
@@ -824,6 +838,7 @@ async def get_status():
     runtime = _runtime_seconds()
     cost = _billed_seconds * _COST_PER_AUDIO_SEC
     primary_url, fallback_url = _get_live_urls()
+    ch = church_cfg()
     return {
         "service_running": _state != ServiceState.STOPPED,
         "state": _state.value,
@@ -836,6 +851,10 @@ async def get_status():
         "auto_restart_attempt": _auto_restart_attempt,
         "auto_restart_reason": _auto_restart_reason,
         "admin_url": _get_admin_url(),
+        "church": {
+            "name": ch.get("name", "Starkville Korean Church"),
+            "short_name": ch.get("short_name", "SKC"),
+        },
         "audio": {
             "status": a.status,
             "level": round(a.level_rms, 1),
@@ -879,7 +898,24 @@ async def qr_png():
 
 
 @app.get("/logo.webp")
+@app.get("/logo.png")
+@app.get("/logo")
 async def get_logo():
+    cfg = church_cfg()
+    logo_rel = cfg.get("logo", "")
+    app_root = get_app_root()
+    if logo_rel:
+        custom_logo = app_root / logo_rel
+        if custom_logo.exists():
+            media_type = "image/png"
+            if custom_logo.suffix.lower() in [".jpg", ".jpeg"]:
+                media_type = "image/jpeg"
+            elif custom_logo.suffix.lower() == ".webp":
+                media_type = "image/webp"
+            with open(custom_logo, "rb") as f:
+                content = f.read()
+            return Response(content=content, media_type=media_type)
+
     logo_path = Path(__file__).parent / "pca-logo-white-small.webp"
     if not logo_path.exists():
         return Response(status_code=404)
