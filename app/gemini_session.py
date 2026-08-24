@@ -8,46 +8,15 @@ duration of a church service (typically 60–90 minutes).
 
 Session lifecycle
 -----------------
-1. ``resolve_live_model()`` queries the Gemini model list at startup and
-   selects the best available live-translate model, saving it to config.yaml.
+1. ``model_resolver.get_candidate_sequence()`` determines the priority
+   of models to try on service start (Recommended / Auto / Manual).
 2. ``GeminiSession.start()`` spawns ``_run_with_retry()`` as an asyncio Task.
-3. ``_run_session()`` opens the WebSocket, then launches two concurrent tasks:
-     • ``_send_loop()`` — drains the audio queue and forwards PCM chunks to
-       Gemini via ``send_realtime_input()``.
-     • ``_recv_loop()`` — iterates Gemini response frames, dispatching:
-         - Audio PCM  → ``on_audio_chunk()`` callback (24 kHz PCM16)
-         - Korean transcript → ``on_source_transcript()`` + internal buffer
-         - English caption delta → ``on_caption()`` callback + internal buffer
-         - ``turn_complete`` → commit current turn to the transcript log
-         - ``session_resumption_update`` → store handle for reconnect
-         - ``go_away`` → raise RuntimeError to trigger controlled reconnect
-4. On error or GoAway, ``_run_with_retry()`` reconnects with exponential
-   backoff (up to ``MAX_RECONNECT_ATTEMPTS`` = 3 attempts).
-
-Model config decisions
-----------------------
-``gemini-3.5-live-translate-preview`` (translate model):
-  • ``response_modalities=["AUDIO"]``  — TEXT-only is not supported on this model
-  • ``translation_config`` with ``target_language_code="en"``
-  • ``voice_config`` pinned to ``"orus"`` (deep male) for voice consistency
-  • ``input_audio_transcription`` — surfaces Korean source text
-  • ``output_audio_transcription`` — surfaces English translated text
-  • ``context_window_compression`` → SlidingWindow to prevent context overflow
-    during a 90-minute service
-  • ``session_resumption`` → passes the stored handle so the model context is
-    preserved across mandatory ~10-minute GoAway reconnects
-
-Transcript export
------------------
-Every ``turn_complete`` frame commits a ``TranscriptEntry(timestamp, korean,
-english)`` to the in-memory list.  On ``stop()``, ``_write_session_log()``
-in server.py exports these to timestamped text files under
-``logs/sessions/YYYYMMDD_HHMMSS/``.
-
-Caption latency
----------------
-First English token arrival relative to first audio chunk sent = ~2.2 s,
-measured as ``last_latency_ms`` and shown in the operator status monitor.
+3. Once an initial candidate establishes a connection, it is LOCKED for the
+   duration of the service session.
+4. On first verified translation output (audio or text), the model is recorded
+   as Last Known Good (LKG).
+5. Subsequent in-session reconnects (e.g. GoAway) always use the locked model.
+6. On ``stop()``, transcript is flushed, and the model is unlocked.
 """
 import asyncio
 import time
@@ -58,45 +27,10 @@ from typing import Callable, NamedTuple
 from google import genai
 from google.genai import types
 
-from app.config import gemini_api_key, gemini_model, save_gemini_model
+from app.config import gemini_api_key, gemini_cfg
 from app.events import operator_events
 from app.logger import session_log, server_log
-
-def _model_rank(name: str) -> tuple:
-    """Sort key: translate models first, then by version number descending, stable > preview."""
-    is_translate = "translate" in name
-    is_preview = "preview" in name
-    # Extract leading version digits (e.g. "3.5" → (3, 5), "3.1" → (3, 1))
-    import re
-    nums = tuple(int(x) for x in re.findall(r"\d+", name.split("live")[0]))
-    return (is_translate, nums, not is_preview)
-
-
-def resolve_live_model() -> str:
-    """Pick the best available Live API model at startup, update config, and return it.
-
-    Selection order: translate models first (highest version), then other live
-    models. Re-runs on every server start so upgrades are picked up automatically.
-    """
-    try:
-        client = genai.Client(api_key=gemini_api_key())
-        live_models = [
-            m.name.removeprefix("models/")
-            for m in client.models.list()
-            if "live" in m.name
-        ]
-        if live_models:
-            chosen = max(live_models, key=_model_rank)
-            save_gemini_model(chosen)
-            session_log.info("Auto-selected Gemini model: %s", chosen)
-            return chosen
-    except Exception as e:
-        session_log.warning(
-            "Model auto-detection failed, using config value: %s", e)
-    return gemini_model()
-
-
-GEMINI_MODEL = resolve_live_model()
+from app.model_resolver import model_resolver
 
 SYSTEM_PROMPT = (
     "You are a real-time simultaneous interpreter for a church service. "
@@ -156,13 +90,23 @@ class GeminiSession:
         self._resumption_handle: str | None = None
         self._audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=500)
         self._task: asyncio.Task | None = None
-        self._client = genai.Client(api_key=gemini_api_key())
+        self._client: genai.Client | None = None
         self._transcript: list[TranscriptEntry] = []
         self._current_ko: str = ""
         self._current_en: str = ""
         self._turn_start: float | None = None
         self._first_audio_in_turn_sent_at: float | None = None
         self._last_token_at: float = 0.0
+        self._has_verified_output: bool = False
+
+    def _get_client(self) -> genai.Client:
+        if self._client is None:
+            self._client = genai.Client(api_key=gemini_api_key())
+        return self._client
+
+    @property
+    def current_model(self) -> str:
+        return model_resolver.active_model
 
     @property
     def transcript(self) -> list[TranscriptEntry]:
@@ -174,6 +118,7 @@ class GeminiSession:
         self._current_en = ""
         self._turn_start = None
         self._first_audio_in_turn_sent_at = None
+        self._has_verified_output = False
 
     def flush_current_turn(self) -> None:
         """Commit any in-progress turn to the transcript (called on stop)."""
@@ -226,6 +171,7 @@ class GeminiSession:
 
     async def start(self) -> None:
         self._stop_event.clear()
+        self._has_verified_output = False
         self._task = asyncio.create_task(self._run_with_retry())
 
     async def stop(self) -> None:
@@ -236,6 +182,7 @@ class GeminiSession:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        model_resolver.unlock_session()
         self._emit(status=SessionStatus.STOPPED,
                    last_event="Stopped by operator")
         operator_events.add("gemini", "Gemini session stopped")
@@ -249,25 +196,67 @@ class GeminiSession:
     async def _run_with_retry(self) -> None:
         self._attempt = 0
         MAX_BACKOFF_SECONDS = 60.0
+
+        # Phase 1: If session is not locked, resolve candidate sequence (Initial Connection Fallback)
+        if model_resolver.locked_model is None:
+            candidates = model_resolver.get_candidate_sequence()
+            connected_model = None
+            primary_candidate = candidates[0] if candidates else model_resolver.fallback_model
+
+            for idx, candidate in enumerate(candidates):
+                if self._stop_event.is_set():
+                    return
+                try:
+                    self._emit(
+                        status=SessionStatus.CONNECTING,
+                        last_event=f"Connecting to {candidate}",
+                        reconnect_count=0,
+                    )
+                    server_log.info("Attempting initial connection with candidate [%d/%d]: %s", idx + 1, len(candidates), candidate)
+                    operator_events.add("gemini", f"Connecting to {candidate}")
+
+                    is_fallback = (candidate != primary_candidate)
+                    fallback_reason = f"Primary candidate '{primary_candidate}' failed; fell back to '{candidate}'" if is_fallback else ""
+
+                    # Lock the model once chosen
+                    model_resolver.lock_session(candidate, is_fallback=is_fallback, reason=fallback_reason)
+                    connected_model = candidate
+                    break
+
+                except Exception as e:
+                    server_log.warning("Initial connection candidate %s failed: %s", candidate, e)
+                    continue
+
+            if connected_model is None:
+                err_msg = f"All candidate models failed: {', '.join(candidates)}"
+                server_log.error(err_msg)
+                self._emit(status=SessionStatus.FAILED, last_event=err_msg)
+                operator_events.add("error", "Gemini connection failed for all candidates", {"candidates": candidates})
+                return
+
+        # Phase 2: In-session loop with exponential backoff on GoAway / errors using locked model
+        locked_model = model_resolver.locked_model or model_resolver.fallback_model
+
         while not self._stop_event.is_set():
             try:
                 is_resume = self._resumption_handle is not None
                 if self._attempt > 0 or is_resume:
                     status = SessionStatus.RECONNECTING
-                    event_msg = f"Reconnecting (attempt {self._attempt})" if self._attempt > 0 else "Reconnecting (resuming session)"
+                    event_msg = f"Reconnecting to {locked_model} (attempt {self._attempt})" if self._attempt > 0 else f"Reconnecting to {locked_model} (resuming session)"
                     if self._attempt > 0:
-                        operator_events.add("network", f"Reconnecting to Gemini (attempt {self._attempt})", {"attempt": self._attempt})
+                        operator_events.add("network", f"Reconnecting to Gemini (attempt {self._attempt})", {"attempt": self._attempt, "model": locked_model})
                     else:
-                        operator_events.add("gemini", "Resuming Gemini session")
+                        operator_events.add("gemini", f"Resuming Gemini session ({locked_model})")
                 else:
                     status = SessionStatus.CONNECTING
-                    event_msg = "Connecting to Gemini"
-                    operator_events.add("gemini", "Connecting to Gemini")
+                    event_msg = f"Connected to {locked_model}"
+                    operator_events.add("gemini", f"Connected to {locked_model}")
+
                 self._emit(status=status, last_event=event_msg, reconnect_count=self._attempt)
                 server_log.info(event_msg)
                 session_log.debug(event_msg)
 
-                await self._run_session(is_reconnect=(self._attempt > 0 or is_resume))
+                await self._run_session(model=locked_model, is_reconnect=(self._attempt > 0 or is_resume))
                 self._attempt = 0  # reset on clean run completion
                 if self._stop_event.is_set():
                     return
@@ -275,10 +264,9 @@ class GeminiSession:
             except asyncio.CancelledError:
                 server_log.info("Retry loop cancelled — exiting cleanly")
                 session_log.debug("Retry loop cancelled — exiting cleanly")
-                raise  # must re-raise, never swallow
+                raise
 
             except Exception as e:
-                # 1000 = clean WebSocket close (triggered by our own stop()); not a real error
                 if "1000" in str(e) and self._stop_event.is_set():
                     return
 
@@ -290,37 +278,35 @@ class GeminiSession:
                 else:
                     self._attempt += 1
                     if self._attempt >= MAX_RECONNECT_ATTEMPTS:
-                        server_log.error("Max reconnect attempts reached — translation unavailable")
-                        session_log.debug("Max reconnect attempts reached — translation unavailable")
+                        server_log.error("Max reconnect attempts reached for %s — translation unavailable", locked_model)
+                        session_log.debug("Max reconnect attempts reached for %s — translation unavailable", locked_model)
                         self._emit(
                             status=SessionStatus.FAILED,
                             last_event=f"Translation unavailable: {e}",
                             reconnect_count=self._attempt
                         )
                         operator_events.add("error", "Gemini failed: max reconnects reached",
-                                            {"error": str(e), "attempts": self._attempt})
+                                            {"error": str(e), "attempts": self._attempt, "model": locked_model})
                         return
                     delay = min(RECONNECT_BASE_DELAY * (2 ** (self._attempt - 1)), MAX_BACKOFF_SECONDS)
                     server_log.warning(
-                        "Session error (attempt %d): %s — retrying in %.1fs",
-                        self._attempt, e, delay
+                        "Session error (attempt %d on %s): %s — retrying in %.1fs",
+                        self._attempt, locked_model, e, delay
                     )
                     session_log.debug(
-                        "Session error (attempt %d): %s — retrying in %.1fs",
-                        self._attempt, e, delay
+                        "Session error (attempt %d on %s): %s — retrying in %.1fs",
+                        self._attempt, locked_model, e, delay
                     )
                 try:
                     await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
                 except asyncio.TimeoutError:
                     pass
 
-    def _build_config(self) -> types.LiveConnectConfig:
-        is_translate_model = "translate" in GEMINI_MODEL
+    def _build_config(self, model_name: str) -> types.LiveConnectConfig:
+        voice = gemini_cfg().get("voice", "orus")
+        is_translate_model = "translate" in model_name.lower()
+
         if is_translate_model:
-            # gemini-3.5-live-translate-preview: use translation_config.
-            # Korean source: server_content.input_transcription.text  (enabled by input_audio_transcription)
-            # English output: server_content.output_transcription.text (enabled by output_audio_transcription)
-            # Audio PCM also arrives in model_turn inline_data — we discard it (text captions only).
             return types.LiveConnectConfig(
                 response_modalities=["AUDIO"],
                 translation_config=types.TranslationConfig(
@@ -330,7 +316,7 @@ class GeminiSession:
                 speech_config=types.SpeechConfig(
                     voice_config=types.VoiceConfig(
                         prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name="orus",  # deep male voice — consistent across sessions
+                            voice_name=voice,
                         )
                     )
                 ),
@@ -346,7 +332,7 @@ class GeminiSession:
                 ),
             )
         else:
-            # General live model: TEXT modality with system prompt translation.
+            # Fallback for general models with system prompt translation
             return types.LiveConnectConfig(
                 response_modalities=["TEXT"],
                 system_instruction=SYSTEM_PROMPT,
@@ -359,81 +345,48 @@ class GeminiSession:
                 ),
             )
 
-    async def _run_session(self, is_reconnect: bool) -> None:
-        config = self._build_config()
+    async def _run_session(self, model: str, is_reconnect: bool) -> None:
+        config = self._build_config(model)
         is_resuming = self._resumption_handle is not None
 
         server_log.info(
-            "Reconnect attempt: resumption_handle_present=%s handle_value=%r",
-            is_resuming,
-            self._resumption_handle
-        )
-        session_log.debug(
-            "Reconnect attempt: resumption_handle_present=%s handle_value=%r",
-            is_resuming,
-            self._resumption_handle
+            "Session connect starting: model=%s resumption_handle_present=%s",
+            model,
+            is_resuming
         )
 
+        client = self._get_client()
         try:
-            async with self._client.aio.live.connect(
-                model=GEMINI_MODEL, config=config
+            async with client.aio.live.connect(
+                model=model, config=config
             ) as session:
                 self._attempt = 0
-                self._emit(status=SessionStatus.CONNECTED, last_event="Session connected",
-                           reconnect_count=self._attempt)
-                operator_events.add("success", "Gemini connected", {"model": GEMINI_MODEL})
-                server_log.info("Gemini session connected (model=%s, resume=%s)",
-                                GEMINI_MODEL, is_resuming)
-                session_log.debug("Gemini session connected (model=%s, resume=%s)",
-                                  GEMINI_MODEL, is_resuming)
-                self._resumption_handle = None  # consumed
+                self._emit(
+                    status=SessionStatus.CONNECTED,
+                    last_event="Connected to Gemini",
+                    reconnect_count=0,
+                )
+                server_log.info("Gemini Live session connected successfully on model: %s", model)
+                operator_events.add("gemini", f"Live translation active ({model})")
 
-                if is_reconnect and not is_resuming:
-                    operator_events.add("warning", "Reconnected without session resumption — context lost")
-
-                send_task = asyncio.create_task(self._send_loop(session))
-                recv_task = asyncio.create_task(self._recv_loop(session))
-                commit_task = asyncio.create_task(self._auto_commit_loop())
-                stop_task = asyncio.create_task(self._stop_event.wait())
-
-                done: set = set()
-                try:
-                    done, pending = await asyncio.wait(
-                        [send_task, recv_task, commit_task, stop_task],
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    for t in pending:
-                        t.cancel()
-                        try:
-                            await t
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                finally:
-                    for t in [send_task, recv_task, commit_task, stop_task]:
-                        if not t.done():
-                            t.cancel()
-
-                # Re-raise exception from recv only if it's not a clean stop
-                for t in done:
-                    if t != stop_task and not t.cancelled() and t.exception():
-                        ex = t.exception()
-                        if "1000" in str(ex) and self._stop_event.is_set():
-                            continue
-                        raise ex
+                async with asyncio.TaskGroup() as tg:
+                    tg.create_task(self._send_loop(session))
+                    tg.create_task(self._recv_loop(session, model))
+                    tg.create_task(self._auto_commit_loop())
+                    while not self._stop_event.is_set():
+                        await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            if self._stop_event.is_set():
+                return
+            raise
         except Exception as e:
             if "1000" in str(e) and self._stop_event.is_set():
                 return
             log_fn = server_log.info if "GoAway" in str(e) else server_log.error
             log_fn(
-                "SESSION_FAILURE: type=%s close_code=%s message=%s",
+                "SESSION_FAILURE: model=%s type=%s message=%s",
+                model,
                 type(e).__name__,
-                getattr(e, 'code', 'unknown'),
-                str(e)
-            )
-            session_log.debug(
-                "SESSION_FAILURE: type=%s close_code=%s message=%s",
-                type(e).__name__,
-                getattr(e, 'code', 'unknown'),
                 str(e)
             )
             raise e
@@ -455,37 +408,37 @@ class GeminiSession:
             if not self._stop_event.is_set():
                 raise
 
-    async def _recv_loop(self, session) -> None:
+    async def _recv_loop(self, session, model: str) -> None:
         try:
             async for response in session.receive():
                 if self._stop_event.is_set():
                     break
 
-                # Session resumption handle update
                 if hasattr(response, "session_resumption_update") and response.session_resumption_update:
                     update = response.session_resumption_update
                     if hasattr(update, "handle") and update.handle:
                         self._resumption_handle = update.handle
                         session_log.debug("Resumption handle updated")
 
-                # GoAway — reconnect before the connection actually drops
                 if hasattr(response, "go_away") and response.go_away:
                     server_log.info("GoAway received — initiating graceful reconnect")
-                    session_log.debug("GoAway received — initiating graceful reconnect")
                     self._emit(last_event="GoAway: reconnecting")
                     operator_events.add("network", "GoAway — reconnecting")
                     raise RuntimeError("GoAway")
 
                 sc = getattr(response, "server_content", None)
 
-                # Translated audio PCM — model_turn.parts[].inline_data (24kHz PCM16 mono)
+                # Audio PCM chunks (24kHz PCM16 mono)
                 if sc:
                     for part in getattr(getattr(sc, "model_turn", None), "parts", None) or []:
                         blob = getattr(part, "inline_data", None)
                         if blob and self._on_audio:
                             self._on_audio(blob.data)
+                            if not self._has_verified_output:
+                                self._has_verified_output = True
+                                model_resolver.record_verified_success(model)
 
-                # Korean source transcript (log + transcript export)
+                # Korean source text
                 if sc:
                     it = getattr(sc, "input_transcription", None)
                     if it and getattr(it, "text", None):
@@ -495,9 +448,7 @@ class GeminiSession:
                         if self._on_source:
                             self._on_source(it.text)
 
-                # English translation — two paths:
-                # 1. Translate model: server_content.output_transcription.text
-                # 2. General model:   response.text
+                # English translated text
                 en_text = response.text or ""
                 if not en_text and sc:
                     ot = getattr(sc, "output_transcription", None)
@@ -505,6 +456,10 @@ class GeminiSession:
                         en_text = ot.text
 
                 if en_text:
+                    if not self._has_verified_output:
+                        self._has_verified_output = True
+                        model_resolver.record_verified_success(model)
+
                     if self._turn_start is None:
                         self._turn_start = time.monotonic()
                         if self._first_audio_in_turn_sent_at is not None:
@@ -515,12 +470,11 @@ class GeminiSession:
                     self._on_caption(en_text)
                     session_log.debug("[EN delta] %s", en_text)
 
-                # Turn complete — commit to transcript, reset buffers
                 if sc and getattr(sc, "turn_complete", False):
                     self._commit_current_turn()
 
         except Exception as e:
             if "1000" in str(e) and self._stop_event.is_set():
-                return  # clean stop — not an error
+                return
             if not self._stop_event.is_set():
                 raise

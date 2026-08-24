@@ -83,10 +83,10 @@ from app.config import (
     save_auto_stop_timeout,
 )
 from app.events import operator_events
-from app.gemini_session import GEMINI_MODEL
 from app.gemini_session import GeminiSession, SessionStatus
 from app.glossary import GlossaryCorrector
 from app.logger import server_log
+from app.model_resolver import model_resolver, verify_model_compatibility
 
 # Gemini 3.5 Live Translate pricing (Paid Tier):
 # Audio Input: $0.0053/min (~$0.00008833/sec)
@@ -469,7 +469,7 @@ def _write_session_log() -> None:
             f"Est. cost:     ${cost:.4f} USD",
             f"Turns:         {len(entries)}",
             f"Captions:      {broadcaster.caption_count}",
-            f"Model:         {GEMINI_MODEL}",
+            f"Model:         {model_resolver.active_model}",
         ]), encoding="utf-8")
 
         # ── ko.txt ────────────────────────────────────────────────────────
@@ -516,6 +516,9 @@ async def lifespan(app: FastAPI):
     _qr_png_cache = _build_qr(primary_url)
     server_log.info("QR code URL: %s", primary_url)
     server_log.info("Fallback URL: %s", fallback_url)
+
+    # Launch non-blocking background discovery
+    model_resolver.start_background_discovery()
 
     operator_events.add(
         "success", "System started",
@@ -865,8 +868,9 @@ async def get_status():
             "reconnect_count": s.reconnect_count,
             "last_event": s.last_event,
             "latency_ms": round(s.last_latency_ms, 1),
-            "model": GEMINI_MODEL,
+            "model": model_resolver.active_model,
         },
+        "models": model_resolver.get_state(),
         "attendees": broadcaster.client_count,
         "captions": broadcaster.caption_count,
         "live_url_primary": primary_url,
@@ -888,6 +892,54 @@ async def select_device(body: dict):
     idx = int(body["index"])
     save_audio_device(idx)
     return {"ok": True, "index": idx}
+
+
+@app.get("/api/models")
+async def get_models_state():
+    return model_resolver.get_state()
+
+
+@app.post("/api/models/select")
+@app.post("/api/models/mode")
+async def select_model(body: dict):
+    model = str(body.get("model") or body.get("preferred_model") or "").strip()
+    if not model:
+        return Response(
+            content=json.dumps({"ok": False, "error": "Model name required"}),
+            status_code=400,
+            media_type="application/json",
+        )
+    try:
+        model_resolver.set_preferred_model(model)
+        operator_events.add("user", f"Preferred Gemini model set to '{model}'")
+        return {"ok": True, "state": model_resolver.get_state()}
+    except Exception as e:
+        return Response(
+            content=json.dumps({"ok": False, "error": str(e)}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+
+@app.post("/api/models/test")
+async def test_model(body: dict):
+    model_name = str(body.get("model", "")).strip()
+    if not model_name:
+        return Response(
+            content=json.dumps({"ok": False, "error": "Model name required"}),
+            status_code=400,
+            media_type="application/json",
+        )
+    is_compat, caps, msg = await verify_model_compatibility(model_name)
+    return {"ok": is_compat, "capabilities": caps, "message": msg, "model": model_name}
+
+
+@app.post("/api/models/dismiss-alert")
+async def dismiss_model_alert(body: dict):
+    model_name = str(body.get("model", "")).strip()
+    if model_name:
+        model_resolver.dismiss_alert(model_name)
+    return {"ok": True}
 
 
 @app.get("/api/qr.png")

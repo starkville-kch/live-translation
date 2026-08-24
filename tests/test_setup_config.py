@@ -99,8 +99,15 @@ def test_mocked_gemini_validation_success():
     from setup_gui import SetupApp
     import tkinter as tk
 
-    root = tk.Tk()
-    root.withdraw()
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        is_mock_root = False
+    except (tk.TclError, Exception):
+        root = MagicMock()
+        root.after.side_effect = lambda delay, fn, *args: fn(*args)
+        is_mock_root = True
+
     try:
         app = SetupApp(root)
         app.configured_model = "gemini-3.5-live-translate-preview"
@@ -124,13 +131,15 @@ def test_mocked_gemini_validation_success():
 
             app._on_test_complete = _capture_test_complete
             app._run_connection_test("AIzaSy_test_key_12345678")
-            root.update()
+            if not is_mock_root:
+                root.update()
 
             assert results.get("key_valid") is True
             assert results.get("model_valid") is True
             assert "gemini-3.5-live-translate-preview" in results.get("model_note", "")
     finally:
-        root.destroy()
+        if not is_mock_root:
+            root.destroy()
 
 
 def test_mocked_gemini_validation_invalid_key_sanitization():
@@ -138,8 +147,15 @@ def test_mocked_gemini_validation_invalid_key_sanitization():
     from setup_gui import SetupApp
     import tkinter as tk
 
-    root = tk.Tk()
-    root.withdraw()
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        is_mock_root = False
+    except (tk.TclError, Exception):
+        root = MagicMock()
+        root.after.side_effect = lambda delay, fn, *args: fn(*args)
+        is_mock_root = True
+
     try:
         app = SetupApp(root)
         raw_key = "AIzaSy_secret_leak_test_9999"
@@ -155,11 +171,13 @@ def test_mocked_gemini_validation_invalid_key_sanitization():
 
             app._on_test_complete = _capture_test_complete
             app._run_connection_test(raw_key)
-            root.update()
+            if not is_mock_root:
+                root.update()
 
             assert results.get("key_valid") is False
             # Raw key must NOT be in error message
             assert raw_key not in results.get("error_msg", "")
             assert "••••••••" in results.get("error_msg", "")
     finally:
-        root.destroy()
+        if not is_mock_root:
+            root.destroy()

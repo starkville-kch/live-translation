@@ -68,6 +68,12 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 - **Defensive & Atomic Config Persistence**: `update_gemini_api_key` modifies only `GEMINI_API_KEY` in `.env` while preserving all other environment variables and comments. All YAML and `.env` writes use atomic temporary file replacement (`os.replace`) to prevent corruption. Raw API keys are never exposed in log outputs, error strings, or visible entry fields.
 - **Decoupled API Key & Model Validation**: Setup wizard tests authentication with `google.genai.Client` first, then validates availability of the configured model in `config.yaml` (`gemini.model`) without hard-coded model assumptions.
 - **Dynamic Church Identity**: Church name, short name, local URL (`http://<hostname>.local`), and custom logo in `branding/` are dynamically loaded from `config.yaml` by the backend, status API, operator console, attendee page, and QR code generator.
+- **Gemini Live Translation Model Selection Engine (`app/model_resolver.py`)**:
+  - Direct `preferred_model` configuration with automated two-tier fallback: `preferred_model` $\to$ `Last Known Good (LKG)` $\to$ `fallback_model`. Selecting another model from the operator dropdown immediately sets it as `preferred_model` for subsequent sessions.
+  - Strict Live Translate filtering: filters out general Flash/Pro non-translation models (`gemini-2.5-flash`, `gemini-1.5-pro`) and conversational models (`gemini-3.1-flash-live-preview`); only models matching Live Translation capabilities are eligible candidates.
+  - 5-Tier lifecycle: Discovered Candidate $\to$ Compatible (handshake passed) $\to$ Verified (real translated output delivered in active session) $\to$ Last Known Good (LKG) $\to$ Locked (fixed for duration of service).
+  - LKG persistence isolation: `config.yaml` stores administrator intent only (`preferred_model`, `fallback_model`, `voice`); runtime learned state (`last_known_good_model`, `last_verified_at`, `seen_models`, `dismissed_alerts`) is stored separately in `var/runtime/model_state.json`.
+  - Session Management: Initial connection fallback runs before locking; once connected, the operational model is locked for all in-session reconnects (including ~10-minute GoAway connection resets). The application uses `SessionResumptionConfig` to survive Live connection rotation and `ContextWindowCompressionConfig` with `SlidingWindow` to manage context during long-running worship services. Non-blocking background discovery uses paginated SDK iteration.
 
 ---
 

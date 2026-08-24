@@ -4,9 +4,15 @@ audio:
   chunk_ms: 100
   device_index: 1
   sample_rate: 16000
+church:
+  logo: branding/church-logo.png
+  name: Starkville Korean Church
+  short_name: SKC
 gemini:
   context_seed: true
-  model: gemini-3.5-live-translate-preview
+  fallback_model: gemini-3.5-live-translate-preview
+  preferred_model: gemini-3.5-live-translate-preview
+  voice: orus
 logging:
   backup_count: 5
   log_dir: logs

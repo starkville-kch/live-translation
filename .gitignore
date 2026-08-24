@@ -10,3 +10,6 @@ logs/sessions/*
 *.wav
 .agent/
 .claude/
+var/
+.pytest_cache/
+

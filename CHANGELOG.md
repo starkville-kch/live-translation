@@ -5,6 +5,32 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-08-23
+
+### Added
+- **Gemini Live Translation Model Selection Engine (`app/model_resolver.py`)**:
+  - Implemented administrator-controlled model selection with direct `preferred_model` configuration and automatic two-tier fallback:
+    $$\text{preferred\_model} \xrightarrow{\text{fail}} \text{Last Known Good (LKG)} \xrightarrow{\text{fail}} \text{fallback\_model}$$
+  - Selecting another model from the operator dropdown immediately sets it as `preferred_model` for subsequent services.
+- **Strict Live Translate Candidate Classification**: Excludes general Flash/Pro models (e.g. `gemini-2.5-flash`, `gemini-1.5-pro`) and conversational dialogue models (`gemini-3.1-flash-live-preview`); only models with dedicated Live Translation capabilities are eligible.
+- **5-Tier Model Lifecycle**:
+  - *Discovered*: Returned by Gemini Models API (`client.models.list()`) via background discovery.
+  - *Candidate*: Validated as a translation model by name/description heuristics.
+  - *Compatible*: Capability handshake with `TranslationConfig` (KO $\to$ EN) and audio output succeeds.
+  - *Verified*: Model has successfully delivered real translated audio and captions during an active session.
+  - *Last Known Good (LKG)*: Most recently verified model, persisted in `var/runtime/model_state.json`.
+  - *Locked*: Model fixed for the active church service session.
+- **Separate Runtime State Isolation (`var/runtime/model_state.json`)**: `config.yaml` stores administrator intent only (`preferred_model`, `fallback_model`, `voice`), while runtime learned state (`last_known_good_model`, `last_verified_at`, `seen_models`, `dismissed_alerts`) is maintained separately without mutating configuration files.
+- **Session Model Locking & Long-Running Resumption**:
+  - Operational model is locked upon initial session connection; all in-session reconnects strictly reuse the locked model.
+  - The application uses `SessionResumptionConfig` to survive Live connection rotation and `ContextWindowCompressionConfig` with `SlidingWindow` to manage context during long-running worship services.
+- **Streamlined Status Card Integration (`app/templates/operator.html`)**:
+  - Embedded model selection directly into the Status card's `모델` row with a compact dropdown, status badge (`✓ Ready`, `⚠ Fallback`, `🔒 Locked`), and inline `[Test]` capability handshake.
+- **API Endpoints in `app/server.py`**: Added `/api/models`, `/api/models/select`, `/api/models/test`, and `/api/models/dismiss-alert`.
+- **Comprehensive Unit & Integration Test Suite (`tests/test_model_resolver.py`)**: 12 dedicated automated tests covering classification, version ordering, selection sequence, session locking, error sanitization, API endpoints, and LKG isolation. Total repository tests: 19 passed.
+
+---
+
 ## [2.2.0] - 2026-08-23
 
 ### Added

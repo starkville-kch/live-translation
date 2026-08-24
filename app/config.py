@@ -32,7 +32,10 @@ config.yaml schema (abbreviated)
       port: 80
 
     gemini:
-      model: "gemini-3.5-live-translate-preview"   # auto-updated by resolve_live_model()
+      model_mode: recommended  # 'recommended' | 'auto' | 'manual'
+      preferred_model: null    # explicit manual selection
+      fallback_model: "gemini-3.5-live-translate-preview"
+      voice: "orus"
 
     logging:
       log_dir: "logs"
@@ -46,11 +49,12 @@ Public API
 ``audio_cfg()``            — returns the ``audio`` section dict
 ``network_cfg()``          — returns the ``network`` section dict
 ``logging_cfg()``          — returns the ``logging`` section dict
-``gemini_model()``         — returns the currently configured Gemini model name
+``gemini_cfg()``           — returns the ``gemini`` section dict
+``gemini_model()``         — returns configured fallback or preferred model name
 ``save_church_identity()`` — persists church identity & hostname back to config.yaml
 ``save_audio_device()``    — persists a new device index back to config.yaml
 ``save_auto_stop_timeout()``— persists auto-stop timeout minutes back to config.yaml
-``save_gemini_model()``    — persists a new model name back to config.yaml
+``save_gemini_model_mode()``— persists model_mode and preferred_model back to config.yaml
 ``update_gemini_api_key()``— atomically updates GEMINI_API_KEY in .env
 ``mask_api_key()``         — returns masked preview of API key
 """
@@ -85,7 +89,9 @@ DEFAULT_CONFIG = {
     },
     "gemini": {
         "context_seed": True,
-        "model": "gemini-3.5-live-translate-preview",
+        "fallback_model": "gemini-3.5-live-translate-preview",
+        "preferred_model": "gemini-3.5-live-translate-preview",
+        "voice": "orus",
     },
     "logging": {
         "backup_count": 5,
@@ -181,8 +187,19 @@ def logging_cfg() -> dict:
     return _cfg.get("logging", {})
 
 
+def gemini_cfg() -> dict:
+    g = _cfg.get("gemini", {})
+    return {
+        "preferred_model": g.get("preferred_model", "gemini-3.5-live-translate-preview"),
+        "fallback_model": g.get("fallback_model", "gemini-3.5-live-translate-preview"),
+        "voice": g.get("voice", "orus"),
+        "context_seed": g.get("context_seed", True),
+    }
+
+
 def gemini_model() -> str:
-    return _cfg.get("gemini", {}).get("model", "gemini-3.5-live-translate-preview")
+    g = gemini_cfg()
+    return g.get("preferred_model") or g.get("fallback_model", "gemini-3.5-live-translate-preview")
 
 
 def save_church_identity(
@@ -220,10 +237,11 @@ def save_auto_stop_timeout(minutes: int) -> None:
     _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
 
-def save_gemini_model(model: str) -> None:
+def save_gemini_preferred_model(preferred_model: str) -> None:
+    """Save preferred_model to config.yaml atomically."""
     if "gemini" not in _cfg:
         _cfg["gemini"] = {}
-    _cfg["gemini"]["model"] = model
+    _cfg["gemini"]["preferred_model"] = preferred_model.strip()
     _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
 
