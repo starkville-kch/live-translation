@@ -868,6 +868,7 @@ async def get_status():
         "service_running": _state != ServiceState.STOPPED,
         "state": _state.value,
         "paused": _paused,
+        "pause_duration_s": round(time.monotonic() - _pause_start, 1) if (_paused and _pause_start) else 0.0,
         "runtime_s": round(runtime, 1),
         "cost_usd": round(cost, 4),
         "billed_audio_s": round(_billed_seconds, 1),

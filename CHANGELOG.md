@@ -35,11 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Session Model Locking & Long-Running Resumption**:
   - Operational model is locked upon initial session connection; all in-session reconnects strictly reuse the locked model.
   - The application uses `SessionResumptionConfig` to survive Live connection rotation and `ContextWindowCompressionConfig` with `SlidingWindow` to manage context during long-running worship services.
-- **Streamlined Status Card Integration (`app/templates/operator.html`)**:
-  - Embedded model selection directly into the Status card's `모델` row with a compact dropdown, status badge (`✓ Ready`, `⚠ Fallback`, `🔒 Locked`), and inline `[Test]` capability handshake.
-  - Added `자동 언어 오류 복구` toggle (`[ OFF ]` / `[ ON ]`) with real-time status indication.
+- **Operator Console Control Bar Separation & Pause Reminder (`app/templates/operator.html`, `app/server.py`)**:
+  - Separated non-clickable service status indicator from action buttons into a fixed 3-column layout (`Status Pill` | `Primary Action` | `Stop Button`):
+    - **Stopped**: `○ 대기 중 (STOPPED)` + `[ ▶ 번역 시작 (Start) ]` (green) + `[ ■ 서비스 종료 (Stop) ]` (neutral disabled gray, never red when disabled).
+    - **Starting / Resuming / Resetting**: `⟳ 번역 연결 중...` (spinner) + `[ ⏳ 연결 중… ]` + `[ ■ 서비스 종료 (Stop) ]`.
+    - **Running**: `● 번역 중 (RUNNING)` (static calm green dot, no distracting pulse) + `[ ⏸ 번역 일시정지 (Pause) ]` (amber) + `[ ■ 서비스 종료 (Stop) ]` (active red).
+    - **Paused**: `⏸ 일시정지 MM:SS` (gentle slow amber pulse glow + live pause duration timer) + `Resume 필요` (reminder subtitle, with `prefers-reduced-motion` accessibility support) + `[ ▶ 번역 다시 시작 (Resume) ]` (green) + `[ ■ 서비스 종료 (Stop) ]` (active red).
+    - **Browser Tab Title Notification**: While paused, browser tab title displays `⏸ [MM:SS] 일시정지 — ...` for off-tab operator awareness.
+    - **Failed**: `⚠ 번역 연결 오류 (Failed)` + `[ ▶ 다시 시도 (Retry) ]` + `[ ■ 서비스 종료 (Stop) ]`.
+  - Fixed button positions eliminate operator confusion and allow reliable muscle-memory operation.
 - **API Endpoints in `app/server.py`**: Added `/api/models`, `/api/models/select`, `/api/models/test`, `/api/models/dismiss-alert`, and `/api/config/auto-drift-correction`.
-- **Comprehensive Unit & Integration Test Suite**: 41 automated tests passing across model resolution, configuration persistence, frame dropping on pause, rolling drift scoring on completed turns, session epoch isolation, non-retryable fatal error classification, and runtime drift toggling (`tests/test_model_resolver.py`, `tests/test_setup_config.py`, `tests/test_anti_contamination.py`).
+- **Comprehensive Unit & Integration Test Suite**: 44 automated tests passing across model resolution, configuration persistence, frame dropping on pause, rolling drift scoring on completed turns, session epoch isolation, non-retryable fatal error classification, runtime drift toggling, and operator UI accessibility (`tests/test_model_resolver.py`, `tests/test_setup_config.py`, `tests/test_anti_contamination.py`, `tests/test_operator_ui.py`).
 
 ---
 

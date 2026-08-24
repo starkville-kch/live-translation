@@ -467,12 +467,199 @@
   /* Control bar */
   .ctrl-bar {
     display: flex;
+    align-items: stretch;
     gap: 12px;
     margin-top: 8px;
+    width: 100%;
   }
-  .ctrl-bar button {
-    flex: 1;
+
+  .service-status-pill {
+    flex: 1.1;
+    min-height: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    user-select: none;
+    border: 1px solid var(--color-warm-200);
+    background: var(--color-warm-white);
+    color: var(--color-text-secondary);
+    transition: all 0.2s ease;
+    text-align: center;
+  }
+  .service-status-pill .pill-main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+  }
+  .service-status-pill .pill-sub {
+    font-size: 11px;
     font-weight: 600;
+    margin-top: 2px;
+    opacity: 0.95;
+    line-height: 1.2;
+  }
+  .service-status-pill .status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  /* Stopped state */
+  .service-status-pill.status-stopped {
+    background: var(--color-warm-100);
+    border-color: var(--color-warm-200);
+    color: var(--color-text-secondary);
+  }
+  .service-status-pill.status-stopped .status-dot {
+    background: var(--color-text-muted);
+  }
+
+  /* Running state (Static calm green, no animation) */
+  .service-status-pill.status-running {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+    color: #065f46;
+  }
+  .service-status-pill.status-running .status-dot {
+    background: #10b981;
+  }
+
+  /* Paused state (Gentle slow amber pulse) */
+  .service-status-pill.status-paused {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #92400e;
+    animation: amber-pulse-glow 2s infinite ease-in-out;
+  }
+  .service-status-pill.status-paused .status-dot {
+    background: #f59e0b;
+  }
+
+  /* Transient States (Starting, Resuming, Resetting) */
+  .service-status-pill.status-transient {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1e40af;
+  }
+
+  /* Failed State */
+  .service-status-pill.status-failed {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #991b1b;
+  }
+
+  @keyframes amber-pulse-glow {
+    0%, 100% {
+      border-color: #fde68a;
+      box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+      background: #fffbeb;
+    }
+    50% {
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.18);
+      background: #fef3c7;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .service-status-pill.status-paused {
+      animation: none !important;
+      border-color: #f59e0b !important;
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25) !important;
+      background: #fef3c7 !important;
+    }
+    .spinner-icon {
+      animation: none !important;
+    }
+  }
+
+  .spinner-icon {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(30, 64, 175, 0.25);
+    border-top-color: #1e40af;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .btn-action {
+    flex: 1.2;
+    min-height: 48px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    text-align: center;
+    border: 1px solid transparent;
+  }
+
+  .btn-action.btn-start {
+    background: var(--color-success);
+    color: #fff;
+    border-color: var(--color-success);
+  }
+  .btn-action.btn-start:hover:not(:disabled) {
+    background: #46855f;
+  }
+
+  .btn-action.btn-pause {
+    background: #d97706; /* amber 600 */
+    color: #fff;
+    border-color: #b45309;
+  }
+  .btn-action.btn-pause:hover:not(:disabled) {
+    background: #b45309;
+  }
+
+  .btn-action.btn-resume {
+    background: var(--color-success);
+    color: #fff;
+    border-color: var(--color-success);
+  }
+  .btn-action.btn-resume:hover:not(:disabled) {
+    background: #46855f;
+  }
+
+  /* Active Stop button (Red) */
+  .btn-action.btn-stop {
+    background: var(--color-error);
+    color: #fff;
+    border-color: var(--color-error);
+  }
+  .btn-action.btn-stop:hover:not(:disabled) {
+    background: #bd4a4a;
+  }
+
+  /* Disabled buttons: Neutral Light Gray (never red when disabled) */
+  .btn-action.btn-stop:disabled,
+  .btn-action:disabled {
+    background: var(--color-warm-100) !important;
+    border-color: var(--color-warm-200) !important;
+    color: var(--color-text-muted) !important;
+    cursor: not-allowed !important;
+    opacity: 0.85;
   }
 
   /* Earphone Warning Modal */
@@ -752,20 +939,26 @@
       <div id="preview-wrap"><div id="preview"></div></div>
     </div>
 
-    <!-- Control buttons -->
+    <!-- Control bar (Status + Fixed Action Buttons) -->
     <div class="ctrl-bar">
-      <span class="tooltip" style="flex:1;">
-        <button class="primary" id="btn-start" style="width:100%;">▶ Start</button>
-        <span class="tooltiptext">번역 서비스를 시작합니다. 선택된 오디오 장치로 캡처를 시작하고 Gemini AI에 연결합니다. (Start translation: begins audio capture and connects to Gemini AI.)</span>
-      </span>
-      <span class="tooltip" style="flex:1;">
-        <button class="warning" id="btn-pause" disabled style="width:100%;">⏸ Pause</button>
-        <span class="tooltiptext">번역을 일시 중지합니다. Gemini 연결은 유지되며 Resume을 누르면 즉시 재개됩니다. (Pause translation. Gemini stays connected — press Resume to continue instantly.)</span>
-      </span>
-      <span class="tooltip" style="flex:1;">
-        <button class="danger" id="btn-stop" disabled style="width:100%;">■ Stop</button>
-        <span class="tooltiptext">번역 서비스를 완전히 종료하고 세션 로그를 저장합니다. (Stop translation and save the session log. Gemini connection is closed.)</span>
-      </span>
+      <!-- Non-clickable Service Status Indicator (fixed left) -->
+      <div id="service-status-pill" class="service-status-pill status-stopped" role="status" aria-live="polite">
+        <div class="pill-main">
+          <span class="status-dot"></span>
+          <span class="status-text">○ 대기 중 (STOPPED)</span>
+        </div>
+        <div class="pill-sub" id="pill-sub" style="display:none;"></div>
+      </div>
+
+      <!-- Action 1: Start / Pause / Resume (fixed middle) -->
+      <button id="btn-primary-action" class="btn-action btn-start">
+        ▶ 번역 시작 (Start)
+      </button>
+
+      <!-- Action 2: Stop (fixed right) -->
+      <button id="btn-stop" class="btn-action btn-stop" disabled>
+        ■ 서비스 종료 (Stop)
+      </button>
     </div>
 
     <!-- Auto-Stop + Exit System side by side -->
@@ -882,13 +1075,13 @@ function playBeep() {
   }
 }
 
-const btnStart = document.getElementById('btn-start');
-const btnPause = document.getElementById('btn-pause');
-const btnStop  = document.getElementById('btn-stop');
-const btnShutdown = document.getElementById('btn-shutdown');
-const preview  = document.getElementById('preview');
-const previewWrap = document.getElementById('preview-wrap');
-const logEl    = document.getElementById('log');
+const serviceStatusPill = document.getElementById('service-status-pill');
+const btnPrimaryAction  = document.getElementById('btn-primary-action');
+const btnStop           = document.getElementById('btn-stop');
+const btnShutdown       = document.getElementById('btn-shutdown');
+const preview           = document.getElementById('preview');
+const previewWrap       = document.getElementById('preview-wrap');
+const logEl             = document.getElementById('log');
 
 // ── Preview: Korean + English paired DOM ──────────────────────────────────────
 // Each "pair" = one committed turn: { koEl, enEl, wrapEl, koText, enText }
@@ -1075,45 +1268,240 @@ async function loadDevices() {
   });
 }
 
-// ── Start ─────────────────────────────────────────────────────────────────────
-btnStart.addEventListener('click', async () => {
-  btnStart.disabled = true; btnStart.textContent = '⏳ Starting…';
-  const idx = parseInt(document.getElementById('device-select').value);
-  try {
-    await fetch('/api/start', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({device_index: idx}) });
-    btnPause.disabled = false; btnStop.disabled = false;
-    resetPreview();
-    document.getElementById('stat-runtime').textContent = '—';
-    document.getElementById('stat-cost').textContent = '—';
-    startStatusPoll(); connectSSE();
-  } catch {
-    btnStart.disabled = false; btnStart.textContent = '▶ Start';
-  }
-});
-
-// ── Pause / Resume ────────────────────────────────────────────────────────────
+const ORIGINAL_TITLE = document.title || "SKC Live Translation — Operator Console";
+let _serviceRunning = false;
 let _paused = false;
-btnPause.addEventListener('click', async () => {
-  if (_paused) {
-    await fetch('/api/resume', {method:'POST'});
-    _paused = false; btnPause.textContent = '⏸ Pause'; btnPause.className = 'warning';
+let _pauseTimerLocal = 0;
+let _pauseTimerInterval = null;
+
+function formatDuration(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+function updateControlBar(st) {
+  const statusMain = serviceStatusPill.querySelector('.pill-main');
+  const pillSub = document.getElementById('pill-sub');
+
+  const isRunning = Boolean(st && st.service_running);
+  const isPaused = Boolean(st && st.paused);
+  const stateStr = st ? (st.state || (isRunning ? 'running' : 'stopped')) : 'stopped';
+  const sessionStatus = st && st.session ? st.session.status : '';
+
+  if (!isRunning && stateStr === 'stopped') {
+    // 1. STOPPED STATE
+    serviceStatusPill.className = 'service-status-pill status-stopped';
+    statusMain.innerHTML = '<span class="status-dot"></span><span class="status-text">○ 대기 중 (STOPPED)</span>';
+    if (pillSub) pillSub.style.display = 'none';
+
+    btnPrimaryAction.className = 'btn-action btn-start';
+    btnPrimaryAction.textContent = '▶ 번역 시작 (Start)';
+    btnPrimaryAction.disabled = false;
+
+    btnStop.className = 'btn-action btn-stop';
+    btnStop.textContent = '■ 서비스 종료 (Stop)';
+    btnStop.disabled = true;
+
+    document.title = ORIGINAL_TITLE;
+    _serviceRunning = false;
+    _paused = false;
+    _pauseTimerLocal = 0;
+  }
+  else if (stateStr === 'starting') {
+    // 2. STARTING STATE
+    serviceStatusPill.className = 'service-status-pill status-transient';
+    statusMain.innerHTML = '<span class="spinner-icon"></span><span class="status-text">⟳ 번역 연결 중... (Starting…)</span>';
+    if (pillSub) pillSub.style.display = 'none';
+
+    btnPrimaryAction.className = 'btn-action btn-start';
+    btnPrimaryAction.textContent = '⏳ 연결 중… (Starting)';
+    btnPrimaryAction.disabled = true;
+
+    btnStop.className = 'btn-action btn-stop';
+    btnStop.textContent = '■ 서비스 종료 (Stop)';
+    btnStop.disabled = false;
+
+    document.title = ORIGINAL_TITLE;
+    _serviceRunning = true;
+    _paused = false;
+  }
+  else if (stateStr === 'stopping') {
+    // 3. STOPPING STATE
+    serviceStatusPill.className = 'service-status-pill status-transient';
+    statusMain.innerHTML = '<span class="spinner-icon"></span><span class="status-text">⟳ 번역 종료 중... (Stopping…)</span>';
+    if (pillSub) pillSub.style.display = 'none';
+
+    btnPrimaryAction.className = 'btn-action btn-start';
+    btnPrimaryAction.textContent = '⏳ 종료 중…';
+    btnPrimaryAction.disabled = true;
+
+    btnStop.className = 'btn-action btn-stop';
+    btnStop.textContent = '■ 서비스 종료 (Stop)';
+    btnStop.disabled = true;
+
+    document.title = ORIGINAL_TITLE;
+  }
+  else if (stateStr === 'failed' || sessionStatus === 'failed') {
+    // 4. FAILED STATE
+    serviceStatusPill.className = 'service-status-pill status-failed';
+    statusMain.innerHTML = '<span class="status-text">⚠ 번역 연결 오류 (Failed)</span>';
+    if (pillSub) pillSub.style.display = 'none';
+
+    btnPrimaryAction.className = 'btn-action btn-start';
+    btnPrimaryAction.textContent = '▶ 다시 시도 (Retry)';
+    btnPrimaryAction.disabled = false;
+
+    btnStop.className = 'btn-action btn-stop';
+    btnStop.textContent = '■ 서비스 종료 (Stop)';
+    btnStop.disabled = false;
+
+    document.title = ORIGINAL_TITLE;
+    _serviceRunning = false;
+    _paused = false;
+  }
+  else if (isPaused) {
+    // 5. PAUSED STATE (with live pause duration & tab title update)
+    const pauseSec = (st && typeof st.pause_duration_s === 'number' && st.pause_duration_s > 0)
+      ? st.pause_duration_s
+      : _pauseTimerLocal;
+    const timeStr = formatDuration(pauseSec);
+
+    serviceStatusPill.className = 'service-status-pill status-paused';
+    statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">⏸ 일시정지  ${timeStr}</span>`;
+
+    if (pillSub) {
+      pillSub.style.display = 'block';
+      if (pauseSec >= 180) {
+        pillSub.textContent = '⚠ 번역 재시작을 확인하세요';
+        pillSub.style.color = '#92400e';
+        pillSub.style.fontWeight = '700';
+      } else {
+        pillSub.textContent = 'Resume 필요';
+        pillSub.style.color = '#92400e';
+        pillSub.style.fontWeight = '600';
+      }
+    }
+
+    btnPrimaryAction.className = 'btn-action btn-resume';
+    btnPrimaryAction.textContent = '▶ 번역 다시 시작 (Resume)';
+    btnPrimaryAction.disabled = false;
+
+    btnStop.className = 'btn-action btn-stop';
+    btnStop.textContent = '■ 서비스 종료 (Stop)';
+    btnStop.disabled = false;
+
+    document.title = `⏸ [${timeStr}] 일시정지 — ${ORIGINAL_TITLE}`;
+    _serviceRunning = true;
+    _paused = true;
+  }
+  else if (sessionStatus === 'reconnecting' || sessionStatus === 'connecting') {
+    // 6. RECONNECTING / RESETTING STATE
+    serviceStatusPill.className = 'service-status-pill status-transient';
+    statusMain.innerHTML = '<span class="spinner-icon"></span><span class="status-text">⟳ 번역 다시 연결 중... (Reconnecting…)</span>';
+    if (pillSub) pillSub.style.display = 'none';
+
+    btnPrimaryAction.className = 'btn-action btn-pause';
+    btnPrimaryAction.textContent = '⏳ 다시 연결 중…';
+    btnPrimaryAction.disabled = true;
+
+    btnStop.className = 'btn-action btn-stop';
+    btnStop.textContent = '■ 서비스 종료 (Stop)';
+    btnStop.disabled = false;
+
+    document.title = ORIGINAL_TITLE;
+    _serviceRunning = true;
+    _paused = false;
+  }
+  else {
+    // 7. ACTIVE RUNNING STATE
+    serviceStatusPill.className = 'service-status-pill status-running';
+    statusMain.innerHTML = '<span class="status-dot"></span><span class="status-text">● 번역 중 (RUNNING)</span>';
+    if (pillSub) pillSub.style.display = 'none';
+
+    btnPrimaryAction.className = 'btn-action btn-pause';
+    btnPrimaryAction.textContent = '⏸ 번역 일시정지 (Pause)';
+    btnPrimaryAction.disabled = false;
+
+    btnStop.className = 'btn-action btn-stop';
+    btnStop.textContent = '■ 서비스 종료 (Stop)';
+    btnStop.disabled = false;
+
+    document.title = ORIGINAL_TITLE;
+    _serviceRunning = true;
+    _paused = false;
+    _pauseTimerLocal = 0;
+  }
+}
+
+// ── Primary Action (Start / Pause / Resume) ──────────────────────────────────
+btnPrimaryAction.addEventListener('click', async () => {
+  if (!_serviceRunning) {
+    // Start
+    updateControlBar({ state: 'starting', service_running: true });
+    const idx = parseInt(document.getElementById('device-select').value);
+    try {
+      await fetch('/api/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_index: idx })
+      });
+      _serviceRunning = true;
+      _paused = false;
+      _pauseTimerLocal = 0;
+      resetPreview();
+      document.getElementById('stat-runtime').textContent = '—';
+      document.getElementById('stat-cost').textContent = '—';
+      startStatusPoll();
+      connectSSE();
+    } catch (err) {
+      console.error('Failed to start service:', err);
+      _serviceRunning = false;
+      updateControlBar({ state: 'failed', service_running: false });
+    }
+  } else if (_paused) {
+    // Resume
+    btnPrimaryAction.disabled = true;
+    btnPrimaryAction.textContent = '⏳ 재개 중… (Resuming)';
+    try {
+      await fetch('/api/resume', { method: 'POST' });
+      _paused = false;
+      _pauseTimerLocal = 0;
+      updateControlBar({ state: 'running', service_running: true, paused: false });
+    } catch (err) {
+      console.error('Failed to resume service:', err);
+      btnPrimaryAction.disabled = false;
+    }
   } else {
-    await fetch('/api/pause', {method:'POST'});
-    _paused = true; btnPause.textContent = '▶ Resume'; btnPause.className = 'primary';
+    // Pause
+    btnPrimaryAction.disabled = true;
+    btnPrimaryAction.textContent = '⏳ 정지 중… (Pausing)';
+    try {
+      await fetch('/api/pause', { method: 'POST' });
+      _paused = true;
+      _pauseTimerLocal = 0;
+      updateControlBar({ state: 'running', service_running: true, paused: true, pause_duration_s: 0 });
+    } catch (err) {
+      console.error('Failed to pause service:', err);
+      btnPrimaryAction.disabled = false;
+    }
   }
 });
 
 // ── Stop ──────────────────────────────────────────────────────────────────────
 btnStop.addEventListener('click', async () => {
-  btnStop.disabled = true; btnStop.textContent = '⏳ Stopping…';
-  try { await fetch('/api/stop', {method:'POST'}); }
-  finally {
-    btnStart.disabled = false; btnStart.textContent = '▶ Start';
-    btnPause.disabled = true;  btnPause.textContent = '⏸ Pause'; btnPause.className = 'warning';
-    btnStop.disabled = true;   btnStop.textContent = '■ Stop';
+  updateControlBar({ state: 'stopping', service_running: true });
+  try {
+    await fetch('/api/stop', { method: 'POST' });
+  } finally {
+    _serviceRunning = false;
     _paused = false;
-    if (captionEs) { captionEs.close(); captionEs = null; }
+    _pauseTimerLocal = 0;
+    updateControlBar({ state: 'stopped', service_running: false });
+    if (captionEs) {
+      captionEs.close();
+      captionEs = null;
+    }
   }
 });
 
@@ -1383,23 +1771,9 @@ function startStatusPoll() {
     else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'ss-err', '🔴 Translation');
     else ssSet('ss-translation', '', '🔵 Translation');
 
-    if (!st.service_running) {
-      btnStart.disabled = false; btnStart.textContent = '▶ Start';
-      btnPause.disabled = true; btnPause.textContent = '⏸ Pause'; btnPause.className = 'warning';
-      btnStop.disabled = true; btnStop.textContent = '■ Stop';
-      _paused = false;
-    } else {
-      btnStart.disabled = true; btnStart.textContent = '▶ Running';
-      btnStop.disabled = false;
-      btnPause.disabled = false;
-
-      _paused = st.paused;
-      if (_paused) {
-        btnPause.textContent = '▶ Resume'; btnPause.className = 'primary';
-      } else {
-        btnPause.textContent = '⏸ Pause'; btnPause.className = 'warning';
-      }
-    }
+    _serviceRunning = Boolean(st.service_running);
+    _paused = Boolean(st.paused);
+    updateControlBar(st);
   }, 1000);
 }
 
