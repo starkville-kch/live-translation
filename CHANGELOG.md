@@ -5,6 +5,43 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-08-31
+
+### Added
+- **Named Cloudflare Tunnel Support (`app/tunnel.py`, `app/cloudflared_service.py`, `check_skc_live.bat`)**:
+  - Non-destructive background health monitoring and readiness check for named Cloudflare tunnel `live.starkvillekoreanchurch.org`.
+  - Sunday pre-flight script `check_skc_live.bat` verifying local port binding, Windows `cloudflared` service state, and public HTTPS endpoint reachability.
+  - Safe reconnect endpoint `POST /api/reconnect-public`.
+  - Windows elevation handling and status detection in setup wizard.
+- **Public Host Guard Boundary (`app/server.py`, `PublicHostGuardMiddleware`)**:
+  - Default-deny boundary for all requests arriving via the public Cloudflare tunnel hostname.
+  - Strictly limits public access to attendee-facing routes (`/`, `/live`, `/stream`, `/audio-stream`, `/ws/telemetry`, `/logo*`, `/static/*`).
+  - Rewrites public root `/` requests to `/live` so external attendees automatically receive the attendee client interface.
+  - Blocks all administrative endpoints, mutating APIs, and operator pages with `404 Not Found` when accessed over the public domain.
+- **Operator Authentication Boundary (`app/operator_auth.py`, `app/server.py`)**:
+  - Cryptographic session token verification (HMAC-SHA256) with `HttpOnly` and `SameSite=Strict` cookie enforcement.
+  - Environment-driven activation (`SKC_OPERATOR_PASSWORD` set = enabled; unset = disabled with startup/operator warning banner).
+  - Auth endpoints `GET /api/auth/status`, `POST /api/auth/login`, and `POST /api/auth/logout`.
+  - Operator password modal in `app/templates/operator.html`.
+- **Network Telemetry & Real-Time RTT Monitoring (`app/broadcast.py`, `app/templates/attendee.html`, `app/templates/operator.html`)**:
+  - Attendee client ping-pong telemetry over `/ws/telemetry` tracking real-time Round Trip Time (RTT).
+  - Categorization and aggregation of local Wi-Fi vs. public cloud listeners and latency percentiles.
+  - Live public HTTPS status badge and RTT diagnostics displayed in operator console header and QR access card.
+- **Setup Wizard Cloudflare Section (`setup_gui.py`, `SKC_setup.exe`)**:
+  - Added Section 4 for Cloudflare Named Tunnel provisioning, live Windows service detection, and optional service install.
+  - Direct argument arrays used for subprocess execution to prevent shell injection and accidental token logging.
+
+### Changed
+- **Port Standardization (`config.yaml`, `app/config.py`, `app/tunnel.py`, `check_skc_live.bat`)**:
+  - Standardized local runtime on port `8080` to eliminate collisions with port 80 web servers (IIS, Apache, Docker, CAVS-MIP).
+- **Attendee Access & QR Security Pipeline (`app/server.py`, `app/templates/operator.html`)**:
+  - Primary QR code encodes stable public HTTPS attendee URL (`https://live.starkvillekoreanchurch.org/live`) without mutating on tunnel disconnects.
+  - Added direct `Open Attendee Page` and `Copy Public Link` buttons.
+  - Public `/api/qr.png` blocked (404) on public host while remaining accessible without authentication on local operator LAN.
+- **PyInstaller Build Specs (`SKC_translation.spec`, `SKC_setup.spec`)**:
+  - Added hidden imports for `app.tunnel`, `app.cloudflared_service`, `app.operator_auth`, and `app.config`.
+
+
 ## [2.5.0] - 2026-08-30
 
 ### Added

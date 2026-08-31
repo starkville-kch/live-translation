@@ -68,6 +68,7 @@ from pathlib import Path
 from typing import AsyncIterator
 
 import qrcode
+from starlette.types import ASGIApp, Receive, Scope, Send
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
@@ -87,6 +88,15 @@ from app.gemini_session import GeminiSession, SessionStatus
 from app.glossary import GlossaryCorrector
 from app.logger import server_log
 from app.model_resolver import model_resolver, verify_model_compatibility
+from app.operator_auth import (
+    clear_auth_cookie,
+    create_session_token,
+    is_auth_enabled,
+    is_authenticated,
+    log_auth_status_on_startup,
+    set_auth_cookie,
+    verify_password,
+)
 
 # Gemini 3.5 Live Translate pricing (Paid Tier):
 # Audio Input: $0.0053/min (~$0.00008833/sec)
@@ -203,10 +213,6 @@ def _get_public_base_url() -> str:
     hostname = (cfg.get("hostname", "") or "").strip()
     ip_addr = _local_ip()
 
-    public_url = cfg.get("public_url")
-    if public_url:
-        return str(public_url).rstrip("/")
-
     if hostname:
         host = hostname.rstrip(".")
         if not host.lower().endswith(".local"):
@@ -226,111 +232,48 @@ def _get_admin_url() -> str:
     return f"{_get_public_base_url()}/admin"
 
 
-def _get_live_urls() -> tuple[str, str]:
-    base_url = _get_public_base_url()
+def _get_live_urls() -> tuple[str, str, str]:
+    cfg = network_cfg()
+    port = int(cfg.get("port", 8080))
+    hostname = (cfg.get("hostname", "") or "").strip()
     ip_addr = _local_ip()
-    port = int(network_cfg().get("port", 8080))
+
+    if hostname:
+        host = hostname.rstrip(".")
+        if not host.lower().endswith(".local"):
+            host = f"{host}.local"
+    else:
+        host = ip_addr
 
     if port == 80:
-        fallback_base = f"http://{ip_addr}"
+        local_url = f"http://{host}/live"
+        fallback_url = f"http://{ip_addr}/live"
     elif port == 443:
-        fallback_base = f"https://{ip_addr}"
+        local_url = f"https://{host}/live"
+        fallback_url = f"https://{ip_addr}/live"
     else:
-        fallback_base = f"http://{ip_addr}:{port}"
+        local_url = f"http://{host}:{port}/live"
+        fallback_url = f"http://{ip_addr}:{port}/live"
 
-    return base_url, fallback_base
+    pub_url = cfg.get("public_url")
+    if pub_url:
+        public_url = f"{str(pub_url).rstrip('/')}/live"
+    else:
+        public_url = "https://live.starkvillekoreanchurch.org/live"
+
+    return local_url, fallback_url, public_url
 
 
-# def _build_qr(url: str) -> bytes:
-#     from PIL import Image, ImageDraw
-#     from qrcode.image.styledpil import StyledPilImage
-#     from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
-#     from qrcode.image.styles.colormasks import SolidFillColorMask
+_tunnel_logged = False
+_tunnel_failed_logged = False
 
-#     # ERROR_CORRECT_H gives ~30% module recovery — required for a central logo overlay
-#     qr = qrcode.QRCode(
-#         version=None,
-#         error_correction=qrcode.constants.ERROR_CORRECT_H,
-#         box_size=10,
-#         border=2,
-#     )
-#     qr.add_data(url)
-#     qr.make(fit=True)
 
-#     # 1. Base: dark-blue rounded modules on white
-#     img = qr.make_image(
-#         image_factory=StyledPilImage,
-#         module_drawer=RoundedModuleDrawer(),
-#         color_mask=SolidFillColorMask(
-#             back_color=(255, 255, 255),
-#             front_color=(26, 42, 66),   # Presbyterian Navy
-#         ),
-#     ).convert("RGB")
+def _get_active_attendee_share_url() -> tuple[str, str]:
+    local_url, fallback_url, public_url = _get_live_urls()
+    primary_url = public_url if public_url else local_url
+    return primary_url, fallback_url
 
-#     # 2. Pixel-level recolor: replace navy with gold (#b89445) in the three
-#     #    7×7 finder-pattern squares (top-left, top-right, bottom-left).
-#     #    We iterate each pixel in those rectangular areas and swap navy → gold.
-#     NAVY  = (26, 42, 66)
-#     GOLD  = (184, 148, 69)   # #b89445
-#     px    = img.load()
-#     bs    = qr.box_size
-#     border = qr.border
-#     n     = qr.modules_count   # total module count per side
 
-#     finder_origins = [
-#         (0, 0),            # top-left
-#         (n - 7, 0),        # top-right
-#         (0, n - 7),        # bottom-left
-#     ]
-
-#     for col, row in finder_origins:
-#         # pixel bounding box of this 7×7 finder pattern
-#         px1 = (col + border) * bs
-#         py1 = (row + border) * bs
-#         px2 = px1 + 7 * bs
-#         py2 = py1 + 7 * bs
-#         for x in range(px1, px2):
-#             for y in range(py1, py2):
-#                 if px[x, y] == NAVY:
-#                     px[x, y] = GOLD
-
-#     # 3. Embed central PCA logo with a mandatory white quiet-zone circle buffer
-#     logo_path = Path(__file__).parent / "pca-logo-white-small.webp"
-#     if logo_path.exists():
-#         img = img.convert("RGBA")
-#         logo = Image.open(logo_path).convert("RGBA")
-
-#         total_w, total_h = img.size
-#         # Logo must not exceed 20 % of the QR width (per spec)
-#         logo_size = int(total_w * 0.20)
-#         logo = logo.resize((logo_size, logo_size), Image.Resampling.LANCZOS)
-
-#         cx, cy = total_w // 2, total_h // 2
-#         draw = ImageDraw.Draw(img)
-
-#         # Draw a solid white circle as a quiet-zone buffer *before* pasting logo
-#         buf_margin = int(logo_size * 0.20)   # 20 % padding around logo
-#         buf_r      = logo_size // 2 + buf_margin
-#         draw.ellipse(
-#             [cx - buf_r, cy - buf_r, cx + buf_r, cy + buf_r],
-#             fill=(255, 255, 255, 255),
-#         )
-
-#         # Draw navy inner circle so the white logo is visible against it
-#         inner_r = logo_size // 2 + int(logo_size * 0.06)
-#         draw.ellipse(
-#             [cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r],
-#             fill=(26, 42, 66, 255),
-#         )
-
-#         # Paste the logo precisely centred inside the navy circle
-#         logo_x = cx - logo_size // 2
-#         logo_y = cy - logo_size // 2
-#         img.paste(logo, (logo_x, logo_y), logo)
-
-#     buf = io.BytesIO()
-#     img.save(buf, format="PNG")
-#     return buf.getvalue()
 
 def _build_qr(url: str) -> bytes:
     from PIL import Image, ImageDraw
@@ -504,6 +447,17 @@ async def lifespan(app: FastAPI):
     hostname = (cfg.get("hostname", "") or "").strip()
     ip_addr = _local_ip()
 
+    log_auth_status_on_startup()
+
+    if not getattr(app.state, "tunnel_manager", None):
+        from app.tunnel import CloudflareTunnelManager
+        app.state.tunnel_manager = CloudflareTunnelManager(
+            port=port,
+            enabled=cfg.get("enable_tunnel", True),
+            public_url=cfg.get("public_url", ""),
+        )
+        app.state.tunnel_manager.start()
+
     if hostname:
         import threading
         threading.Thread(
@@ -512,9 +466,12 @@ async def lifespan(app: FastAPI):
             daemon=True
         ).start()
 
-    primary_url, fallback_url = _get_live_urls()
-    _qr_png_cache = _build_qr(primary_url)
-    server_log.info("QR code URL: %s", primary_url)
+    primary_url, fallback_url, public_url_cfg = _get_live_urls()
+    active_share_url, _ = _get_active_attendee_share_url()
+    _qr_png_cache = _build_qr(active_share_url)
+    server_log.info("QR code URL: %s", active_share_url)
+    server_log.info("Local URL: %s", primary_url)
+    server_log.info("Public URL: %s", public_url_cfg)
     server_log.info("Fallback URL: %s", fallback_url)
 
     # Launch non-blocking background discovery
@@ -531,13 +488,99 @@ async def lifespan(app: FastAPI):
             broadcaster._push(CaptionEvent(kind="ping"))
 
     asyncio.create_task(_ping())
-    yield
-    _unregister_zeroconf()
-    await session.stop()
-    audio.stop()
+    try:
+        yield
+    finally:
+        tunnel_mgr = getattr(app.state, "tunnel_manager", None)
+        if tunnel_mgr:
+            tunnel_mgr.stop()
+        _unregister_zeroconf()
+        await session.stop()
+        audio.stop()
+
+
+class PublicHostGuardMiddleware:
+    """Strict default-deny boundary for the public attendee hostname."""
+    _HTTP_GET = {"/", "/live", "/stream", "/logo.webp", "/logo.png", "/logo"}
+    _WEBSOCKETS = {"/audio-stream", "/ws/telemetry"}
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    @classmethod
+    def _get_public_hosts(cls) -> set[str]:
+        cfg = network_cfg()
+        pub_url = cfg.get("public_url", "")
+        hosts = {"live.starkvillekoreanchurch.org"}
+        if pub_url:
+            from urllib.parse import urlparse
+            parsed = urlparse(str(pub_url) if "://" in str(pub_url) else f"https://{pub_url}")
+            if parsed.hostname:
+                hosts.add(parsed.hostname.lower())
+        return hosts
+
+    def _is_public_host(self, scope: Scope) -> bool:
+        headers = {key.lower(): value.decode("latin1") for key, value in scope.get("headers", [])}
+        host = headers.get(b"host", "")
+        forwarded_host = headers.get(b"x-forwarded-host", "")
+        forwarded = headers.get(b"forwarded", "")
+        candidates = [host, forwarded_host]
+        candidates.extend(
+            part.split("=", 1)[1]
+            for part in forwarded.split(";")
+            if part.lower().startswith("host=") and "=" in part
+        )
+        public_hosts = self._get_public_hosts()
+        for cand in candidates:
+            if not cand:
+                continue
+            cand_host = cand.split(":", 1)[0].strip().lower()
+            if cand_host in public_hosts:
+                return True
+        return False
+
+    async def _not_found(self, send: Send) -> None:
+        body = b"Not Found"
+        await send({
+            "type": "http.response.start",
+            "status": 404,
+            "headers": [
+                (b"content-type", b"text/plain; charset=utf-8"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if not self._is_public_host(scope):
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if scope["type"] == "http":
+            is_allowed_path = (path in self._HTTP_GET) or path.startswith("/static/")
+            if scope.get("method") != "GET" or not is_allowed_path:
+                await self._not_found(send)
+                return
+            if path == "/":
+                scope = dict(scope)
+                scope["path"] = "/live"
+            await self.app(scope, receive, send)
+            return
+
+        if scope["type"] == "websocket" and path in self._WEBSOCKETS:
+            await self.app(scope, receive, send)
+            return
+
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+            return
+
+        await self._not_found(send)
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(PublicHostGuardMiddleware)
 
 
 # ── SSE caption stream ────────────────────────────────────────────────────────
@@ -591,6 +634,67 @@ async def audio_stream(ws: WebSocket):
         server_log.debug("WebSocket audio client disconnected: %s", e)
     finally:
         broadcaster.remove_audio_client(q)
+
+
+# ── WebSocket telemetry stream ───────────────────────────────────────────────
+@app.websocket("/ws/telemetry")
+async def telemetry_stream(ws: WebSocket):
+    await ws.accept()
+    try:
+        while True:
+            data = await ws.receive_json()
+            msg_type = data.get("type")
+            if msg_type == "latency_ping":
+                await ws.send_json({
+                    "type": "latency_pong",
+                    "client_sent_ms": data.get("client_sent_ms"),
+                })
+            elif msg_type == "latency_report":
+                hostname = str(data.get("hostname", ""))
+                rtt_ms = float(data.get("rtt_ms", 0))
+                client_id = str(data.get("client_id", ""))
+                if rtt_ms > 0:
+                    broadcaster.record_rtt(hostname, rtt_ms, client_id=client_id)
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass
+    except Exception:
+        pass
+
+
+# ── Operator Authentication API ───────────────────────────────────────────────
+@app.get("/api/auth/status")
+async def auth_status(request: Request):
+    return {
+        "auth_enabled": is_auth_enabled(),
+        "authenticated": is_authenticated(request),
+    }
+
+
+@app.post("/api/auth/login")
+async def auth_login(body: dict, response: Response):
+    password = str(body.get("password", "")).strip()
+    if not is_auth_enabled():
+        return {"ok": True, "auth_enabled": False}
+    if verify_password(password):
+        token = create_session_token()
+        set_auth_cookie(response, token)
+        server_log.info("Operator login successful")
+        operator_events.add("user", "Operator logged in")
+        return {"ok": True, "token": token}
+    server_log.warning("Operator login failed: invalid password")
+    return Response(
+        content=json.dumps({"ok": False, "error": "Invalid password"}),
+        status_code=401,
+        media_type="application/json",
+    )
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(response: Response):
+    clear_auth_cookie(response)
+    server_log.info("Operator logged out")
+    operator_events.add("user", "Operator logged out")
+    return {"ok": True}
 
 
 # ── Operator control API ───────────────────────────────────────────────────────
@@ -647,8 +751,21 @@ async def _auto_stop_check():
             silence_start = None
 
 
+def _check_auth(request: Request) -> Response | None:
+    if request is not None and not is_authenticated(request):
+        return Response(
+            content=json.dumps({"ok": False, "error": "Unauthorized"}),
+            status_code=401,
+            media_type="application/json",
+        )
+    return None
+
+
 @app.post("/api/start")
-async def start_service(body: dict = {}, from_auto_restart: bool = False):
+async def start_service(request: Request = None, body: dict = {}, from_auto_restart: bool = False):
+    if not from_auto_restart:
+        if auth_err := _check_auth(request):
+            return auth_err
     global _state, _paused, _service_start_time, _billed_seconds, _pause_start
     global _auto_restart_task, _auto_restart_attempt, _auto_restart_reason
     if not from_auto_restart:
@@ -701,7 +818,9 @@ async def start_service(body: dict = {}, from_auto_restart: bool = False):
 
 
 @app.post("/api/stop")
-async def stop_service():
+async def stop_service(request: Request = None):
+    if auth_err := _check_auth(request):
+        return auth_err
     global _state, _auto_restart_task, _auto_restart_attempt, _auto_restart_reason
     if _auto_restart_task and not _auto_restart_task.done():
         _auto_restart_task.cancel()
@@ -720,6 +839,8 @@ async def stop_service():
 
 @app.post("/api/shutdown")
 async def shutdown_service(request: Request):
+    if auth_err := _check_auth(request):
+        return auth_err
     client_host = request.client.host
     if client_host not in ("127.0.0.1", "localhost", "::1"):
         return Response("Unauthorized", status_code=403)
@@ -741,7 +862,9 @@ async def shutdown_service(request: Request):
 
 
 @app.post("/api/pause")
-async def pause_service():
+async def pause_service(request: Request = None):
+    if auth_err := _check_auth(request):
+        return auth_err
     global _paused, _pause_start
     if _state == ServiceState.RUNNING and not _paused:
         _paused = True
@@ -756,7 +879,9 @@ async def pause_service():
 
 
 @app.post("/api/resume")
-async def resume_service():
+async def resume_service(request: Request = None):
+    if auth_err := _check_auth(request):
+        return auth_err
     global _paused, _pause_start
     if _state == ServiceState.RUNNING and _paused:
         audio.drain()
@@ -772,7 +897,9 @@ async def resume_service():
 
 
 @app.post("/api/config/auto-drift-correction")
-async def set_auto_drift_correction(body: dict):
+async def set_auto_drift_correction(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
     enabled = bool(body.get("enabled", False))
     session.set_auto_drift_correction(enabled)
     session.clear_drift_state()
@@ -808,7 +935,7 @@ async def _auto_stop_on_failure(reason: str):
             await asyncio.sleep(backoff)
             try:
                 device_index = audio_cfg().get("device_index")
-                await start_service({"device_index": device_index}, from_auto_restart=True)
+                await start_service(request=None, body={"device_index": device_index}, from_auto_restart=True)
                 operator_events.add("success", f"Auto-restart succeeded on attempt {attempt}")
                 _auto_restart_attempt = 0
                 _auto_restart_reason = ""
@@ -847,23 +974,61 @@ def _handle_session_state_change(s):
 session._on_state = _handle_session_state_change
 
 
-
 @app.post("/api/config/auto-stop")
-async def set_auto_stop(body: dict):
+async def set_auto_stop(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
     minutes = int(body["minutes"])
     save_auto_stop_timeout(minutes)
     operator_events.add("user", f"Auto-stop set to {minutes} min")
     return {"ok": True, "minutes": minutes}
 
 
+@app.post("/api/reconnect-public")
+async def reconnect_public_link(request: Request = None):
+    if auth_err := _check_auth(request):
+        return auth_err
+    tunnel_mgr = getattr(app.state, "tunnel_manager", None)
+    if tunnel_mgr:
+        tunnel_mgr.reconnect()
+    operator_events.add("user", "Public attendee link check requested")
+    return {"ok": True, "status": tunnel_mgr.status if tunnel_mgr else "unavailable"}
+
+
 @app.get("/api/status")
 async def get_status():
+    global _tunnel_logged, _tunnel_failed_logged
     a = audio.state
     s = session.state
     runtime = _runtime_seconds()
     cost = _billed_seconds * _COST_PER_AUDIO_SEC
-    primary_url, fallback_url = _get_live_urls()
+    local_url, fallback_url, public_url_cfg = _get_live_urls()
+    active_share_url, _ = _get_active_attendee_share_url()
     ch = church_cfg()
+
+    tunnel_mgr = getattr(app.state, "tunnel_manager", None)
+    tunnel_enabled = tunnel_mgr.enabled if tunnel_mgr else False
+    tunnel_ready = tunnel_mgr.is_ready if tunnel_mgr else False
+    tunnel_url = tunnel_mgr.tunnel_url if tunnel_mgr else None
+    public_attendee_url = tunnel_mgr.public_attendee_url if tunnel_mgr else public_url_cfg
+    tunnel_error = tunnel_mgr.error_message if tunnel_mgr else None
+
+    if tunnel_ready and public_attendee_url and not _tunnel_logged:
+        _tunnel_logged = True
+        operator_events.add("success", f"HTTPS Tunnel Ready: {public_attendee_url}")
+        server_log.info("HTTPS Tunnel Ready: %s", public_attendee_url)
+    elif tunnel_error and not _tunnel_failed_logged:
+        _tunnel_failed_logged = True
+        operator_events.add("warning", "Public HTTPS unavailable. Local translation remains ready.")
+
+    telemetry = broadcaster.get_telemetry_stats()
+    gemini_lat = round(s.last_latency_ms, 1)
+    local_rtt = telemetry.get("local_rtt_ms")
+    public_rtt = telemetry.get("public_rtt_ms")
+
+    est_local_delay_s = round((gemini_lat + (local_rtt or 5) + 200) / 1000.0, 2) if gemini_lat > 0 else None
+    est_public_delay_s = round((gemini_lat + (public_rtt or 150) + 200) / 1000.0, 2) if gemini_lat > 0 else None
+
     return {
         "service_running": _state != ServiceState.STOPPED,
         "state": _state.value,
@@ -883,6 +1048,17 @@ async def get_status():
             "name": ch.get("name", "Starkville Korean Church"),
             "short_name": ch.get("short_name", "SKC"),
         },
+        "telemetry": {
+            "gemini_latency_ms": gemini_lat,
+            "local_rtt_ms": local_rtt,
+            "local_samples": telemetry.get("local_samples", 0),
+            "local_listeners": telemetry.get("local_listeners", 0),
+            "public_rtt_ms": public_rtt,
+            "public_samples": telemetry.get("public_samples", 0),
+            "public_listeners": telemetry.get("public_listeners", 0),
+            "est_local_delay_s": est_local_delay_s,
+            "est_public_delay_s": est_public_delay_s,
+        },
         "audio": {
             "status": a.status,
             "level": round(a.level_rms, 1),
@@ -892,21 +1068,35 @@ async def get_status():
             "status": s.status,
             "reconnect_count": s.reconnect_count,
             "last_event": s.last_event,
-            "latency_ms": round(s.last_latency_ms, 1),
+            "latency_ms": gemini_lat,
             "model": model_resolver.active_model,
         },
         "models": model_resolver.get_state(),
-        "attendees": broadcaster.client_count,
+        "attendees": max(
+            telemetry.get("total_listeners") or 0,
+            broadcaster.client_count,
+            broadcaster.audio_client_count,
+        ),
         "captions": broadcaster.caption_count,
-        "live_url_primary": primary_url,
+        "last_caption_ago_s": broadcaster.last_caption_ago_s,
+        "live_url_primary": active_share_url,
+        "live_url_local": local_url,
         "live_url_fallback": fallback_url,
+        "live_url_public": public_attendee_url,
+        "tunnel_enabled": tunnel_enabled,
+        "tunnel_ready": tunnel_ready,
+        "tunnel_url": tunnel_url,
+        "public_attendee_url": public_attendee_url,
+        "tunnel_error": tunnel_error,
+        "local_translation_status": "ready",
+        "public_https_status": (tunnel_mgr.status if tunnel_mgr else ("available" if tunnel_ready else "unavailable")),
     }
 
 
 @app.get("/api/devices")
-async def get_devices(rescan: bool = False):
-    # If audio is actively capturing, bypass full PyAudio re-initialization
-    # to avoid closing or crashing active PortAudio streams
+async def get_devices(request: Request = None, rescan: bool = False):
+    if auth_err := _check_auth(request):
+        return auth_err
     should_reinit = rescan and (_state != ServiceState.RUNNING)
     return [
         {"index": d.index, "name": d.name,
@@ -916,20 +1106,26 @@ async def get_devices(rescan: bool = False):
 
 
 @app.post("/api/devices/select")
-async def select_device(body: dict):
+async def select_device(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
     idx = int(body["index"])
     save_audio_device(idx)
     return {"ok": True, "index": idx}
 
 
 @app.get("/api/models")
-async def get_models_state():
+async def get_models_state(request: Request = None):
+    if auth_err := _check_auth(request):
+        return auth_err
     return model_resolver.get_state()
 
 
 @app.post("/api/models/select")
 @app.post("/api/models/mode")
-async def select_model(body: dict):
+async def select_model(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
     model = str(body.get("model") or body.get("preferred_model") or "").strip()
     if not model:
         return Response(
@@ -950,7 +1146,9 @@ async def select_model(body: dict):
 
 
 @app.post("/api/models/test")
-async def test_model(body: dict):
+async def test_model(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
     model_name = str(body.get("model", "")).strip()
     if not model_name:
         return Response(
@@ -963,7 +1161,9 @@ async def test_model(body: dict):
 
 
 @app.post("/api/models/dismiss-alert")
-async def dismiss_model_alert(body: dict):
+async def dismiss_model_alert(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
     model_name = str(body.get("model", "")).strip()
     if model_name:
         model_resolver.dismiss_alert(model_name)
@@ -971,10 +1171,23 @@ async def dismiss_model_alert(body: dict):
 
 
 @app.get("/api/qr.png")
-async def qr_png():
-    if _qr_png_cache is None:
-        return Response(status_code=503)
-    return Response(content=_qr_png_cache, media_type="image/png")
+async def qr_png(type: str = "primary"):
+    active_url, fallback_url = _get_active_attendee_share_url()
+    local_url, _, public_url = _get_live_urls()
+
+    if type == "local":
+        target_url = local_url
+    elif type == "public":
+        target_url = public_url
+    else:
+        target_url = active_url
+
+    qr_bytes = _build_qr(target_url)
+    return Response(
+        content=qr_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 @app.get("/logo.webp")
@@ -1005,7 +1218,9 @@ async def get_logo():
 
 
 @app.get("/api/events")
-async def get_events(since: int = -1):
+async def get_events(request: Request = None, since: int = -1):
+    if auth_err := _check_auth(request):
+        return auth_err
     return {"events": operator_events.since(since), "latest_id": operator_events.latest_id}
 
 

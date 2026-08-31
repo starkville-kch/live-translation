@@ -79,6 +79,9 @@ hiddenimports += [
     "scipy.signal",
     "scipy.signal._upfirdn",
     "scipy.signal._upfirdn_apply",
+    "app.tunnel",
+    "app.cloudflared_service",
+    "app.operator_auth",
 ]
 
 a = Analysis(

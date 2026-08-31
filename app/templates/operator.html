@@ -985,7 +985,22 @@
     z-index: 100;
     padding: 24px;
   }
-  #earphone-modal.hidden { display: none; }
+  .hidden,
+  #auth-modal.hidden,
+  #earphone-modal.hidden {
+    display: none !important;
+  }
+  #auth-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 27, 45, 0.85);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 24px;
+  }
   .modal-box {
     background: var(--color-warm-white);
     border-radius: 12px;
@@ -1146,9 +1161,34 @@
           🔵 서비스 대기 중
         </span>
       </div>
+      <div class="modern-badge status-blue" id="ss-public">
+        <span class="dot"></span> 공용 HTTPS
+        <span class="ss-tip">
+          <strong>Public HTTPS (외부 접속 링크)</strong><br>
+          🟢 연결됨 — 외부 접속 정상 (QR 코드 사용 가능)<br>
+          🟡 연결 시도 중 / 확인 대기<br>
+          🔴 연결 불가 (로컬 Wi-Fi 번역은 정상 작동)<br>
+          🔵 서비스 비활성화
+        </span>
+      </div>
     </div>
   </div>
 </header>
+
+<div id="auth-modal" class="hidden">
+  <div class="modal-box">
+    <div class="icon">🔑</div>
+    <h2>관리자 암호 인증</h2>
+    <p>
+      통역 시스템 설정을 조작하려면 관리자 암호를 입력해 주세요.
+    </p>
+    <form id="auth-form" onsubmit="event.preventDefault(); submitAuth();">
+      <input type="password" id="auth-password" placeholder="비밀번호 입력 (Password)" style="width: 100%; padding: 10px 14px; font-size: 14px; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 14px; box-sizing: border-box;" autocomplete="current-password" required autofocus>
+      <div id="auth-err-msg" style="color: var(--color-error); font-size: 12px; margin-bottom: 10px; display: none;">암호가 일치하지 않습니다.</div>
+      <button type="submit" id="btn-auth-submit" class="modal-confirm" style="padding: 10px 20px; font-size: 14px;">로그인 (Login)</button>
+    </form>
+  </div>
+</div>
 
 <main>
 
@@ -1399,17 +1439,45 @@
       </div>
     </div>
 
-    <!-- QR code (bottom of right column) -->
+    <!-- 3. 접속 QR 코드 (Attendee Access) -->
     <div class="card">
       <h2 class="card-toggle open" id="qr-toggle">
-        <span class="tooltip tooltip-left">접속 QR 코드
-          <span class="tooltiptext">참석자들이 스마트폰으로 스캔하여 실시간 자막(/live) 페이지에 접속할 수 있는 QR 코드입니다. 슬라이드에 표시하거나 직접 안내해 주세요. (QR code for attendees to scan and open the live caption page on their phones.)</span>
+        <span class="tooltip tooltip-left">접속 QR 코드 (Attendee Access)
+          <span class="tooltiptext">참석자들이 스마트폰으로 스캔하여 실시간 통역(/live)에 접속할 수 있는 공용 HTTPS QR 코드입니다. (Public HTTPS QR code for attendees to access live captions & audio on smartphones.)</span>
         </span>
         <span class="chevron">▼</span>
       </h2>
       <div class="card-body" id="qr-body">
-        <img id="qr-img" src="/api/qr.png" alt="QR code" style="width:100%;height:auto;display:block;margin-bottom:12px;">
-        <div id="qr-urls" style="font-size:12px; word-break:break-all; display:flex; flex-direction:column; gap:8px;"></div>
+        <div style="background:#ffffff; border-radius:8px; padding:12px; border:1px solid var(--color-warm-200); text-align:center; margin-bottom:12px;">
+          <img id="qr-img" src="/api/qr.png" alt="Public HTTPS QR Code" style="width:100%; max-width:220px; height:auto; display:inline-block; border-radius:6px; margin:0 auto 8px auto; border: 1px solid var(--color-gold-500);">
+          <div id="qr-public-status" style="font-size:12px; font-weight:700; color:var(--color-success); margin-bottom:4px;">
+            ✓ Public HTTPS ready
+          </div>
+          <a id="qr-public-url" href="https://live.starkvillekoreanchurch.org/live" target="_blank" style="font-size:12px; font-weight:600; color:var(--color-navy-900); word-break:break-all; text-decoration:underline; display:block;">
+            https://live.starkvillekoreanchurch.org/live
+          </a>
+        </div>
+
+        <!-- Action Buttons: Open & Copy -->
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <a id="btn-open-attendee" href="https://live.starkvillekoreanchurch.org/live" target="_blank" class="primary" style="flex:1; text-align:center; padding:8px 6px; font-size:12px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:4px; border-radius:6px;">
+            🌐 Open Attendee
+          </a>
+          <button id="btn-copy-public-link" class="secondary" type="button" onclick="copyPublicLink()" style="flex:1; padding:8px 6px; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:4px; border-radius:6px; background:#f8fafc; border:1px solid #cbd5e1; color:#334155;">
+            📋 Copy Link
+          </button>
+        </div>
+
+        <!-- Local Fallback Link -->
+        <div style="padding:8px 10px; background:#f8fafc; border-radius:6px; border:1px solid var(--color-warm-200); font-size:11px;">
+          <div style="font-weight:700; color:var(--color-text-secondary); margin-bottom:2px;">🏛️ Local Wi-Fi Fallback:</div>
+          <a id="qr-local-url" href="http://skc.local/live" target="_blank" style="color:var(--color-gold-500); word-break:break-all; text-decoration:underline; font-weight:600;">
+            http://skc.local/live
+          </a>
+          <div id="qr-rtt-stat" style="margin-top:4px; color:var(--color-text-muted);">
+            RTT: —
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1426,6 +1494,25 @@ let userScrolledUp = false;
 let eventPollTimer = null;
 let lastAutoRestartAttempt = 0;
 let lastQrUrl = null;
+
+function copyPublicLink() {
+  const el = document.getElementById('qr-public-url');
+  const url = el ? el.textContent.trim() : 'https://live.starkvillekoreanchurch.org/live';
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('btn-copy-public-link');
+      if (btn) {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '✓ Copied!';
+        setTimeout(() => btn.innerHTML = orig, 2000);
+      }
+    }).catch(() => {
+      prompt('Copy attendee link:', url);
+    });
+  } else {
+    prompt('Copy attendee link:', url);
+  }
+}
 
 function playBeep() {
   try {
@@ -2211,24 +2298,49 @@ function startStatusPoll() {
       }
     }
 
-    // Update QR URLs under the QR code card
-    const urlsEl = document.getElementById('qr-urls');
-    const qrImgEl = document.getElementById('qr-img');
-    const adminLink = st.admin_url || 'http://skc.local/admin';
-    const liveLink = st.live_url_primary || 'http://skc.local';
-    if (urlsEl && st.live_url_primary) {
-      urlsEl.innerHTML = `
-        <div>
-          <div style="font-weight:600; color:var(--color-navy-900); margin-bottom: 2px;">Operator (this page)</div>
-          <a href="${adminLink}" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">${adminLink}</a>
-        </div>
-        <div style="margin-top: 4px;">
-          <div style="font-weight:600; color:var(--color-navy-900); margin-bottom: 2px;">Attendee</div>
-          <a href="${liveLink}" target="_blank" style="color:var(--color-gold-500); text-decoration:underline;">${liveLink}</a>
-        </div>
-      `;
+    // Update Attendee Access Card (Public QR, URLs, and RTT)
+    const publicLiveLink = st.live_url_public || st.public_attendee_url || st.live_url_primary || 'https://live.starkvillekoreanchurch.org/live';
+    const localLiveLink = st.live_url_local || st.live_url_fallback || 'http://skc.local/live';
+
+    const qrPubUrlEl = document.getElementById('qr-public-url');
+    if (qrPubUrlEl) {
+      qrPubUrlEl.textContent = publicLiveLink;
+      qrPubUrlEl.href = publicLiveLink;
     }
 
+    const btnOpenAtt = document.getElementById('btn-open-attendee');
+    if (btnOpenAtt) {
+      btnOpenAtt.href = publicLiveLink;
+    }
+
+    const qrLocUrlEl = document.getElementById('qr-local-url');
+    if (qrLocUrlEl) {
+      qrLocUrlEl.textContent = localLiveLink;
+      qrLocUrlEl.href = localLiveLink;
+    }
+
+    const qrPubStatusEl = document.getElementById('qr-public-status');
+    if (qrPubStatusEl) {
+      if (st.tunnel_ready) {
+        qrPubStatusEl.textContent = '✓ Public HTTPS ready';
+        qrPubStatusEl.style.color = 'var(--color-success)';
+      } else if (st.public_https_status === 'reconnecting') {
+        qrPubStatusEl.textContent = '🟡 Public link connecting…';
+        qrPubStatusEl.style.color = 'var(--color-gold-500)';
+      } else {
+        qrPubStatusEl.textContent = '⚠️ Public link offline (Local Wi-Fi ready)';
+        qrPubStatusEl.style.color = 'var(--color-gold-500)';
+      }
+    }
+
+    const qrRttEl = document.getElementById('qr-rtt-stat');
+    if (qrRttEl && st.telemetry) {
+      const pubRtt = st.telemetry.public_rtt_ms !== undefined ? st.telemetry.public_rtt_ms + 'ms' : '—';
+      const locRtt = st.telemetry.local_rtt_ms !== undefined ? st.telemetry.local_rtt_ms + 'ms' : '—';
+      qrRttEl.textContent = `RTT: Public ${pubRtt} · Local ${locRtt}`;
+    }
+
+    const qrImgEl = document.getElementById('qr-img');
     if (qrImgEl && st.live_url_primary && st.live_url_primary !== lastQrUrl) {
       lastQrUrl = st.live_url_primary;
       qrImgEl.src = '/api/qr.png?v=' + Date.now();
@@ -2258,6 +2370,15 @@ function startStatusPoll() {
     else if (st.state === 'starting' || st.paused) ssSet('ss-translation', 'status-yellow');
     else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'status-red');
     else ssSet('ss-translation', 'status-blue');
+
+    const publicMap = {available:'status-green', reconnecting:'status-yellow', unavailable:'status-red'};
+    if (st.tunnel_ready) {
+      ssSet('ss-public', 'status-green');
+    } else if (st.public_https_status) {
+      ssSet('ss-public', publicMap[st.public_https_status] || 'status-blue');
+    } else {
+      ssSet('ss-public', 'status-blue');
+    }
 
     _serviceRunning = Boolean(st.service_running);
     _paused = Boolean(st.paused);
@@ -2423,6 +2544,68 @@ function updateDriftUI(enabled) {
   }
 }
 
+async function checkAuth() {
+  try {
+    const res = await fetch('/api/auth/status');
+    const data = await res.json();
+    const modal = document.getElementById('auth-modal');
+    if (data.auth_enabled && !data.authenticated) {
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+      }
+      const input = document.getElementById('auth-password');
+      if (input) input.focus();
+    } else {
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+    }
+  } catch {}
+}
+
+async function submitAuth() {
+  const pwdInput = document.getElementById('auth-password');
+  const pwd = pwdInput ? pwdInput.value : '';
+  const errMsg = document.getElementById('auth-err-msg');
+  const btn = document.getElementById('btn-auth-submit');
+  if (btn) btn.disabled = true;
+  if (errMsg) errMsg.style.display = 'none';
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const modal = document.getElementById('auth-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      }
+      if (pwdInput) pwdInput.value = '';
+      loadDevices();
+      pollEvents();
+      startStatusPoll();
+    } else {
+      if (errMsg) {
+        errMsg.textContent = '암호가 일치하지 않습니다.';
+        errMsg.style.display = 'block';
+      }
+    }
+  } catch (e) {
+    if (errMsg) {
+      errMsg.textContent = '로그인 통신 오류가 발생했습니다.';
+      errMsg.style.display = 'block';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+checkAuth();
 loadDevices();
 startStatusPoll();
 startEventPoll();

@@ -582,6 +582,58 @@ function loadChurchInfo() {
 }
 loadChurchInfo();
 connect();
+
+// ── Telemetry ping/pong ───────────────────────────────────────────────────
+(function setupTelemetry() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let clientId = sessionStorage.getItem('skc_cid');
+  if (!clientId) {
+    clientId = 'c_' + Math.random().toString(36).substring(2, 10);
+    sessionStorage.setItem('skc_cid', clientId);
+  }
+  let tWs = null;
+  let timer = null;
+  function initTelemetry() {
+    try {
+      tWs = new WebSocket(proto + '//' + location.host + '/ws/telemetry');
+      tWs.onopen = () => {
+        if (timer) clearInterval(timer);
+        timer = setInterval(() => {
+          if (tWs && tWs.readyState === WebSocket.OPEN) {
+            tWs.send(JSON.stringify({
+              type: 'latency_ping',
+              client_id: clientId,
+              client_sent_ms: performance.now(),
+              hostname: window.location.hostname
+            }));
+          }
+        }, 10000);
+      };
+      tWs.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'latency_pong') {
+            const rtt = performance.now() - msg.client_sent_ms;
+            if (tWs && tWs.readyState === WebSocket.OPEN) {
+              tWs.send(JSON.stringify({
+                type: 'latency_report',
+                client_id: clientId,
+                hostname: window.location.hostname,
+                rtt_ms: Math.round(rtt)
+              }));
+            }
+          }
+        } catch(err) {}
+      };
+      tWs.onclose = () => {
+        if (timer) clearInterval(timer);
+        setTimeout(initTelemetry, 15000);
+      };
+      tWs.onerror = () => {};
+    } catch(err) {}
+  }
+  initTelemetry();
+})();
 </script>
 </body>
 </html>

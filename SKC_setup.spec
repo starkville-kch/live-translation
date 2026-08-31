@@ -35,6 +35,8 @@ hiddenimports += [
     "PIL.Image",
     "PIL.ImageTk",
     "certifi",
+    "app.config",
+    "app.cloudflared_service",
 ]
 
 a = Analysis(

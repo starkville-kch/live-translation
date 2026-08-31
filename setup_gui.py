@@ -26,8 +26,10 @@ from app.config import (
     mask_api_key,
     network_cfg,
     save_church_identity,
+    save_public_url,
     update_gemini_api_key,
 )
+from app.cloudflared_service import CloudflaredService
 
 # Colors matching church branding
 COLOR_NAVY = "#1a2a42"
@@ -60,6 +62,7 @@ class SetupApp:
         self.current_church = church_cfg()
         self.current_network = network_cfg()
         self.configured_model = gemini_model()
+        self.cloudflared_service = CloudflaredService()
 
         # Check existing key in environment / .env
         self.existing_key = ""
@@ -309,6 +312,50 @@ class SetupApp:
         )
         self.btn_test.pack(pady=8)
 
+        # ── Section 4: Cloudflare Named Tunnel (Public HTTPS) ────────────────
+        card_tunnel = tk.Frame(self.scroll_frame, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
+        card_tunnel.pack(fill="x", pady=(0, 12), padx=4)
+
+        p_tunnel = tk.Frame(card_tunnel, bg=COLOR_CARD_BG, padx=16, pady=14)
+        p_tunnel.pack(fill="x")
+
+        ttk.Label(p_tunnel, text="4. CLOUDFLARE NAMED TUNNEL (PUBLIC HTTPS)", style="SectionTitle.TLabel").pack(anchor="w", pady=(0, 8))
+
+        # Public URL
+        f_puburl = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
+        f_puburl.pack(fill="x", pady=4)
+        ttk.Label(f_puburl, text="Public URL:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        self.entry_public_url = ttk.Entry(f_puburl, font=("Segoe UI", 9))
+        self.entry_public_url.insert(0, self.current_network.get("public_url", "https://live.starkvillekoreanchurch.org"))
+        self.entry_public_url.pack(side="left", fill="x", expand=True)
+
+        # Service Status
+        f_svc = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
+        f_svc.pack(fill="x", pady=(8, 4))
+        ttk.Label(f_svc, text="Windows Service:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        self.lbl_svc_status = tk.Label(f_svc, text="Checking...", font=("Segoe UI", 9, "bold"), bg=COLOR_CARD_BG, fg=COLOR_TEXT_MUTED)
+        self.lbl_svc_status.pack(side="left", padx=4)
+        btn_refresh_svc = ttk.Button(f_svc, text="Refresh", width=8, command=self._refresh_service_status)
+        btn_refresh_svc.pack(side="right")
+
+        # Tunnel Token (Optional Setup/Install)
+        f_tok = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
+        f_tok.pack(fill="x", pady=(8, 4))
+        ttk.Label(f_tok, text="Tunnel Token:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        self.entry_tunnel_token = ttk.Entry(f_tok, font=("Consolas", 9), show="•")
+        self.entry_tunnel_token.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        btn_install_svc = ttk.Button(p_tunnel, text="⚙️ Start / Install Cloudflared Service", command=self._start_or_install_service)
+        btn_install_svc.pack(anchor="w", padx=8, pady=(4, 2))
+        ttk.Label(
+            p_tunnel,
+            text="• Token is only needed once to install the Windows service. Runtime translation monitors the service automatically.",
+            style="Muted.TLabel",
+            justify="left",
+        ).pack(anchor="w", padx=8, pady=(0, 2))
+
+        self._refresh_service_status()
+
         # ── Bottom Action Bar ─────────────────────────────────────────────────
         bottom_frame = tk.Frame(self.root, bg=COLOR_BG, pady=12)
         bottom_frame.pack(fill="x", side="bottom", padx=20)
@@ -484,6 +531,69 @@ class SetupApp:
             self.lbl_val_key.configure(text=f"✗ API key authentication failed: {error_msg}", fg=COLOR_ERROR)
             self.lbl_val_model.configure(text=f"• Model ({self.configured_model}): Could not test", fg=COLOR_TEXT_MUTED)
 
+    def _refresh_service_status(self):
+        state = self.cloudflared_service._query()
+        if state == "running":
+            self.lbl_svc_status.configure(text="🟢 RUNNING (Active)", fg=COLOR_SUCCESS)
+        elif state == "stopped":
+            self.lbl_svc_status.configure(text="🟡 STOPPED (Installed, not running)", fg=COLOR_GOLD)
+        elif state == "missing":
+            self.lbl_svc_status.configure(text="⚪ NOT INSTALLED", fg=COLOR_TEXT_MUTED)
+        else:
+            self.lbl_svc_status.configure(text=f"• {state.upper()}", fg=COLOR_TEXT_MUTED)
+
+    def _start_or_install_service(self):
+        state = self.cloudflared_service._query()
+        token = self.entry_tunnel_token.get().strip() if hasattr(self, "entry_tunnel_token") else ""
+
+        if state == "running":
+            messagebox.showinfo("Cloudflared Service", "Cloudflared service is already RUNNING and active.")
+            return
+
+        if state == "stopped":
+            success = self.cloudflared_service._run("start")
+            self._refresh_service_status()
+            if success:
+                messagebox.showinfo("Cloudflared Service", "Cloudflared service started successfully!")
+            else:
+                messagebox.showwarning(
+                    "Service Start Elevation Required",
+                    "Could not start the service directly due to Windows permission constraints.\n\nPlease start it via Windows Services (services.msc) or run 'net start cloudflared' in an Administrator Command Prompt.",
+                )
+            return
+
+        if state == "missing":
+            if not token:
+                messagebox.showwarning(
+                    "Tunnel Token Required",
+                    "To install the Cloudflared Windows service, please paste your Cloudflare Tunnel Token into the field above.\n\nPossession of that token permits the connector to run the tunnel.",
+                )
+                return
+
+            try:
+                import subprocess
+                res = subprocess.run(["cloudflared.exe", "service", "install", token], capture_output=True, text=True, timeout=15)
+                self._refresh_service_status()
+                out_lower = (res.stdout + " " + res.stderr).lower()
+                if res.returncode == 0 or "installed" in out_lower:
+                    if hasattr(self, "entry_tunnel_token"):
+                        self.entry_tunnel_token.delete(0, tk.END)
+                    messagebox.showinfo("Installation Complete", "Cloudflared Windows service installed successfully!\n\nThe token has been provisioned into the Windows service.")
+                elif "access is denied" in out_lower or "permission" in out_lower:
+                    messagebox.showerror(
+                        "Administrator Elevation Required",
+                        "Installing a Windows service requires Administrator privileges.\n\nPlease right-click SKC_setup.exe and select 'Run as administrator', or execute:\n\ncloudflared.exe service install <TOKEN>\n\nin an Administrator Command Prompt.",
+                    )
+                else:
+                    messagebox.showinfo(
+                        "Installation Result",
+                        f"Command output:\n{res.stdout or res.stderr or 'Check services.msc'}\n\nTip: Installing Windows services requires Administrator privileges.",
+                    )
+            except FileNotFoundError:
+                messagebox.showerror("cloudflared.exe Not Found", "cloudflared.exe was not found on your system PATH.\n\nPlease install cloudflared or place cloudflared.exe in the application folder.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to run cloudflared.exe:\n{e}\n\nMake sure you have Administrator privileges.")
+
     def _save_and_finish(self):
         church_name = self.entry_church_name.get().strip() or "Starkville Korean Church"
         short_name = self.entry_short_name.get().strip() or "SKC"
@@ -512,7 +622,7 @@ class SetupApp:
                 messagebox.showerror("Logo Error", f"Failed to copy logo file: {e}")
                 return
 
-        # 2. Save church identity to config.yaml atomically
+        # 2. Save church identity and public URL to config.yaml atomically
         try:
             save_church_identity(
                 name=church_name,
@@ -520,6 +630,9 @@ class SetupApp:
                 hostname=hostname,
                 logo_rel_path=logo_rel_path,
             )
+            public_url = self.entry_public_url.get().strip() if hasattr(self, "entry_public_url") else ""
+            if public_url:
+                save_public_url(public_url=public_url, enable_tunnel=True)
         except Exception as e:
             messagebox.showerror("Configuration Error", f"Failed to save config.yaml: {e}")
             return

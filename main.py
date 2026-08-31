@@ -100,9 +100,20 @@ if __name__ == "__main__":
     cfg = network_cfg()
     port = cfg.get("port", 8000)
 
+    from app.tunnel import CloudflareTunnelManager
+    tunnel_mgr = CloudflareTunnelManager(
+        port=port,
+        enabled=cfg.get("enable_tunnel", True),
+        public_url=cfg.get("public_url", ""),
+    )
+    app.state.tunnel_manager = tunnel_mgr
+    tunnel_mgr.start()
+
     base_url = _base_url(cfg)
     admin_url = _admin_url(cfg)
     live_url = f"{base_url}/live"
+    public_url = cfg.get("public_url")
+    public_live_url = f"{str(public_url).rstrip('/')}/live" if public_url else "https://live.starkvillekoreanchurch.org/live"
     browser_url = f"{_format_url('localhost', port)}/admin"
     fallback_url = _format_url("192.168.0.169", port)
 
@@ -143,14 +154,14 @@ if __name__ == "__main__":
     print("╠" + "═" * W + "╣")
     print(_banner_line("STATUS: Ready"))
     print(_banner_line())
-    print(_banner_line("ATTENDEES — Scan the QR code or open:"))
+    print(_banner_line("ATTENDEES — Public HTTPS (Scan QR or open):"))
+    print(_banner_line(f"  {public_live_url}"))
+    print(_banner_line())
+    print(_banner_line("LOCAL ACCESS — Same church Wi-Fi:"))
     print(_banner_line(f"  {live_url}"))
     print(_banner_line())
     print(_banner_line("OPERATOR CONSOLE — This laptop only:"))
     print(_banner_line(f"  {admin_url}"))
-    print(_banner_line())
-    print(_banner_line("FALLBACK — Same church Wi-Fi:"))
-    print(_banner_line(f"  {fallback_url}"))
     print(_banner_line())
     print(_banner_line("START SERVICE"))
     print(_banner_line("  1. Open the operator console"))

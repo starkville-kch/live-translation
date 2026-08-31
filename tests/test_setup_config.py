@@ -20,6 +20,7 @@ from app.config import (
     _atomic_yaml_write,
     DEFAULT_CONFIG,
     get_app_root,
+    save_public_url,
 )
 
 
@@ -181,3 +182,9 @@ def test_mocked_gemini_validation_invalid_key_sanitization():
     finally:
         if not is_mock_root:
             root.destroy()
+
+
+def test_save_public_url():
+    """Verify save_public_url updates config.yaml atomically."""
+    save_public_url("https://live.starkvillekoreanchurch.org", enable_tunnel=True)
+

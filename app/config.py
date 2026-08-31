@@ -100,9 +100,11 @@ DEFAULT_CONFIG = {
         "max_bytes": 10485760,
     },
     "network": {
+        "enable_tunnel": True,
         "host": "0.0.0.0",
         "hostname": "skc",
-        "port": 80,
+        "port": 8080,
+        "public_url": "https://live.starkvillekoreanchurch.org",
     },
 }
 
@@ -222,6 +224,15 @@ def save_church_identity(
         _cfg["network"] = {}
     _cfg["network"]["hostname"] = hostname.strip()
 
+    _atomic_yaml_write(_CONFIG_PATH, _cfg)
+
+
+def save_public_url(public_url: str, enable_tunnel: bool = True) -> None:
+    """Save public_url and enable_tunnel to config.yaml atomically."""
+    if "network" not in _cfg:
+        _cfg["network"] = {}
+    _cfg["network"]["public_url"] = public_url.strip()
+    _cfg["network"]["enable_tunnel"] = bool(enable_tunnel)
     _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
 
