@@ -1274,18 +1274,60 @@
           </div>
         </div>
 
-        <!-- Row 4: Metrics Dashboard (3x2 Stat Cards) -->
-        <div class="metrics-dashboard-grid">
-          <div class="stat-card-item">
-            <span class="stat-card-label tooltip">지연 (Latency)
-              <span class="tooltiptext">입력된 음성이 번역되어 폰 화면에 표시될 때까지 소요되는 지체 시간입니다. (Time lag from audio capture to caption output.)</span>
+        <!-- Row 4: Network & Attendee Telemetry Panel -->
+        <div class="telemetry-panel" style="margin-top: 12px; padding: 12px 14px; background: #ffffff; border: 1px solid var(--color-warm-200); border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px dashed var(--color-warm-200); padding-bottom: 6px;">
+            <span class="stat-card-label tooltip" style="font-size: 11px; font-weight: 700; color: var(--color-navy-900); text-transform: uppercase; margin-bottom: 0;">
+              Gemini 처리 지연 (Processing Latency)
+              <span class="tooltiptext">입력된 음성이 서버를 거쳐 구글 제미나이 AI로부터 첫 번역 결과가 수신될 때까지의 순수 AI 생성 소요 시간입니다. (Turn-onset latency: time from speech onset to first translated response from Gemini.)</span>
             </span>
-            <span class="stat-card-val" id="stat-latency">—</span>
+            <span id="stat-gemini-lat" style="font-size: 13px; font-weight: 800; color: var(--color-navy-900); font-family: 'Consolas', monospace;">—</span>
           </div>
 
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <!-- Local Wi-Fi -->
+            <div style="padding: 8px 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
+              <div style="font-size: 11px; color: var(--color-navy-900); font-weight: 700; display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span>🏛️ 현장 Wi-Fi (Local)</span>
+                <span id="stat-local-listeners-badge" style="font-size: 10px; font-weight: 700; color: var(--color-gold-600); background: #fef9c3; padding: 1px 5px; border-radius: 3px;">0명</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 3px;">
+                <span style="color: var(--color-text-secondary);">네트워크 RTT:</span>
+                <strong id="stat-local-rtt" style="font-family: 'Consolas', monospace; color: var(--color-navy-900);">—</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 2px;">
+                <span class="tooltip" style="color: var(--color-text-secondary);">추정 전체 지연:
+                  <span class="tooltiptext">AI 번역 시간 + 로컬 Wi-Fi RTT + 재생 버퍼(200ms)를 합산한 추정 실시간 지연입니다. (Estimated End-to-End Delay: Gemini + Local RTT + Playback Buffer.)</span>
+                </span>
+                <strong id="stat-local-est-e2e" style="font-family: 'Consolas', monospace; color: var(--color-success-dark);">—</strong>
+              </div>
+            </div>
+
+            <!-- Public HTTPS -->
+            <div style="padding: 8px 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
+              <div style="font-size: 11px; color: var(--color-navy-900); font-weight: 700; display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span>🔒 공용 HTTPS (Public)</span>
+                <span id="stat-public-listeners-badge" style="font-size: 10px; font-weight: 700; color: var(--color-success-dark); background: var(--color-success-bg); padding: 1px 5px; border-radius: 3px;">0명</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 3px;">
+                <span style="color: var(--color-text-secondary);">네트워크 RTT:</span>
+                <strong id="stat-public-rtt" style="font-family: 'Consolas', monospace; color: var(--color-navy-900);">—</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 2px;">
+                <span class="tooltip" style="color: var(--color-text-secondary);">추정 전체 지연:
+                  <span class="tooltiptext">AI 번역 시간 + Cloudflare 터널 RTT + 재생 버퍼(200ms)를 합산한 추정 실시간 지연입니다. (Estimated End-to-End Delay: Gemini + Public RTT + Playback Buffer.)</span>
+                </span>
+                <strong id="stat-public-est-e2e" style="font-family: 'Consolas', monospace; color: var(--color-success-dark);">—</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 5: Session Metrics Grid -->
+        <div class="metrics-dashboard-grid" style="margin-top: 10px;">
           <div class="stat-card-item">
-            <span class="stat-card-label tooltip">접속자 (Attendees)
-              <span class="tooltiptext">현재 와이파이를 통해 자막(/live) 페이지에 접속해 있는 실시간 기기 수입니다. (Number of devices currently viewing the live captions.)</span>
+            <span class="stat-card-label tooltip">추정 총 접속자
+              <span class="tooltiptext">현재 자막/음성 스트림에 연결된 현장 및 공용 청취 기기의 추정 총합입니다. (Estimated Total Concurrent Listeners.)</span>
             </span>
             <span class="stat-card-val" id="stat-attendees">0</span>
           </div>
@@ -1305,14 +1347,14 @@
           </div>
 
           <div class="stat-card-item">
-            <span class="stat-card-label tooltip">시간 (Runtime)
+            <span class="stat-card-label tooltip">운영 시간 (Runtime)
               <span class="tooltiptext">예배 번역 시스템이 시작된 이후 총 가동 시간입니다. (Total active runtime of the translation server.)</span>
             </span>
             <span class="stat-card-val" id="stat-runtime">—</span>
           </div>
 
-          <div class="stat-card-item">
-            <span class="stat-card-label tooltip">비용 (Est. Cost)
+          <div class="stat-card-item" style="grid-column: span 2;">
+            <span class="stat-card-label tooltip">추정 API 비용 (Est. Cost)
               <span class="tooltiptext">구글 제미나이 Live API의 유료 실시간 가격(분당 $0.0368) 기준으로 계산된 추정 요금입니다. (Estimated API cost based on Gemini Paid Tier.)</span>
             </span>
             <span class="stat-card-val cost" id="stat-cost">—</span>
@@ -2225,13 +2267,56 @@ function startStatusPoll() {
       st.audio.level > 0 ? '레벨: ' + Math.round(st.audio.level) + '%' : '입력 레벨 — 신호 없음';
 
     const auEl = document.getElementById('stat-audio');
-    auEl.textContent = st.audio.status + (st.audio.device ? ' — ' + st.audio.device : '');
-    auEl.className = 'sg-val ' + (AUDIO_COLOR[st.audio.status] || '');
+    if (auEl) {
+      auEl.textContent = st.audio.status + (st.audio.device ? ' — ' + st.audio.device : '');
+      auEl.className = 'sg-val ' + (AUDIO_COLOR[st.audio.status] || '');
+    }
 
-    document.getElementById('stat-latency').textContent = st.session.latency_ms ? st.session.latency_ms + ' ms' : '—';
-    document.getElementById('stat-attendees').textContent = st.attendees;
-    document.getElementById('stat-reconnects').textContent = st.session.reconnect_count;
-    document.getElementById('stat-captions').textContent = st.captions || 0;
+    // ── Telemetry & Latency Breakdown ───────────────────────────────────────
+    if (st.telemetry) {
+      const t = st.telemetry;
+      const gLatEl = document.getElementById('stat-gemini-lat');
+      if (gLatEl) {
+        gLatEl.textContent = t.gemini_latency_ms ? t.gemini_latency_ms + ' ms' : '—';
+      }
+
+      const lRttEl = document.getElementById('stat-local-rtt');
+      if (lRttEl) {
+        lRttEl.textContent = (t.local_rtt_ms !== null && t.local_rtt_ms !== undefined) ? t.local_rtt_ms + ' ms' : '—';
+      }
+
+      const lEstEl = document.getElementById('stat-local-est-e2e');
+      if (lEstEl) {
+        lEstEl.textContent = t.est_local_delay_s ? '~' + t.est_local_delay_s + ' s' : '—';
+      }
+
+      const lListEl = document.getElementById('stat-local-listeners-badge');
+      if (lListEl) {
+        lListEl.textContent = (t.local_listeners || 0) + '명';
+      }
+
+      const pRttEl = document.getElementById('stat-public-rtt');
+      if (pRttEl) {
+        pRttEl.textContent = (t.public_rtt_ms !== null && t.public_rtt_ms !== undefined) ? t.public_rtt_ms + ' ms' : '—';
+      }
+
+      const pEstEl = document.getElementById('stat-public-est-e2e');
+      if (pEstEl) {
+        pEstEl.textContent = t.est_public_delay_s ? '~' + t.est_public_delay_s + ' s' : '—';
+      }
+
+      const pListEl = document.getElementById('stat-public-listeners-badge');
+      if (pListEl) {
+        pListEl.textContent = (t.public_listeners || 0) + '명';
+      }
+    }
+
+    const attEl = document.getElementById('stat-attendees');
+    if (attEl) attEl.textContent = st.attendees !== undefined ? st.attendees : 0;
+    const recEl = document.getElementById('stat-reconnects');
+    if (recEl) recEl.textContent = st.session ? st.session.reconnect_count : 0;
+    const capEl = document.getElementById('stat-captions');
+    if (capEl) capEl.textContent = st.captions || 0;
 
     // ── Update Model in Status Card ──────────────────────────────────────────
     if (st.models) {

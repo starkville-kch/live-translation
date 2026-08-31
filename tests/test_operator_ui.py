@@ -60,8 +60,9 @@ def test_operator_html_structure_and_accessibility():
     assert 'id="btn-test-selected-model"' in html
     assert 'id="drift-manual"' in html
     assert 'id="drift-auto"' in html
-    assert 'id="btn-audio"' in html
-    assert 'id="stat-latency"' in html
+    assert 'id="stat-gemini-lat"' in html
+    assert 'id="stat-local-rtt"' in html
+    assert 'id="stat-public-rtt"' in html
     assert 'id="stat-attendees"' in html
     assert 'id="stat-cost"' in html
 
