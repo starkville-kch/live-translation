@@ -5,6 +5,48 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-08-30
+
+### Added
+- **Vector SVG UI Icon Ecosystem (`app/templates/operator.html`)**:
+  - Replaced legacy text emojis across the operator console with crisp, scalable vector SVG icons: Test Flask (`🧪` ➔ SVG Beaker), Playback Soundwave & Muted Speaker (`🔊`/`🔇` ➔ SVG Soundwave/Mute), Lightning Bolt (`⚡` ➔ SVG Bolt), Power Icon (`⏻` ➔ SVG Power), Stopwatch Timer (`⏱` ➔ SVG Timer), and Audio Refresh (`🔄` ➔ SVG Rescan).
+- **Direct Test Execution Support (`tests/test_operator_ui.py`)**:
+  - Configured `sys.path` resolution and `if __name__ == '__main__': pytest.main([__file__])` so test files can be executed either via standard `pytest` or standalone `python tests/test_operator_ui.py`.
+- **Language Drift Recovery FAQ (`how_to_use.html`)**:
+  - Added dedicated guidance in the Volunteer Help Guide detailing both manual (`Pause` ➔ `Resume`) and automated (`⚡ Auto`) drift recovery methods when AI encounters background noise or hallucinated languages.
+
+### Changed
+- **Operator Dashboard Header Status Strip (`app/templates/operator.html`)**:
+  - Streamlined status pills to 3 core pipeline health badges: `🎙️ 오디오 (Audio)`, `🤖 제미나이 AI (Gemini)`, and `🔤 실시간 자막 (Translation)`.
+  - Removed redundant `Web Server` and `Internet` badges.
+  - Localized all status text and tooltips cleanly in Korean and English.
+  - Adjusted Gemini AI status indicator during pause to reflect standby/paused state (`🟡 제미나이 AI`) instead of "Service not started".
+- **Segmented Control for Auto Drift Correction (`app/templates/operator.html`)**:
+  - Redesigned the auto drift toggle into an intuitive segmented pill (`[ Manual | ⚡ Auto ]`) with dynamic status captions explaining the active recovery behavior.
+- **Auto-Stop Label & Tooltip (`app/templates/operator.html`)**:
+  - Updated auto-stop timer label to `음성 미감지 시 자동종료` with explanatory tooltip: *"설정한 시간 동안 음성(설교/말씀)이 감지되지 않으면 서비스를 자동으로 안전하게 종료합니다."*
+- **Model Row Label (`app/templates/operator.html`)**:
+  - Renamed `모델 (Model)` row to `실시간 통역 모델`.
+- **Help Guide Standalone Alignment (`how_to_use.html`)**:
+  - Purged obsolete Conda/Python terminal commands and manual `config.yaml` edits.
+  - Concealed network port numbers in all URL references (`http://skc.local/admin` for operator, `http://skc.local` for attendees).
+  - Streamlined every-service workflow into 4 straightforward steps for executable distribution (`SKC_Live_Translation.exe`).
+
+## [2.4.0] - 2026-08-30
+
+### Changed
+- **Admin Console Top Navigation Bar (`app/templates/operator.html`)**:
+  - Removed `🔵 Internet` status pill from the header status strip to streamline horizontal spacing, retaining `Audio`, `Gemini`, `Translation`, and `Web Server`.
+- **Status Monitor Card (`상태 모니터 (STATUS)`)**:
+  - Removed the `Gemini 세션` row from the status grid.
+  - Fixed audio input device string truncation (`#stat-audio`) with flexible wrapping (`white-space: normal; word-break: break-word;`) to show full device and host API strings without clipping.
+  - Inlined the `모델` control row so that the model `<select>` dropdown, `🔒 Locked` status badge, and `[Test]` button sit neatly side-by-side in one compact row.
+- **Dynamic Audio Input Device Selection (`app/templates/operator.html`, `app/audio.py`, `app/server.py`)**:
+  - Added a compact refresh button (`🔄`) next to the input device selector.
+  - Implemented `GET /api/devices?rescan=true` to dynamically re-enumerate PortAudio devices on demand, with active stream protection preventing PyAudio re-initialization while a service is capturing.
+  - Added device name caching across refreshes to reliably restore device selection across hardware plug/unplug events even when PortAudio device indices shift.
+  - Added `navigator.mediaDevices.ondevicechange` listener to automatically trigger device list refresh when audio hardware is plugged or unplugged.
+
 ## [2.3.0] - 2026-08-23
 
 ### Added

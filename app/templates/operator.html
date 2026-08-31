@@ -240,23 +240,6 @@
     gap: 12px;
     width: 100%;
   }
-  #btn-audio {
-    width: 100%;
-    padding: 10px 14px;
-    font-size: 14px;
-    font-weight: 600;
-    transition: all 0.2s ease;
-    background: var(--color-warm-white);
-    border-color: var(--color-warm-100);
-  }
-  #btn-audio.on {
-    background: var(--color-success);
-    color: #fff;
-    border-color: var(--color-success);
-  }
-  #btn-audio.on:hover {
-    background: #46855f;
-  }
   #volume-wrapper {
     width: 100%;
     align-items: center;
@@ -308,43 +291,371 @@
   .stat-val.err  { color: var(--color-error); }
   .stat-val.cost { color: var(--color-navy-700); font-weight: bold; }
 
-  /* Compact status grid — 6 columns: label|val × 3
-     Full-width rows span all 6 cols via .sg-wide */
+  /* Device selector row with refresh button */
+  .device-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .device-row select {
+    flex: 1;
+    min-width: 0;
+  }
+  .btn-refresh {
+    flex-shrink: 0;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    border: 1px solid var(--color-warm-100);
+    background: var(--color-warm-white);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .btn-refresh:hover:not(:disabled) {
+    background: var(--color-navy-50);
+    border-color: var(--color-gold-500);
+    color: var(--color-navy-900);
+  }
+  .btn-refresh .icon-refresh {
+    width: 18px;
+    height: 18px;
+    display: block;
+    transition: transform 0.2s ease;
+  }
+  .btn-refresh.spinning .icon-refresh {
+    animation: spin 0.8s linear infinite;
+  }
+  .btn-refresh:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  /* Status card styles */
   .stat-grid {
-    display: grid;
-    grid-template-columns: auto 1fr auto 1fr auto 1fr;
-    gap: 0 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     margin-top: 4px;
   }
-  .sg-label {
-    font-size: 12px;
-    color: var(--color-text-secondary);
-    align-self: center;
-    white-space: nowrap;
+  .stat-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     padding: 4px 0;
     border-bottom: 1px solid var(--color-warm-100);
   }
-  .sg-val {
+  .stat-row-label {
     font-size: 12px;
-    font-weight: 500;
-    color: var(--color-text-primary);
-    align-self: center;
-    padding: 4px 0;
-    border-bottom: 1px solid var(--color-warm-100);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    min-width: 105px;
+    flex-shrink: 0;
+  }
+  .stat-row-content {
+    flex: 1 1 auto;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #stat-audio {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.2;
+    flex: 1 1 auto;
+    min-width: 0;
   }
-  /* Full-width label: col 1, value: cols 2-6 */
-  .sg-label.sg-wide          { grid-column: 1; }
-  .sg-val.sg-wide            { grid-column: 2 / span 5; }
-  /* Remove bottom border on last row */
-  .sg-label.sg-last, .sg-val.sg-last { border-bottom: none; }
-  .sg-val.ok   { color: var(--color-success); }
-  .sg-val.warn { color: var(--color-gold-500); }
-  .sg-val.err  { color: var(--color-error); }
-  .sg-val.cost { color: var(--color-navy-700); font-weight: 700; }
+  /* Model control row inline layout */
+  .model-control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+  .model-control-group select {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    height: 34px;
+    font-size: 12px;
+    padding: 0 8px;
+    border: 1px solid var(--color-warm-200);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--color-navy-900);
+    font-weight: 600;
+  }
+  #stat-model-status {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: #f1f5f9;
+    border: 1px solid var(--color-warm-200);
+    white-space: nowrap;
+    line-height: 1.2;
+  }
+  .model-control-group button#btn-test-selected-model,
+  #btn-test-selected-model {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    max-width: max-content;
+    height: 34px;
+    background: var(--color-navy-50);
+    color: var(--color-navy-900);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 0 10px;
+    border-radius: 6px;
+    border: 1px solid var(--color-warm-200);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+  }
+  #btn-test-selected-model svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2.2;
+    flex-shrink: 0;
+  }
+  #btn-test-selected-model:hover:not(:disabled) {
+    background: var(--color-navy-100);
+    border-color: var(--color-navy-300);
+  }
+
+  /* Modern status strip */
+  .modern-status-strip {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-left: auto;
+    flex-wrap: nowrap;
+  }
+  .modern-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    transition: all 0.2s ease;
+    position: relative;
+    cursor: help;
+    user-select: none;
+  }
+  .modern-badge .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  /* Status states */
+  .status-green {
+    background-color: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+  .status-green .dot {
+    background-color: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+  }
+  .status-yellow {
+    background-color: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+  }
+  .status-yellow .dot {
+    background-color: #f59e0b;
+  }
+  .status-blue {
+    background-color: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+  }
+  .status-blue .dot {
+    background-color: #3b82f6;
+  }
+  .status-red {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+  .status-red .dot {
+    background-color: #ef4444;
+  }
+
+  /* Segmented Pill Control (Auto Recovery) */
+  .segmented-control {
+    display: inline-flex;
+    background-color: #f1f5f9;
+    border-radius: 8px;
+    padding: 3px;
+    border: 1px solid #cbd5e1;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+  .segmented-control input[type="radio"] {
+    display: none;
+  }
+  .seg-label {
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #475569;
+    transition: all 0.2s ease-in-out;
+    margin: 0;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid transparent;
+  }
+  .seg-label svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    stroke-width: 2.2;
+  }
+  .seg-label:hover:not(:checked) {
+    color: #0f172a;
+  }
+  #drift-manual:checked + .seg-label {
+    background-color: #64748b;
+    border-color: #475569;
+    color: #ffffff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+  }
+  #drift-auto:checked + .seg-label {
+    background-color: #10b981;
+    border-color: #059669;
+    color: #ffffff;
+    box-shadow: 0 2px 5px rgba(16, 185, 129, 0.35);
+  }
+  .seg-desc-text {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-left: 4px;
+  }
+
+  /* Audio Playback Monitor Button (Matching Control Bar Aesthetics) */
+  #btn-audio.btn-playback,
+  .btn-playback {
+    width: 100%;
+    height: 42px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 16px;
+    gap: 8px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+  #btn-audio.btn-playback svg,
+  .btn-playback svg {
+    width: 16px;
+    height: 16px;
+    stroke-width: 2.2;
+    flex-shrink: 0;
+  }
+  #btn-audio.btn-playback.off,
+  .btn-playback.off {
+    background-color: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #475569 !important;
+  }
+  #btn-audio.btn-playback.off:hover,
+  .btn-playback.off:hover {
+    background-color: #f1f5f9 !important;
+    border-color: #94a3b8 !important;
+    color: #1e293b !important;
+  }
+  #btn-audio.btn-playback.on,
+  .btn-playback.on {
+    background-color: #10b981 !important;
+    border: 1px solid #059669 !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35) !important;
+  }
+  #btn-audio.btn-playback.on:hover,
+  .btn-playback.on:hover {
+    background-color: #059669 !important;
+  }
+
+  /* Dashboard Metrics 6-stat card layout */
+  .metrics-dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .stat-card-item {
+    background: var(--color-warm-white);
+    border: 1px solid var(--color-warm-100);
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    transition: border-color 0.2s;
+  }
+  .stat-card-item:hover {
+    border-color: var(--color-warm-200);
+  }
+  .stat-card-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stat-card-val {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stat-card-val.cost {
+    color: var(--color-navy-700);
+  }
+  .stat-card-val.ok   { color: var(--color-success); }
+  .stat-card-val.warn { color: var(--color-gold-500); }
+  .stat-card-val.err  { color: var(--color-error); }
 
   /* Tooltips */
   .tooltip {
@@ -738,7 +1049,7 @@
   .ss-warn { background: #713f12; color: #fde68a; }
   .ss-err  { background: #7f1d1d; color: #fca5a5; }
   /* Tooltip for status strip — opens downward since strip is at top of page */
-  .ss-item .ss-tip {
+  .modern-badge .ss-tip {
     visibility: hidden;
     opacity: 0;
     width: 220px;
@@ -760,8 +1071,10 @@
     transition: opacity 0.2s;
     white-space: normal;
     pointer-events: none;
+    text-transform: none;
+    letter-spacing: normal;
   }
-  .ss-item .ss-tip::before {
+  .modern-badge .ss-tip::before {
     content: "";
     position: absolute;
     bottom: 100%;
@@ -771,7 +1084,7 @@
     border-style: solid;
     border-color: transparent transparent var(--color-navy-900) transparent;
   }
-  .ss-item:hover .ss-tip { visibility: visible; opacity: 1; }
+  .modern-badge:hover .ss-tip { visibility: visible; opacity: 1; }
 
   /* Event log expandable entries */
   .log-entry { padding: 3px 0; border-bottom: 1px dotted var(--color-warm-100); }
@@ -802,50 +1115,38 @@
         <span class="kr-title title-short" style="font-family: 'Source Serif 4', Georgia, serif;">SKC (PCA)</span>
       </div>
     </div>
-    <div id="status-strip">
-    <div class="ss-item" id="ss-audio">🔵 Audio
-    <span class="ss-tip">
-      <strong>Audio (USB Mixer)</strong><br>
-      🟢 Signal detected<br>
-      🟡 No signal — mic may be muted or disconnected<br>
-      🔴 Device disconnected — check USB cable<br>
-      🔵 Service not started
-    </span>
-  </div>
-  <div class="ss-item" id="ss-gemini">🔵 Gemini
-    <span class="ss-tip">
-      <strong>Gemini AI Session</strong><br>
-      🟢 Connected and translating<br>
-      🟡 Reconnecting — translation will resume<br>
-      🔴 Failed — check internet or restart<br>
-      🔵 Service not started
-    </span>
-  </div>
-  <div class="ss-item" id="ss-internet">🔵 Internet
-    <span class="ss-tip">
-      <strong>Internet / Google API</strong><br>
-      🟢 Reachable<br>
-      🟡 Reconnecting to Google servers<br>
-      🔴 Cannot reach Google — check Wi-Fi<br>
-      🔵 Service not started
-    </span>
-  </div>
-  <div class="ss-item" id="ss-translation">🔵 Translation
-    <span class="ss-tip">
-      <strong>Translation Pipeline</strong><br>
-      🟢 Live — captions flowing to attendees<br>
-      🟡 Starting up or paused<br>
-      🔴 Error — restart the service<br>
-      🔵 Stopped
-    </span>
-  </div>
-  <div class="ss-item ss-ok">🟢 Web Server
-    <span class="ss-tip">
-      <strong>Web Server</strong><br>
-      🟢 Running — attendees can connect<br>
-      (If you see this page, the server is up)
-    </span>
-  </div>
+    <div id="status-strip" class="modern-status-strip">
+      <div class="modern-badge status-blue" id="ss-audio">
+        <span class="dot"></span> 오디오
+        <span class="ss-tip">
+          <strong>Audio (마이크 / 오디오 입력)</strong><br>
+          🟢 신호 정상 수신 중<br>
+          🟡 무음 또는 신호 없음 (마이크 음소거 확인)<br>
+          🔴 장치 연결 끊김 (USB 케이블 확인)<br>
+          🔵 서비스 대기 중
+        </span>
+      </div>
+      <div class="modern-badge status-blue" id="ss-gemini">
+        <span class="dot"></span> 제미나이 AI
+        <span class="ss-tip">
+          <strong>Gemini AI (통역 세션)</strong><br>
+          🟢 연결됨 — 실시간 통역 진행 중<br>
+          🟡 일시정지 / 재연결 대기 중<br>
+          🔴 연결 실패 (인터넷 확인 또는 재시작)<br>
+          🔵 서비스 대기 중
+        </span>
+      </div>
+      <div class="modern-badge status-blue" id="ss-translation">
+        <span class="dot"></span> 실시간 자막
+        <span class="ss-tip">
+          <strong>Translation (자막 스트림)</strong><br>
+          🟢 송출 중 — 참석자 화면에 자막 표시 중<br>
+          🟡 일시정지 / 시작 준비 중<br>
+          🔴 송출 오류 (서비스 재시작 필요)<br>
+          🔵 서비스 대기 중
+        </span>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -860,12 +1161,19 @@
           <span class="tooltiptext">번역에 사용할 오디오 입력 장치를 선택합니다. USB 믹서 또는 마이크를 선택하세요. 아래 레벨 미터로 신호 수신 여부를 확인할 수 있습니다. (Select the audio input device for translation. Use the level meter below to confirm signal.)</span>
         </span>
       </h2>
-      <select id="device-select"><option>Loading…</option></select>
+      <div class="device-row">
+        <select id="device-select"><option>Loading…</option></select>
+        <button id="btn-refresh-devices" class="btn-refresh" type="button" title="오디오 장치 목록 새로고침 (Refresh Audio Devices)">
+          <svg class="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-1.19"/>
+          </svg>
+        </button>
+      </div>
       <div class="meter-wrap"><div class="meter-bar" id="level-bar"></div></div>
       <div class="meter-label" id="level-label">입력 레벨 (Input level)</div>
     </div>
 
-    <!-- Status (compact grid) -->
+    <!-- Status (compact dashboard card) -->
     <div class="card" id="status-card">
       <h2>
         <span class="tooltip">상태 모니터 (Status)
@@ -873,59 +1181,103 @@
         </span>
       </h2>
       <div class="stat-grid">
-        <!-- Row 1: Audio (full width) -->
-        <span class="sg-label sg-wide tooltip">오디오 입력
-          <span class="tooltiptext">Windows PC의 마이크/오디오 신호가 서버에 정상 수신되고 있는지 나타냅니다. (Indicates if the mic audio is being captured properly.)</span>
-        </span>
-        <span class="sg-val sg-wide" id="stat-audio">—</span>
-        <!-- Row 2: Gemini (full width) -->
-        <span class="sg-label sg-wide tooltip">Gemini 세션
-          <span class="tooltiptext">구글 Gemini Live API 서버와의 실시간 웹소켓 번역 연결 상태입니다. (WebSocket connection status to Google Gemini Live API.)</span>
-        </span>
-        <span class="sg-val sg-wide" id="stat-session">—</span>
-        <!-- Row 3: Model (full width) -->
-        <span class="sg-label sg-wide tooltip">모델
-          <span class="tooltiptext">번역과 음성 스트리밍을 수행하고 있는 구글 제미나이 인공지능 모델입니다. (Gemini model ID performing live translation.)</span>
-        </span>
-        <div class="sg-val sg-wide" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:2px 0;">
-          <select id="model-select" style="flex:1; min-width:180px; font-size:11px; padding:4px 6px; border:1px solid var(--color-warm-200); border-radius:4px; background:#fff; color:var(--color-navy-900); font-weight:600;"></select>
-          <span id="stat-model-status" style="font-size:11px; font-weight:600; color:var(--color-success-700);">✓ Ready</span>
-          <button class="btn btn-sm" id="btn-test-selected-model" style="background:#edf2f7; color:var(--color-navy-900); font-size:10px; padding:3px 7px; border-radius:3px;">Test</button>
+        <!-- Row 1: Audio Input -->
+        <div class="stat-row">
+          <span class="stat-row-label tooltip">오디오 입력
+            <span class="tooltiptext">Windows PC의 마이크/오디오 신호가 서버에 정상 수신되고 있는지 나타냅니다. (Indicates if the mic audio is being captured properly.)</span>
+          </span>
+          <div class="stat-row-content">
+            <span id="stat-audio">—</span>
+          </div>
         </div>
-        <!-- Row 4: Auto Drift Correction (full width) -->
-        <span class="sg-label sg-wide tooltip">자동 언어 오류 복구
-          <span class="tooltiptext">일본어/베트남어 등 잘못된 언어 감지가 계속될 때 세션을 자동으로 초기화합니다. (Automatically resets translation session if sustained language drift occurs.)</span>
-        </span>
-        <div class="sg-val sg-wide" style="display:flex; align-items:center; gap:8px; padding:2px 0;">
-          <button class="btn btn-sm" id="btn-toggle-drift-correction" style="background:#edf2f7; color:var(--color-navy-900); font-size:11px; padding:3px 10px; border-radius:4px; font-weight:700; border:1px solid var(--color-warm-200); cursor:pointer;">OFF</button>
-          <span id="stat-drift-status" style="font-size:11px; color:var(--color-text-muted);">수동 복구 모드 (Pause → Resume)</span>
+
+        <!-- Row 2: Live Translation Model -->
+        <div class="stat-row">
+          <span class="stat-row-label tooltip">실시간 통역 모델
+            <span class="tooltiptext">실시간 음성 번역 및 자막 스트리밍을 수행하는 구글 제미나이 AI 모델입니다. (Google Gemini AI model performing live translation and caption streaming.)</span>
+          </span>
+          <div class="stat-row-content">
+            <div class="model-control-group">
+              <select id="model-select"></select>
+              <span id="stat-model-status">✓ Ready</span>
+              <button class="btn" id="btn-test-selected-model">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2v6a2 2 0 0 0 .5 1.5l5.5 6.5A4 4 0 0 1 17 22H7a4 4 0 0 1-3-6l5.5-6.5A2 2 0 0 0 10 8V2"/>
+                  <path d="M9 2h6"/>
+                  <path d="M6 16h12"/>
+                </svg>
+                Test
+              </button>
+            </div>
+          </div>
         </div>
-        <!-- Row 4: Latency | Attendees | Reconnects -->
-        <span class="sg-label tooltip">지연
-          <span class="tooltiptext">입력된 음성이 번역되어 폰 화면에 표시될 때까지 소요되는 지체 시간입니다. (Time lag from audio capture to caption output.)</span>
-        </span>
-        <span class="sg-val" id="stat-latency">—</span>
-        <span class="sg-label tooltip">접속자
-          <span class="tooltiptext">현재 와이파이를 통해 자막(/live) 페이지에 접속해 있는 실시간 기기 수입니다. (Number of devices currently viewing the live captions.)</span>
-        </span>
-        <span class="sg-val" id="stat-attendees">0</span>
-        <span class="sg-label tooltip">재연결
-          <span class="tooltiptext">Gemini Live API의 연결 불안정 혹은 10분 만료로 인해 재설정된 자동 복구 횟수입니다. (Auto-recovery count due to Gemini API connection drops.)</span>
-        </span>
-        <span class="sg-val" id="stat-reconnects">0</span>
-        <!-- Row 5: Captions | Runtime | Cost -->
-        <span class="sg-label tooltip sg-last">자막 수
-          <span class="tooltiptext">현재 세션 동안 번역되어 전송 완료된 자막 라인의 총 개수입니다. (Total translated caption paragraphs sent in this session.)</span>
-        </span>
-        <span class="sg-val sg-last" id="stat-captions">0</span>
-        <span class="sg-label tooltip sg-last">시간
-          <span class="tooltiptext">예배 번역 시스템이 시작된 이후 총 가동 시간입니다. (Total active runtime of the translation server.)</span>
-        </span>
-        <span class="sg-val sg-last" id="stat-runtime">—</span>
-        <span class="sg-label tooltip sg-last">비용
-          <span class="tooltiptext">구글 제미나이 Live API의 유료 실시간 가격(분당 $0.0368) 기준으로 계산된 추정 요금입니다. (Estimated API cost based on Gemini Paid Tier.)</span>
-        </span>
-        <span class="sg-val cost sg-last" id="stat-cost">—</span>
+
+        <!-- Row 3: Auto Drift Recovery (Segmented Pill Control) -->
+        <div class="stat-row auto-recovery-row">
+          <span class="stat-row-label tooltip">자동 언어 오류 복구
+            <span class="tooltiptext">일본어/베트남어 등 잘못된 언어 감지가 계속될 때 세션을 자동으로 초기화합니다. (Automatically resets translation session if sustained language drift occurs.)</span>
+          </span>
+          <div class="stat-row-content">
+            <div class="segmented-control" id="drift-recovery-toggle">
+              <input type="radio" id="drift-manual" name="drift-recovery" value="manual" checked>
+              <label for="drift-manual" class="seg-label manual">Manual</label>
+              
+              <input type="radio" id="drift-auto" name="drift-recovery" value="auto">
+              <label for="drift-auto" class="seg-label auto">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                Auto
+              </label>
+            </div>
+            <span class="seg-desc-text" id="stat-drift-status">잘못된 언어 감지 시 수동 교정 (Pause → Resume)</span>
+          </div>
+        </div>
+
+        <!-- Row 4: Metrics Dashboard (3x2 Stat Cards) -->
+        <div class="metrics-dashboard-grid">
+          <div class="stat-card-item">
+            <span class="stat-card-label tooltip">지연 (Latency)
+              <span class="tooltiptext">입력된 음성이 번역되어 폰 화면에 표시될 때까지 소요되는 지체 시간입니다. (Time lag from audio capture to caption output.)</span>
+            </span>
+            <span class="stat-card-val" id="stat-latency">—</span>
+          </div>
+
+          <div class="stat-card-item">
+            <span class="stat-card-label tooltip">접속자 (Attendees)
+              <span class="tooltiptext">현재 와이파이를 통해 자막(/live) 페이지에 접속해 있는 실시간 기기 수입니다. (Number of devices currently viewing the live captions.)</span>
+            </span>
+            <span class="stat-card-val" id="stat-attendees">0</span>
+          </div>
+
+          <div class="stat-card-item">
+            <span class="stat-card-label tooltip">재연결 (Reconnects)
+              <span class="tooltiptext">Gemini Live API의 연결 불안정 혹은 10분 만료로 인해 재설정된 자동 복구 횟수입니다. (Auto-recovery count due to Gemini API connection drops.)</span>
+            </span>
+            <span class="stat-card-val" id="stat-reconnects">0</span>
+          </div>
+
+          <div class="stat-card-item">
+            <span class="stat-card-label tooltip">자막 수 (Captions)
+              <span class="tooltiptext">현재 세션 동안 번역되어 전송 완료된 자막 라인의 총 개수입니다. (Total translated caption paragraphs sent in this session.)</span>
+            </span>
+            <span class="stat-card-val" id="stat-captions">0</span>
+          </div>
+
+          <div class="stat-card-item">
+            <span class="stat-card-label tooltip">시간 (Runtime)
+              <span class="tooltiptext">예배 번역 시스템이 시작된 이후 총 가동 시간입니다. (Total active runtime of the translation server.)</span>
+            </span>
+            <span class="stat-card-val" id="stat-runtime">—</span>
+          </div>
+
+          <div class="stat-card-item">
+            <span class="stat-card-label tooltip">비용 (Est. Cost)
+              <span class="tooltiptext">구글 제미나이 Live API의 유료 실시간 가격(분당 $0.0368) 기준으로 계산된 추정 요금입니다. (Estimated API cost based on Gemini Paid Tier.)</span>
+            </span>
+            <span class="stat-card-val cost" id="stat-cost">—</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -963,21 +1315,32 @@
 
     <!-- Auto-Stop + Exit System side by side -->
     <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
-      <span class="tooltip" style="flex-shrink: 0; font-size: 18px; cursor: default; line-height: 1;">⏱
-        <span class="tooltiptext" style="left: 0; margin-left: 0;">자동 종료 대기 시간 — 설정한 시간 동안 오디오가 없으면 자동으로 서비스를 종료합니다. (Auto-Stop: service stops automatically after this silence duration.)</span>
-      </span>
-      <select id="auto-stop-select" style="font-size: 12px; padding: 7px 8px; flex: 1; min-width: 0;">
-        <option value="0">자동종료 안 함 (Off)</option>
-        <option value="1">1분 (1 Min) — 테스트용</option>
-        <option value="5">5분 (5 Min)</option>
-        <option value="10">10분 (10 Min)</option>
-        <option value="15">15분 (15 Min)</option>
-        <option value="20">20분 (20 Min)</option>
-        <option value="30">30분 (30 Min)</option>
-      </select>
-      <span class="tooltip" style="flex:1;">
-        <button id="btn-shutdown" class="secondary" style="width:100%; border-color: var(--color-error); color: var(--color-error); font-weight: 600; padding: 7px 12px;">
-          🔴 Exit System
+      <div style="flex: 1.3; display: flex; align-items: center; gap: 6px; background: #f8fafc; border: 1px solid var(--color-warm-200); border-radius: 6px; padding: 4px 8px;">
+        <span class="tooltip" style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--color-navy-900); white-space: nowrap; cursor: help;">
+          <svg style="width: 14px; height: 14px; stroke-width: 2.2;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          음성 미감지 시 자동종료
+          <span class="tooltiptext" style="left: 0; margin-left: 0;">설정한 시간 동안 음성(설교/말씀)이 감지되지 않으면 서비스를 자동으로 안전하게 종료합니다. (Auto-Stop: service stops automatically after this silence duration.)</span>
+        </span>
+        <select id="auto-stop-select" style="font-size: 11px; font-weight: 600; padding: 4px 6px; flex: 1; min-width: 0; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff;">
+          <option value="0">사용 안 함 (Off)</option>
+          <option value="1">1분 (1 Min) — 테스트용</option>
+          <option value="5">5분 (5 Min)</option>
+          <option value="10" selected>10분 (10 Min)</option>
+          <option value="15">15분 (15 Min)</option>
+          <option value="20">20분 (20 Min)</option>
+          <option value="30">30분 (30 Min)</option>
+        </select>
+      </div>
+      <span class="tooltip" style="flex: 0.9;">
+        <button id="btn-shutdown" class="secondary" style="width:100%; border-color: var(--color-error); color: var(--color-error); font-weight: 700; font-size: 12px; padding: 7px 12px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 5px;">
+          <svg style="width: 13px; height: 13px; stroke-width: 2.2;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+            <line x1="12" y1="2" x2="12" y2="12"/>
+          </svg>
+          Exit System
         </button>
         <span class="tooltiptext" style="left:auto; right:0; margin-left:0;">서버 프로그램 전체를 종료합니다. 다시 사용하려면 바탕화면의 시작 파일을 실행해야 합니다. (Exits the server program entirely. Restart via the desktop launcher to use again.)</span>
       </span>
@@ -1006,7 +1369,14 @@
       </h2>
       <div class="card-body">
         <div class="audio-row">
-          <button id="btn-audio" class="secondary">🔇 Playback Muted</button>
+          <button type="button" id="btn-audio" class="btn-playback off">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <line x1="23" y1="9" x2="17" y2="15"/>
+              <line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+            <span class="text">Playback Muted</span>
+          </button>
           <div id="volume-wrapper" style="display: none; align-items: center; gap: 8px; margin-top: 10px; width: 100%;">
             <span style="font-size: 13px;">🔊</span>
             <input id="vol-slider" type="range" min="0" max="1" step="0.05" value="0.8" style="flex: 1; accent-color: var(--color-gold-500);">
@@ -1217,8 +1587,15 @@ function enableAudio() {
   ensureAudioCtx();
   audioEnabled = true;
   connectAudio();
-  btnAudio.textContent = '🔊 Playback Enabled';
+  btnAudio.classList.remove('off');
   btnAudio.classList.add('on');
+  btnAudio.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+    </svg>
+    <span class="text">Playback Enabled</span>
+  `;
   volWrapper.style.display = 'flex';
   modal.classList.add('hidden');
   updateVolLabel();
@@ -1235,8 +1612,16 @@ btnAudio.addEventListener('click', () => {
   if (audioEnabled) {
     audioEnabled = false;
     disconnectAudio();
-    btnAudio.textContent = '🔇 Playback Muted';
     btnAudio.classList.remove('on');
+    btnAudio.classList.add('off');
+    btnAudio.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <line x1="23" y1="9" x2="17" y2="15"/>
+        <line x1="17" y1="9" x2="23" y2="15"/>
+      </svg>
+      <span class="text">Playback Muted</span>
+    `;
     volWrapper.style.display = 'none';
   } else {
     modal.classList.remove('hidden');
@@ -1249,23 +1634,120 @@ volSlider.addEventListener('input', () => {
 });
 
 // ── Device list ──────────────────────────────────────────────────────────────
-async function loadDevices() {
-  const devices = await fetch('/api/devices').then(r => r.json());
-  const status = await fetch('/api/status').then(r => r.json());
+let _cachedDeviceName = "";
+let _isRefreshingDevices = false;
+
+async function loadDevices(options = {}) {
+  const { rescan = false, silent = false } = options;
   const sel = document.getElementById('device-select');
-  sel.innerHTML = devices.map(d => `<option value="${d.index}">[${d.index}] ${d.name}</option>`).join('');
-  if (status && status.device_index !== undefined) {
-    sel.value = status.device_index;
+  const btnRefresh = document.getElementById('btn-refresh-devices');
+
+  if (rescan && btnRefresh) {
+    btnRefresh.classList.add('spinning');
+    btnRefresh.disabled = true;
   }
-  // Hook up change event to persist select index immediately
-  sel.addEventListener('change', async () => {
-    const idx = parseInt(sel.value);
-    await fetch('/api/devices/select', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ index: idx })
-    });
+
+  // 1. Cache current selected device name (or text) before clearing
+  if (sel.options && sel.selectedIndex >= 0 && sel.options[sel.selectedIndex]) {
+    const currentOpt = sel.options[sel.selectedIndex];
+    // Extract name after "[index] " prefix if present
+    const txt = currentOpt.textContent || "";
+    const match = txt.match(/^\[\d+\]\s*(.*)$/);
+    _cachedDeviceName = match ? match[1] : txt;
+  }
+
+  try {
+    const url = rescan ? '/api/devices?rescan=true' : '/api/devices';
+    const [devices, status] = await Promise.all([
+      fetch(url).then(r => r.json()).catch(() => []),
+      fetch('/api/status').then(r => r.json()).catch(() => null)
+    ]);
+
+    if (!Array.isArray(devices) || devices.length === 0) {
+      sel.innerHTML = '<option value="">장치 없음 (No devices found)</option>';
+      return;
+    }
+
+    sel.innerHTML = devices.map(d => `<option value="${d.index}" data-name="${encodeURIComponent(d.name)}">[${d.index}] ${d.name}</option>`).join('');
+
+    // 2. Select device: Match by cached device name first, then server status device_index, fallback to first
+    let matchedIndex = -1;
+    if (_cachedDeviceName) {
+      const matchOpt = Array.from(sel.options).find(opt => {
+        const dName = decodeURIComponent(opt.getAttribute('data-name') || '');
+        return dName && (dName === _cachedDeviceName || dName.includes(_cachedDeviceName) || _cachedDeviceName.includes(dName));
+      });
+      if (matchOpt) {
+        matchedIndex = parseInt(matchOpt.value);
+      }
+    }
+
+    if (matchedIndex === -1 && status && status.device_index !== undefined) {
+      const optExists = Array.from(sel.options).some(opt => parseInt(opt.value) === status.device_index);
+      if (optExists) matchedIndex = status.device_index;
+    }
+
+    if (matchedIndex !== -1) {
+      sel.value = matchedIndex;
+    } else if (sel.options.length > 0) {
+      sel.selectedIndex = 0;
+      // If the previously selected device disappeared and service was stopped, auto-select first
+      const newIdx = parseInt(sel.value);
+      if (!isNaN(newIdx)) {
+        fetch('/api/devices/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ index: newIdx })
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load audio devices:', err);
+  } finally {
+    if (btnRefresh) {
+      setTimeout(() => {
+        btnRefresh.classList.remove('spinning');
+        btnRefresh.disabled = false;
+      }, 400);
+    }
+  }
+}
+
+// Hook up change event to persist select index immediately
+const selDevice = document.getElementById('device-select');
+selDevice.addEventListener('change', async () => {
+  const idx = parseInt(selDevice.value);
+  if (selDevice.options[selDevice.selectedIndex]) {
+    const txt = selDevice.options[selDevice.selectedIndex].textContent || "";
+    const match = txt.match(/^\[\d+\]\s*(.*)$/);
+    _cachedDeviceName = match ? match[1] : txt;
+  }
+  await fetch('/api/devices/select', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ index: idx })
+  }).catch(() => {});
+});
+
+// Hook up manual refresh button
+const btnRefreshDevices = document.getElementById('btn-refresh-devices');
+if (btnRefreshDevices) {
+  btnRefreshDevices.addEventListener('click', () => {
+    loadDevices({ rescan: true });
   });
+}
+
+// Automatic rescan when audio hardware is plugged in or unplugged
+if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+  if (typeof navigator.mediaDevices.addEventListener === 'function') {
+    navigator.mediaDevices.addEventListener('devicechange', () => {
+      loadDevices({ rescan: true, silent: true });
+    });
+  } else {
+    navigator.mediaDevices.ondevicechange = () => {
+      loadDevices({ rescan: true, silent: true });
+    };
+  }
 }
 
 const ORIGINAL_TITLE = document.title || "SKC Live Translation — Operator Console";
@@ -1607,7 +2089,20 @@ function startStatusPoll() {
   if (polling) clearInterval(polling);
   polling = setInterval(async () => {
     let st;
-    try { st = await fetch('/api/status').then(r => r.json()); } catch { return; }
+    try {
+      const res = await fetch('/api/status');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      st = await res.json();
+    } catch (err) {
+      // Backend terminal was closed or server process crashed
+      const ssAudio = document.getElementById('ss-audio');
+      if (ssAudio) ssAudio.className = 'modern-badge status-red';
+      const ssGemini = document.getElementById('ss-gemini');
+      if (ssGemini) ssGemini.className = 'modern-badge status-red';
+      const ssTrans = document.getElementById('ss-translation');
+      if (ssTrans) ssTrans.className = 'modern-badge status-red';
+      return;
+    }
 
     if (st.auto_restart_attempt !== undefined && st.auto_restart_attempt > 0) {
       if (st.auto_restart_attempt !== lastAutoRestartAttempt) {
@@ -1646,10 +2141,6 @@ function startStatusPoll() {
     auEl.textContent = st.audio.status + (st.audio.device ? ' — ' + st.audio.device : '');
     auEl.className = 'sg-val ' + (AUDIO_COLOR[st.audio.status] || '');
 
-    const seEl = document.getElementById('stat-session');
-    seEl.textContent = st.session.status + (st.session.last_event ? ' (' + st.session.last_event + ')' : '');
-    seEl.className = 'sg-val ' + (SESSION_COLOR[st.session.status] || '');
-
     document.getElementById('stat-latency').textContent = st.session.latency_ms ? st.session.latency_ms + ' ms' : '—';
     document.getElementById('stat-attendees').textContent = st.attendees;
     document.getElementById('stat-reconnects').textContent = st.session.reconnect_count;
@@ -1665,10 +2156,10 @@ function startStatusPoll() {
         statusEl.textContent = '⚠ Fallback';
         statusEl.style.color = '#c53030';
         statusEl.title = m.fallback_reason || 'Preferred model failed';
-      } else if (m.is_locked) {
-        statusEl.textContent = '🔒 Locked';
-        statusEl.style.color = 'var(--color-navy-900)';
-        statusEl.title = 'Model is fixed for the running service session';
+      } else if (st.service_running && m.is_locked) {
+        statusEl.textContent = '🟢 Active';
+        statusEl.style.color = 'var(--color-success-700)';
+        statusEl.title = 'Model is actively in use for live translation';
       } else if (!isTestingModel) {
         statusEl.textContent = '✓ Ready';
         statusEl.style.color = 'var(--color-success-700)';
@@ -1702,8 +2193,8 @@ function startStatusPoll() {
           if (name === m.preferred_model || name === m.active_model) opt.selected = true;
           sel.appendChild(opt);
         });
-      } else if (!sel.matches(':focus')) {
-        // Sync selected value
+      } else if (document.activeElement !== sel) {
+        // Sync selected value only when user is not actively clicking/interacting with it
         const targetVal = m.preferred_model || m.active_model;
         if (targetVal && sel.value !== targetVal) {
           sel.value = targetVal;
@@ -1748,28 +2239,25 @@ function startStatusPoll() {
       document.getElementById('stat-cost').textContent = '$' + st.cost_usd.toFixed(4);
     }
 
-    // ── Status strip ──────────────────────────────────────────────────────────
-    function ssSet(id, cls, label) {
+    // ── Status strip (Modern soft-tint badges with CSS dots) ─────────────────
+    function ssSet(id, statusClass) {
       const el = document.getElementById(id);
-      el.className = 'ss-item ' + cls;
-      // Update only the leading text node — leave the .ss-tip child span intact
-      for (const node of el.childNodes) {
-        if (node.nodeType === Node.TEXT_NODE) { node.textContent = label + ' '; return; }
+      if (el) {
+        el.className = 'modern-badge ' + statusClass;
       }
-      el.insertBefore(document.createTextNode(label + ' '), el.firstChild);
     }
-    const audioMap = {connected:['ss-ok','🟢 Audio'], no_signal:['ss-warn','🟡 Audio'], disconnected:['ss-err','🔴 Audio'], stopped:['','🔵 Audio']};
-    ssSet('ss-audio', ...(audioMap[st.audio.status] || ['','🔵 Audio']));
-    const geminiMap = {connected:['ss-ok','🟢 Gemini'], reconnecting:['ss-warn','🟡 Gemini'], connecting:['ss-warn','🟡 Gemini'], failed:['ss-err','🔴 Gemini'], stopped:['','🔵 Gemini']};
-    ssSet('ss-gemini', ...(geminiMap[st.session.status] || ['','🔵 Gemini']));
-    if (st.session.status === 'connected') ssSet('ss-internet', 'ss-ok', '🟢 Internet');
-    else if (st.session.status === 'reconnecting') ssSet('ss-internet', 'ss-warn', '🟡 Internet');
-    else if (st.session.status === 'failed') ssSet('ss-internet', 'ss-err', '🔴 Internet');
-    else ssSet('ss-internet', '', '🔵 Internet');
-    if (st.state === 'running' && st.session.status === 'connected') ssSet('ss-translation', 'ss-ok', '🟢 Translation');
-    else if (st.state === 'starting' || st.paused) ssSet('ss-translation', 'ss-warn', '🟡 Translation');
-    else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'ss-err', '🔴 Translation');
-    else ssSet('ss-translation', '', '🔵 Translation');
+    const audioMap = {connected:'status-green', no_signal:'status-yellow', disconnected:'status-red', stopped:'status-blue'};
+    ssSet('ss-audio', audioMap[st.audio.status] || 'status-blue');
+    const geminiMap = {connected:'status-green', reconnecting:'status-yellow', connecting:'status-yellow', failed:'status-red', stopped:'status-blue'};
+    if (st.paused) {
+      ssSet('ss-gemini', 'status-yellow');
+    } else {
+      ssSet('ss-gemini', geminiMap[st.session.status] || 'status-blue');
+    }
+    if (st.state === 'running' && st.session.status === 'connected' && !st.paused) ssSet('ss-translation', 'status-green');
+    else if (st.state === 'starting' || st.paused) ssSet('ss-translation', 'status-yellow');
+    else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'status-red');
+    else ssSet('ss-translation', 'status-blue');
 
     _serviceRunning = Boolean(st.service_running);
     _paused = Boolean(st.paused);
@@ -1891,39 +2379,47 @@ document.getElementById('btn-test-selected-model').addEventListener('click', asy
   }
 });
 
-// ── Auto Drift Correction Handlers ──────────────────────────────────────────
+// ── Auto Drift Recovery Handlers (Segmented Pill) ───────────────────────────
 let autoDriftCorrectionEnabled = false;
-const btnToggleDrift = document.getElementById('btn-toggle-drift-correction');
-const statDriftStatus = document.getElementById('stat-drift-status');
+const radioDriftManual = document.getElementById('drift-manual');
+const radioDriftAuto = document.getElementById('drift-auto');
 
-btnToggleDrift.addEventListener('click', async () => {
-  const nextState = !autoDriftCorrectionEnabled;
+async function setDriftCorrection(enabled) {
   try {
     await fetch('/api/config/auto-drift-correction', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: nextState })
+      body: JSON.stringify({ enabled: enabled })
     });
-    autoDriftCorrectionEnabled = nextState;
+    autoDriftCorrectionEnabled = enabled;
     updateDriftUI(autoDriftCorrectionEnabled);
   } catch (err) {
-    console.error('Failed to toggle auto drift correction:', err);
+    console.error('Failed to update drift correction:', err);
+    updateDriftUI(autoDriftCorrectionEnabled);
   }
-});
+}
+
+if (radioDriftManual && radioDriftAuto) {
+  radioDriftManual.addEventListener('change', () => setDriftCorrection(false));
+  radioDriftAuto.addEventListener('change', () => setDriftCorrection(true));
+}
 
 function updateDriftUI(enabled) {
+  const descEl = document.getElementById('stat-drift-status');
   if (enabled) {
-    btnToggleDrift.textContent = 'ON';
-    btnToggleDrift.style.background = 'var(--color-success)';
-    btnToggleDrift.style.color = '#fff';
-    btnToggleDrift.style.borderColor = 'var(--color-success)';
-    statDriftStatus.textContent = '자동 복구 활성화됨 (연속 오류 시 세션 초기화)';
+    if (radioDriftAuto) radioDriftAuto.checked = true;
+    if (descEl) {
+      descEl.textContent = '잘못된 언어 감지 시 세션 자동 교정';
+      descEl.style.color = 'var(--color-success-700)';
+      descEl.style.fontWeight = '600';
+    }
   } else {
-    btnToggleDrift.textContent = 'OFF';
-    btnToggleDrift.style.background = '#edf2f7';
-    btnToggleDrift.style.color = 'var(--color-navy-900)';
-    btnToggleDrift.style.borderColor = 'var(--color-warm-200)';
-    statDriftStatus.textContent = '수동 복구 모드 (Pause → Resume)';
+    if (radioDriftManual) radioDriftManual.checked = true;
+    if (descEl) {
+      descEl.textContent = '잘못된 언어 감지 시 수동 교정 (Pause → Resume)';
+      descEl.style.color = 'var(--color-text-muted)';
+      descEl.style.fontWeight = '400';
+    }
   }
 }
 

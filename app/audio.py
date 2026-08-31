@@ -97,27 +97,160 @@ class AudioState:
     last_update: float = field(default_factory=time.monotonic)
 
 
+import json
+import subprocess
+import sys
+
 _pa = pyaudio.PyAudio()
 
 
-def list_input_devices() -> list[DeviceInfo]:
+def reinit_pyaudio() -> None:
+    """Terminate and re-create the global PyAudio instance to refresh device list."""
+    global _pa
+    try:
+        _pa.terminate()
+    except Exception:
+        pass
+    _pa = pyaudio.PyAudio()
+def _clean_device_name(raw_name: str) -> str:
+    """Strip trailing host API annotations like [MME] or [Windows WASAPI]."""
+    import re
+    return re.sub(r"\s*\[[^\]]+\]\s*$", "", raw_name).strip()
+
+
+def _is_virtual_mapper_device(name: str) -> bool:
+    """Filter out Windows default virtual routing endpoints that mirror actual hardware."""
+    n_lower = name.lower()
+    return any(v in n_lower for v in [
+        "sound mapper",
+        "primary sound capture",
+        "주 사운드 캡처 드라이버",
+        "주 사운드 캡쳐 드라이버",
+        "microsoft sound mapper",
+    ])
+
+
+def list_input_devices(rescan: bool = False) -> list[DeviceInfo]:
+    if rescan:
+        # WORKAROUND: On Windows, PortAudio aggressively caches audio devices per process.
+        # Spawning a fresh subprocess queries the OS hardware stack cleanly and bypasses the cache.
+        script = """
+import json, pyaudio
+p = pyaudio.PyAudio()
+devices = []
+for i in range(p.get_device_count()):
+    try:
+        info = p.get_device_info_by_index(i)
+        if info.get('maxInputChannels', 0) > 0:
+            try:
+                api_info = p.get_host_api_info_by_index(info['hostApi'])
+                api_name = api_info.get('name', '')
+                name_with_api = f"{info.get('name', '')} [{api_name}]" if api_name else info.get('name', '')
+            except Exception:
+                name_with_api = info.get('name', '')
+            devices.append({
+                'index': i,
+                'name': name_with_api,
+                'max_input_channels': info.get('maxInputChannels', 1),
+                'default_sample_rate': info.get('defaultSampleRate', 16000.0)
+            })
+    except Exception:
+        pass
+p.terminate()
+print(json.dumps(devices))
+"""
+        try:
+            res = subprocess.run(
+                [sys.executable, "-c", script],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                raw_list = json.loads(res.stdout.strip())
+                reinit_pyaudio()
+                return _deduplicate_devices([
+                    DeviceInfo(
+                        index=d["index"],
+                        name=d["name"],
+                        max_input_channels=d.get("max_input_channels", 1),
+                        default_sample_rate=float(d.get("default_sample_rate", 16000.0)),
+                    )
+                    for d in raw_list
+                ])
+        except Exception as e:
+            audio_log.warning("Subprocess hardware rescan failed, falling back to in-process query: %s", e)
+
     devices = []
     for i in range(_pa.get_device_count()):
-        info = _pa.get_device_info_by_index(i)
-        if info["maxInputChannels"] > 0:
-            try:
-                api_info = _pa.get_host_api_info_by_index(info["hostApi"])
-                api_name = api_info["name"]
-                name_with_api = f"{info['name']} [{api_name}]"
-            except Exception:
-                name_with_api = info["name"]
-            devices.append(DeviceInfo(
-                index=i,
-                name=name_with_api,
-                max_input_channels=info["maxInputChannels"],
-                default_sample_rate=info["defaultSampleRate"],
-            ))
-    return devices
+        try:
+            info = _pa.get_device_info_by_index(i)
+            if info["maxInputChannels"] > 0:
+                try:
+                    api_info = _pa.get_host_api_info_by_index(info["hostApi"])
+                    api_name = api_info["name"]
+                    name_with_api = f"{info['name']} [{api_name}]"
+                except Exception:
+                    name_with_api = info["name"]
+                devices.append(DeviceInfo(
+                    index=i,
+                    name=name_with_api,
+                    max_input_channels=info["maxInputChannels"],
+                    default_sample_rate=info["defaultSampleRate"],
+                ))
+        except Exception:
+            pass
+    return _deduplicate_devices(devices)
+
+
+def _is_unwanted_device(name: str) -> bool:
+    """Filter out virtual routing mappers, raw kernel pins (WDM-KS), and DirectSound endpoints."""
+    n_lower = name.lower()
+    # 1. Virtual loopback / mapper endpoints
+    if any(v in n_lower for v in [
+        "sound mapper",
+        "primary sound capture",
+        "주 사운드 캡처 드라이버",
+        "주 사운드 캡쳐 드라이버",
+        "microsoft sound mapper",
+    ]):
+        return True
+    # 2. Raw Kernel Streaming (WDM-KS) board-level pins & loopbacks
+    if "wdm-ks" in n_lower or "wdm_ks" in n_lower or "kernel streaming" in n_lower:
+        return True
+    # 3. DirectSound endpoints (known non-blocking read bug on Windows)
+    if "directsound" in n_lower:
+        return True
+    return False
+
+
+def _deduplicate_devices(devices: list[DeviceInfo]) -> list[DeviceInfo]:
+    """Filter unwanted devices (WDM-KS, DirectSound, mappers) and deduplicate across APIs (WASAPI > MME)."""
+    filtered = [d for d in devices if not _is_unwanted_device(d.name)]
+    
+    # Priority order for host APIs: WASAPI (1), MME (2), others (3)
+    def _api_priority(d: DeviceInfo) -> int:
+        n = d.name.lower()
+        if "wasapi" in n:
+            return 1
+        if "mme" in n:
+            return 2
+        return 3
+
+    # Group by clean physical device name
+    best_by_clean_name: dict[str, DeviceInfo] = {}
+    for d in filtered:
+        clean = _clean_device_name(d.name)
+        if not clean:
+            continue
+        if clean not in best_by_clean_name:
+            best_by_clean_name[clean] = d
+        else:
+            current_best = best_by_clean_name[clean]
+            if _api_priority(d) < _api_priority(current_best):
+                best_by_clean_name[clean] = d
+
+    return list(best_by_clean_name.values())
 
 
 class Resampler:
@@ -280,16 +413,10 @@ class AudioCapture:
         """Terminate and re-create the global PyAudio instance.
 
         After a USB device is unplugged and re-plugged, PortAudio's cached
-        device list is stale.  Terminating and re-creating forces a fresh
+        device list is stale. Terminating and re-creating forces a fresh
         enumeration so the device index becomes valid again.
         """
-        global _pa
-        try:
-            _pa.terminate()
-        except Exception:
-            pass
-        _pa = pyaudio.PyAudio()
-        audio_log.info("PyAudio re-initialized (device list refreshed)")
+        reinit_pyaudio()
 
     def _open_and_read(self, chunk_ms: int) -> None:
         """Open the audio stream and run the read loop.

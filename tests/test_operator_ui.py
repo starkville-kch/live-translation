@@ -1,9 +1,16 @@
 """
 tests/test_operator_ui.py — Tests for Operator Console UI & Status Lifecycle
 """
+import sys
+from pathlib import Path
+
+# Add project root to sys.path so direct execution (python tests/test_operator_ui.py) works
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 import asyncio
 import time
-from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
@@ -39,6 +46,46 @@ def test_operator_html_structure_and_accessibility():
     # 5. Check calm static running state (no pulse animation on green dot)
     assert ".service-status-pill.status-running .status-dot" in html
     assert "pulse-dot" not in html
+
+    # 6. Check Top Navigation Bar: ss-internet is removed, other status pills present
+    assert 'id="ss-internet"' not in html
+    assert 'id="ss-audio"' in html
+    assert 'id="ss-gemini"' in html
+    assert 'id="ss-translation"' in html
+
+    # 7. Check Status Monitor Card: Gemini session row is removed, audio input is single-line with ellipsis
+    assert 'id="stat-session"' not in html
+    assert '<span class="sg-label sg-wide tooltip">Gemini 세션' not in html
+    assert 'id="stat-audio"' in html
+    assert "#stat-audio" in html
+    assert "text-overflow: ellipsis" in html
+
+    # 8. Check Inline Model Controls, Segmented Pill Drift Control, Playback button, and Dashboard Metrics
+    assert 'id="btn-refresh-devices"' in html
+    assert 'id="model-select"' in html
+    assert 'id="stat-model-status"' in html
+    assert 'id="btn-test-selected-model"' in html
+    assert 'id="drift-manual"' in html
+    assert 'id="drift-auto"' in html
+    assert 'id="btn-audio"' in html
+    assert 'id="stat-latency"' in html
+    assert 'id="stat-attendees"' in html
+    assert 'id="stat-cost"' in html
+
+
+def test_api_devices_and_rescan():
+    client = TestClient(app)
+    # Default listing
+    resp = client.get("/api/devices")
+    assert resp.status_code == 200
+    devices = resp.json()
+    assert isinstance(devices, list)
+
+    # Rescan listing
+    resp_rescan = client.get("/api/devices?rescan=true")
+    assert resp_rescan.status_code == 200
+    devices_rescan = resp_rescan.json()
+    assert isinstance(devices_rescan, list)
 
 
 def test_api_status_includes_pause_duration():
@@ -92,3 +139,7 @@ def test_pause_resume_status_lifecycle():
     server_mod._state = ServiceState.STOPPED
     server_mod._paused = False
     server_mod._pause_start = None
+
+
+if __name__ == "__main__":
+    pytest.main([__file__])

@@ -904,11 +904,14 @@ async def get_status():
 
 
 @app.get("/api/devices")
-async def get_devices():
+async def get_devices(rescan: bool = False):
+    # If audio is actively capturing, bypass full PyAudio re-initialization
+    # to avoid closing or crashing active PortAudio streams
+    should_reinit = rescan and (_state != ServiceState.RUNNING)
     return [
         {"index": d.index, "name": d.name,
          "channels": d.max_input_channels, "rate": int(d.default_sample_rate)}
-        for d in list_input_devices()
+        for d in list_input_devices(rescan=should_reinit)
     ]
 
 
