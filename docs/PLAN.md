@@ -214,18 +214,42 @@ logging:
 
 ## 8. 향후 확장 계획 (Future Phases)
 
-### Phase 23 — 다국어 동시 통역 (중국어 등)
-- Gemini Live 번역 모델은 현재 세션당 `target_language_code` 하나만 지원.
-- 두 언어 동시 지원 시 `GeminiSession` 인스턴스를 병렬로 두 개 구동 (`"en"` / `"zh"`).
-- 참석자 페이지(`/live`)에 언어 선택기 추가 (`/stream?lang=en` vs `/stream?lang=zh`).
+### Phase 23 — `develop` HTTPS / Cloudflare / 관리자 보안 통합 및 `main` 승격 (Pre-Multilingual Integration)
+- **상세 아키텍처 및 구현 계획**: [`.agent/https_implementation_plan.md`](file:///d:/Desktop/church/live_translation/SKC_live_translation_B/.agent/https_implementation_plan.md) 참조.
+- **배경 및 원칙**:
+  - `main`과 `develop` 브랜치가 크게 분기되었으므로 단순 `git merge develop`을 피하고, `develop`의 검증된 HTTPS/보안 파이프라인을 `main` 코드베이스로 **선택적 포팅(Selective Porting)**.
+  - HTTPS / 공인 접속 / 관리자 보안 기능은 상용 필수 인프라이므로, 검증 완료 후 `main`에 머지하여 **새로운 공식 `main`**으로 확립.
+- **가장 단순한 Git 브랜치 워크플로우**:
+  1. `main`에서 통합 브랜치 생성: `git switch main && git switch -c feature/pre-multilingual-https-security`
+  2. HTTPS, PublicHostGuard, Telemetry, Admin Password 구현 및 테스트.
+  3. 완료 후 `main`에 머지: `git switch main && git merge --ff-only feature/pre-multilingual-https-security`
+  4. `develop` 브랜치를 새로운 `main`으로 즉시 덮어쓰기:
+     - `git switch develop && git reset --hard main`
+     - `git push --force-with-lease origin develop`
+  5. 새로운 `develop`에서 Phase 24 다국어 기능 브랜치 생성 후 작업 시작.
+- **핵심 구현 목표**:
+  1. **Cloudflare Named Tunnel & HTTPS 지원**: SSL/HTTPS 암호화 스트리밍 및 공인 도메인 연결.
+  2. **Public-Host Guard Middleware**: 공개 호스트 유입 시 `/admin` 및 API 제어 라우트 차단, 오직 참석자 라우트만 허용.
+  3. **관리자 비밀번호 보호**: `.env` 기반 `ADMIN_PASSWORD` 인증 세션 지원.
+  4. **WebSocket 텔레메트리 (`/ws/telemetry`)**: 30초 하트비트 기반 동시 접속자 수 및 로컬/퍼블릭 지연 시간 추적.
+  5. **통합 베이스라인 구축**: 다국어 기능 브랜치는 이 HTTPS 보안 통합 베이스라인 위에서 생성.
 
-### Phase 24 — 원격 참석자용 클라우드 브리지
-- `main.py`를 소형 클라우드 VM에 배포 (Google Cloud Run, Railway 등).
-- 오디오는 클라우드에서 캡처 불가 — PC가 PCM 청크를 경량 WebSocket으로 클라우드에 전송.
-- 클라우드가 Gemini Live에 오디오를 파이프하고 전 세계 온라인 참석자에게 자막을 팬아웃.
 
-### Phase 25 — GoAway 시 병렬 세션 핸드오버 (Lever 2 재연결 최적화)
-- 기존 세션과 신규 세션을 백그라운드에서 중첩 가동하여 재연결 지연 시간을 거의 제로(near-zero)에 가깝게 최적화합니다.
-- `GoAway` 경고 신호 수신 시 (SDK 응답에 `time_left` 필드가 존재할 경우 활용), 백그라운드에서 신규 병렬 `GeminiSession`을 즉시 실행합니다.
-- 신규 세션의 연결이 완전히 성립될 때까지 기존 세션에 오디오 입력을 계속 밀어 넣습니다.
-- 연결 완료 순간 활성 세션 레퍼런스를 즉시 교체하고 기존 세션을 테어다운하여 재연결 시 자막 지연 시간을 0에 수렴하게 단축합니다.
+### Phase 24 — 다국어 / 다중 타겟 동시 통역 (Multilingual / Multi-Target Translation)
+- **상세 아키텍처 및 구현 계획**: [`.agent/SKC Live Translation — Multilingual - Multi-Target Implementation Plan.md`](file:///d:/Desktop/church/live_translation/SKC_live_translation_B/.agent/SKC%20Live%20Translation%20%E2%80%94%20Multilingual%20-%20Multi-Target%20Implementation%20Plan.md) 참조.
+- **핵심 아키텍처 불변 원칙**:
+  - **단일 코드베이스 (One Codebase)**: 언어별 별도 레포/브랜치/exe 복제 금지.
+  - **단일 오디오 캡처**: 단일 `AudioCapture`에서 캡처한 PCM 청크를 모든 활성 세션에 브로드캐스트.
+  - **독립 타겟 세션**: 활성 타겟 언어마다 1개의 독립 `GeminiSession[lang]` 가동 (예: English `en`, Ukrainian `uk`, Chinese `zh`).
+  - **참석자 라우팅**: 단일 QR 코드 ➔ 언어 선택 허브 (`/`) ➔ 언어별 스트림 (`/live?lang=uk` / `/stream?lang=uk` / `/audio-stream?lang=uk`).
+- **1차 검증 목표**:
+  1. 한국어 → 영어 (`ko` → `en`) : 기존 SKC 회귀 테스트.
+  2. 영어 → 우크라이나어 (`en` → `uk`).
+  3. 영어 → 중국어 (`en` → `zh`).
+  4. 영어 → 우크라이나어 + 중국어 (`en` → `uk` + `zh`) 동시 통역.
+
+
+
+
+
+

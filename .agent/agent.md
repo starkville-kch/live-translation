@@ -118,6 +118,7 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 | `docs/WALKTHROUGH.md` | 세션별 빌드 기록, 검증 프로토콜(V0–V22) 결과, 기술적 회고 | 과거 기술 의사결정 및 이슈 추적 시 |
 | `docs/BUILD_EXE.md` | PyInstaller 빌드 기록, spec 설정, 단일 실행 파일 패키징 | 독립 실행 파일 재빌드 시 |
 | `CHANGELOG.md` | 릴리즈 버전 히스토리 (Version history) | 버전별 변경점 확인 시 |
+| `.agent/https_implementation_plan.md` | `main`과 `develop` 브랜치 간 HTTPS / Cloudflare Tunnel / Public Host Guard 보안 통합 계획 | Phase 23 HTTPS/보안 포팅 작업 시 |
+| `.agent/SKC Live Translation — Multilingual - Multi-Target Implementation Plan.md` | 다국어/다중 타겟 통역 시스템(One-codebase, Source/Target language matrix, Per-target GeminiSession) 상세 설계 및 구현 계획 | Phase 24 다국어/동시 통역 기능 개발 시 |
 | `tests/` | 모델 리졸버, 설정, 오염 방지, UI 접근성 등 45개 자동화 테스트 스위트 | 테스트 실행 및 코드 검증 시 |
-
 
