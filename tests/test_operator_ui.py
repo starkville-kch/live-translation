@@ -1,16 +1,9 @@
 """
 tests/test_operator_ui.py — Tests for Operator Console UI & Status Lifecycle
 """
-import sys
-from pathlib import Path
-
-# Add project root to sys.path so direct execution (python tests/test_operator_ui.py) works
-ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
-
 import asyncio
 import time
+from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
@@ -139,7 +132,3 @@ def test_pause_resume_status_lifecycle():
     server_mod._state = ServiceState.STOPPED
     server_mod._paused = False
     server_mod._pause_start = None
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])

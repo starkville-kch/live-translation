@@ -97,8 +97,11 @@ These are the non-obvious decisions that can't be derived by reading the code. D
   - Purged obsolete Python/Conda commands and manual `config.yaml` edits.
   - Aligned all URLs to port-concealed standard (`http://skc.local/admin`, `http://skc.local`).
   - Added clear FAQ for language drift recovery via Pause/Resume or `⚡ Auto` mode.
-- **Direct Test Execution Support (`tests/test_operator_ui.py`)**:
-  - Added runtime `sys.path` injection and `if __name__ == '__main__': pytest.main([__file__])` allowing tests to be run either via `pytest` or directly with `python tests/test_operator_ui.py`.
+- **Repository Testing Conventions**:
+  - Run Python tests exclusively from the repository root using `python -m pytest tests/...`.
+  - Never execute test files directly (`python tests/test_file.py`).
+  - Do not modify `sys.path` or add `__main__` pytest wrappers to test files.
+  - General verification discipline is governed by the `gemini-antigravity-verification` skill (single run per revision, no loops on pass, diagnose before retrying).
 
 ---
 

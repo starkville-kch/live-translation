@@ -10,8 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Vector SVG UI Icon Ecosystem (`app/templates/operator.html`)**:
   - Replaced legacy text emojis across the operator console with crisp, scalable vector SVG icons: Test Flask (`🧪` ➔ SVG Beaker), Playback Soundwave & Muted Speaker (`🔊`/`🔇` ➔ SVG Soundwave/Mute), Lightning Bolt (`⚡` ➔ SVG Bolt), Power Icon (`⏻` ➔ SVG Power), Stopwatch Timer (`⏱` ➔ SVG Timer), and Audio Refresh (`🔄` ➔ SVG Rescan).
-- **Direct Test Execution Support (`tests/test_operator_ui.py`)**:
-  - Configured `sys.path` resolution and `if __name__ == '__main__': pytest.main([__file__])` so test files can be executed either via standard `pytest` or standalone `python tests/test_operator_ui.py`.
 - **Language Drift Recovery FAQ (`how_to_use.html`)**:
   - Added dedicated guidance in the Volunteer Help Guide detailing both manual (`Pause` ➔ `Resume`) and automated (`⚡ Auto`) drift recovery methods when AI encounters background noise or hallucinated languages.
 
