@@ -1258,9 +1258,28 @@ function setMonitorTarget(newTarget) {
   // 2. Update Audio Monitor label & button
   updateAudioMonitorDisplay();
 
-  // 3. If changed, close & rebind SSE preview to new target and clear preview
+  // 3. If changed, preserve history, commit in-flight turn, and rebind SSE preview to new target
   if (isChanged) {
-    resetPreview();
+    if (livePair) {
+      commitLivePair(null);
+    }
+    const info = _catalogMap ? _catalogMap.get(newTarget) : null;
+    const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : newTarget.toUpperCase();
+    const isEn = getOperatorUiLanguage() === 'en';
+
+    // Insert an unobtrusive switch marker if previous history exists
+    if (preview && pairs.length > 0) {
+      const divider = document.createElement('div');
+      divider.className = 'preview-pair';
+      divider.style.padding = '4px 8px';
+      divider.style.background = 'transparent';
+      divider.style.border = 'none';
+      divider.style.textAlign = 'center';
+      divider.innerHTML = `<span style="font-size: 11px; color: var(--color-text-muted); font-style: italic;">— ${isEn ? 'Monitor language switched to' : '모니터 언어 변경:'} <b>${displayName}</b> —</span>`;
+      preview.appendChild(divider);
+      if (previewWrap) previewWrap.scrollTop = previewWrap.scrollHeight;
+    }
+
     connectSSE();
   }
 
