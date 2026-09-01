@@ -2,14 +2,21 @@
 <div id="auth-modal" class="hidden">
   <div class="modal-box">
     <div class="icon">🔑</div>
-    <h2>관리자 암호 인증</h2>
-    <p>
+    <h2 data-lang="ko">관리자 암호 인증</h2>
+    <h2 data-lang="en">Operator Authentication</h2>
+    <p data-lang="ko">
       통역 시스템 설정을 조작하려면 관리자 암호를 입력해 주세요.
+    </p>
+    <p data-lang="en">
+      Please enter the operator password to configure translation controls.
     </p>
     <form id="auth-form" onsubmit="event.preventDefault(); submitAuth();">
       <input type="password" id="auth-password" placeholder="비밀번호 입력 (Password)" style="width: 100%; padding: 10px 14px; font-size: 14px; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 14px; box-sizing: border-box;" autocomplete="current-password" required autofocus>
       <div id="auth-err-msg" style="color: var(--color-error); font-size: 12px; margin-bottom: 10px; display: none;">암호가 일치하지 않습니다.</div>
-      <button type="submit" id="btn-auth-submit" class="modal-confirm" style="padding: 10px 20px; font-size: 14px;">로그인 (Login)</button>
+      <button type="submit" id="btn-auth-submit" class="modal-confirm" style="padding: 10px 20px; font-size: 14px;">
+        <span data-lang="ko">로그인 (Login)</span>
+        <span data-lang="en">Unlock Console</span>
+      </button>
     </form>
   </div>
 </div>

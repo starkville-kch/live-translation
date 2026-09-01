@@ -23,8 +23,11 @@
     <!-- Status (compact dashboard card) -->
     <div class="card" id="status-card">
       <h2>
-        <span class="tooltip">상태 모니터 (Status)
-          <span class="tooltiptext">현재 번역 시스템의 오디오, Gemini AI 연결, 세션 통계를 실시간으로 표시합니다. (Real-time display of audio, Gemini AI connection, and session statistics.)</span>
+        <span class="tooltip">
+          <span data-lang="ko">상태 모니터 (Status)</span>
+          <span data-lang="en">System Status</span>
+          <span class="tooltiptext" data-lang="ko">현재 번역 시스템의 오디오, Gemini AI 연결, 세션 통계를 실시간으로 표시합니다.</span>
+          <span class="tooltiptext" data-lang="en">Real-time status of audio input, Gemini AI connection, and session statistics.</span>
         </span>
       </h2>
       <div class="stat-grid">
@@ -36,8 +39,11 @@
     <!-- Caption preview (Korean + English paired) -->
     <div class="card">
       <h2>
-        <span class="tooltip">실시간 자막 미리보기 (Preview)
-          <span class="tooltiptext">Gemini가 번역한 한국어 원문과 영어 번역문을 실시간으로 쌍으로 보여줍니다. 참석자 화면에 표시되는 내용과 동일합니다. (Live paired Korean source and English translation, identical to what attendees see.)</span>
+        <span class="tooltip">
+          <span data-lang="ko">실시간 자막 미리보기 (Preview)</span>
+          <span data-lang="en">Live Captions Preview</span>
+          <span class="tooltiptext" data-lang="ko">Gemini가 번역한 한국어 원문과 영어 번역문을 실시간으로 쌍으로 보여줍니다. 참석자 화면에 표시되는 내용과 동일합니다.</span>
+          <span class="tooltiptext" data-lang="en">Live paired source speech and translated captions, identical to what attendees see.</span>
         </span>
       </h2>
       <div id="preview-wrap"><div id="preview"></div></div>
@@ -56,12 +62,14 @@
 
       <!-- Action 1: Start / Pause / Resume (fixed middle) -->
       <button id="btn-primary-action" class="btn-action btn-start">
-        ▶ 번역 시작 (Start)
+        <span data-lang="ko">▶ 번역 시작 (Start)</span>
+        <span data-lang="en">▶ Start Translation</span>
       </button>
 
       <!-- Action 2: Stop (fixed right) -->
       <button id="btn-stop" class="btn-action btn-stop" disabled>
-        ■ 서비스 종료 (Stop)
+        <span data-lang="ko">■ 서비스 종료 (Stop)</span>
+        <span data-lang="en">■ Stop Service</span>
       </button>
     </div>
 
@@ -73,17 +81,19 @@
             <circle cx="12" cy="12" r="10"/>
             <polyline points="12 6 12 12 16 14"/>
           </svg>
-          음성 미감지 시 자동종료
-          <span class="tooltiptext" style="left: 0; margin-left: 0;">설정한 시간 동안 음성(설교/말씀)이 감지되지 않으면 서비스를 자동으로 안전하게 종료합니다. (Auto-Stop: service stops automatically after this silence duration.)</span>
+          <span data-lang="ko">음성 미감지 시 자동종료</span>
+          <span data-lang="en">Auto-Stop on Silence</span>
+          <span class="tooltiptext" data-lang="ko" style="left: 0; margin-left: 0;">설정한 시간 동안 음성(설교/말씀)이 감지되지 않으면 서비스를 자동으로 안전하게 종료합니다.</span>
+          <span class="tooltiptext" data-lang="en" style="left: 0; margin-left: 0;">Automatically stops translation service after this duration of continuous silence.</span>
         </span>
         <select id="auto-stop-select" style="font-size: 11px; font-weight: 600; padding: 4px 6px; flex: 1; min-width: 0; border: 1px solid #cbd5e1; border-radius: 4px; background: #ffffff;">
-          <option value="0">사용 안 함 (Off)</option>
-          <option value="1">1분 (1 Min) — 테스트용</option>
-          <option value="5">5분 (5 Min)</option>
-          <option value="10" selected>10분 (10 Min)</option>
-          <option value="15">15분 (15 Min)</option>
-          <option value="20">20분 (20 Min)</option>
-          <option value="30">30분 (30 Min)</option>
+          <option value="0">Off</option>
+          <option value="1">1 Min (Test)</option>
+          <option value="5">5 Min</option>
+          <option value="10" selected>10 Min</option>
+          <option value="15">15 Min</option>
+          <option value="20">20 Min</option>
+          <option value="30">30 Min</option>
         </select>
       </div>
       <span class="tooltip" style="flex: 0.9;">
@@ -92,9 +102,11 @@
             <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
             <line x1="12" y1="2" x2="12" y2="12"/>
           </svg>
-          Exit System
+          <span data-lang="ko">Exit System</span>
+          <span data-lang="en">Exit App</span>
         </button>
-        <span class="tooltiptext" style="left:auto; right:0; margin-left:0;">서버 프로그램 전체를 종료합니다. 다시 사용하려면 바탕화면의 시작 파일을 실행해야 합니다. (Exits the server program entirely. Restart via the desktop launcher to use again.)</span>
+        <span class="tooltiptext" data-lang="ko" style="left:auto; right:0; margin-left:0;">서버 프로그램 전체를 종료합니다. 다시 사용하려면 바탕화면의 시작 파일을 실행해야 합니다.</span>
+        <span class="tooltiptext" data-lang="en" style="left:auto; right:0; margin-left:0;">Terminates the server application entirely. Restart from the desktop launcher.</span>
       </span>
     </div>
 
@@ -105,18 +117,27 @@
     <!-- Guide link -->
     <div class="card">
       <h2>
-        <span class="tooltip tooltip-left">📖 사용 가이드 (Guide)
-          <span class="tooltiptext">번역 시스템 운영 방법, 장치 설정, 문제 해결 방법을 안내하는 운영자 가이드입니다. (Operator guide covering setup, device configuration, and troubleshooting.)</span>
+        <span class="tooltip tooltip-left">
+          <span data-lang="ko">📖 사용 가이드 (Guide)</span>
+          <span data-lang="en">📖 Volunteer Guide</span>
+          <span class="tooltiptext" data-lang="ko">번역 시스템 운영 방법, 장치 설정, 문제 해결 방법을 안내하는 운영자 가이드입니다.</span>
+          <span class="tooltiptext" data-lang="en">Operator guide covering setup, device configuration, and troubleshooting.</span>
         </span>
       </h2>
-      <a href="/help" target="_blank" style="font-size:13px; color:var(--color-gold-500); text-decoration:underline; font-weight:600; display:block; margin-top:4px;">가이드 열기 (Open Guide) →</a>
+      <a href="/help" target="_blank" style="font-size:13px; color:var(--color-gold-500); text-decoration:underline; font-weight:600; display:block; margin-top:4px;">
+        <span data-lang="ko">가이드 열기 (Open Guide) →</span>
+        <span data-lang="en">Open Guide (Help) →</span>
+      </a>
     </div>
 
     <!-- Audio playback -->
     <div class="card">
       <h2>
-        <span class="tooltip tooltip-left">음성 통역 모니터 (Audio)
-          <span class="tooltiptext">관리자가 이어폰을 꽂고 번역된 실시간 영어 음성 스트림을 모니터링하기 위한 볼륨 조절 영역입니다. (Volume control for checking English voice outputs using headphones.)</span>
+        <span class="tooltip tooltip-left">
+          <span data-lang="ko">음성 통역 모니터 (Audio)</span>
+          <span data-lang="en">Audio Translation Monitor</span>
+          <span class="tooltiptext" data-lang="ko">관리자가 이어폰을 꽂고 번역된 실시간 영어 음성 스트림을 모니터링하기 위한 볼륨 조절 영역입니다.</span>
+          <span class="tooltiptext" data-lang="en">Volume control for listening to real-time translated voice stream using headphones.</span>
         </span>
       </h2>
       <div class="card-body">
@@ -127,7 +148,10 @@
               <line x1="23" y1="9" x2="17" y2="15"/>
               <line x1="17" y1="9" x2="23" y2="15"/>
             </svg>
-            <span class="text">Playback Muted</span>
+            <span class="text">
+              <span data-lang="ko">Playback Muted</span>
+              <span data-lang="en">Muted</span>
+            </span>
           </button>
           <div id="volume-wrapper" style="display: none; align-items: center; gap: 8px; margin-top: 10px; width: 100%;">
             <span style="font-size: 13px;">🔊</span>

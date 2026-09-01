@@ -1,8 +1,11 @@
 <!-- Status: Audio Input, Model, Auto Recovery & Network Telemetry -->
 <!-- Row 1: Audio Input -->
 <div class="stat-row">
-  <span class="stat-row-label tooltip">오디오 입력
-    <span class="tooltiptext">Windows PC의 마이크/오디오 신호가 서버에 정상 수신되고 있는지 나타냅니다. (Indicates if the mic audio is being captured properly.)</span>
+  <span class="stat-row-label tooltip">
+    <span data-lang="ko">오디오 입력</span>
+    <span data-lang="en">Audio Input</span>
+    <span class="tooltiptext" data-lang="ko">Windows PC의 마이크/오디오 신호가 서버에 정상 수신되고 있는지 나타냅니다.</span>
+    <span class="tooltiptext" data-lang="en">Indicates if the mic audio is being captured properly.</span>
   </span>
   <div class="stat-row-content">
     <span id="stat-audio">—</span>
@@ -11,8 +14,11 @@
 
 <!-- Row 2: Live Translation Model -->
 <div class="stat-row">
-  <span class="stat-row-label tooltip">실시간 통역 모델
-    <span class="tooltiptext">실시간 음성 번역 및 자막 스트리밍을 수행하는 구글 제미나이 AI 모델입니다. (Google Gemini AI model performing live translation and caption streaming.)</span>
+  <span class="stat-row-label tooltip">
+    <span data-lang="ko">실시간 통역 모델</span>
+    <span data-lang="en">Translation Model</span>
+    <span class="tooltiptext" data-lang="ko">실시간 음성 번역 및 자막 스트리밍을 수행하는 구글 제미나이 AI 모델입니다.</span>
+    <span class="tooltiptext" data-lang="en">Google Gemini AI model performing live translation and caption streaming.</span>
   </span>
   <div class="stat-row-content">
     <div class="model-control-group">
@@ -32,8 +38,11 @@
 
 <!-- Row 3: Auto Drift Recovery (Segmented Pill Control) -->
 <div class="stat-row auto-recovery-row">
-  <span class="stat-row-label tooltip">자동 언어 오류 복구
-    <span class="tooltiptext">일본어/베트남어 등 잘못된 언어 감지가 계속될 때 세션을 자동으로 초기화합니다. (Automatically resets translation session if sustained language drift occurs.)</span>
+  <span class="stat-row-label tooltip">
+    <span data-lang="ko">자동 언어 오류 복구</span>
+    <span data-lang="en">Language Drift Fix</span>
+    <span class="tooltiptext" data-lang="ko">일본어/베트남어 등 잘못된 언어 감지가 계속될 때 세션을 자동으로 초기화합니다.</span>
+    <span class="tooltiptext" data-lang="en">Automatically resets translation session if sustained language drift occurs.</span>
   </span>
   <div class="stat-row-content">
     <div class="segmented-control" id="drift-recovery-toggle">
@@ -56,8 +65,10 @@
 <div class="telemetry-panel" style="margin-top: 10px; background: #ffffff; border: 1px solid var(--color-warm-200); border-radius: 8px; overflow: hidden;">
   <div id="telemetry-toggle" onclick="toggleTelemetryDetail()" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; background: #f8fafc; user-select: none;">
     <span class="stat-card-label tooltip" style="font-size: 11px; font-weight: 700; color: var(--color-navy-900); text-transform: uppercase; margin-bottom: 0; display: inline-flex; align-items: center; gap: 4px;">
-      📊 네트워크 & 지연 세부 분석 (Telemetry Details)
-      <span class="tooltiptext">구글 제미나이 AI 처리 지연 및 현장 Wi-Fi / 공용 HTTPS 접속 경로별 RTT 상세 데이터입니다. 클릭하여 펼치거나 접을 수 있습니다.</span>
+      <span data-lang="ko">📊 네트워크 & 지연 세부 분석 (Telemetry Details)</span>
+      <span data-lang="en">📊 Network & Latency Telemetry Details</span>
+      <span class="tooltiptext" data-lang="ko">구글 제미나이 AI 처리 지연 및 현장 Wi-Fi / 공용 HTTPS 접속 경로별 RTT 상세 데이터입니다. 클릭하여 펼치거나 접을 수 있습니다.</span>
+      <span class="tooltiptext" data-lang="en">Detailed Gemini AI turn-onset processing latency and RTT breakdown for Local Wi-Fi and Public HTTPS. Click to toggle.</span>
     </span>
     <span id="telemetry-chevron" style="font-size: 10px; color: var(--color-text-muted); transition: transform 0.2s;">▼</span>
   </div>
@@ -65,8 +76,10 @@
   <div id="telemetry-body" style="display: none; padding: 10px 12px; border-top: 1px solid var(--color-warm-200);">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px dashed var(--color-warm-200); padding-bottom: 6px;">
       <span class="stat-card-label tooltip" style="font-size: 11px; font-weight: 700; color: var(--color-navy-900); text-transform: uppercase; margin-bottom: 0;">
-        Gemini 처리 지연 (AI Turn-Onset)
-        <span class="tooltiptext">입력된 음성이 서버를 거쳐 구글 제미나이 AI로부터 첫 번역 결과가 수신될 때까지의 순수 AI 생성 소요 시간입니다.</span>
+        <span data-lang="ko">Gemini 처리 지연 (AI Turn-Onset)</span>
+        <span data-lang="en">Gemini Processing Latency (Turn-Onset)</span>
+        <span class="tooltiptext" data-lang="ko">입력된 음성이 서버를 거쳐 구글 제미나이 AI로부터 첫 번역 결과가 수신될 때까지의 순수 AI 생성 소요 시간입니다.</span>
+        <span class="tooltiptext" data-lang="en">Time required for Gemini AI to generate the first translated token from speech onset.</span>
       </span>
       <span id="stat-gemini-lat" style="font-size: 12px; font-weight: 800; color: var(--color-navy-900); font-family: 'Consolas', monospace;">—</span>
     </div>
@@ -75,15 +88,24 @@
       <!-- Local Wi-Fi -->
       <div style="padding: 6px 8px; background: #f8fafc; border-radius: 4px; border: 1px solid #e2e8f0;">
         <div style="font-size: 10px; color: var(--color-navy-900); font-weight: 700; display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
-          <span>🏛️ 현장 Wi-Fi</span>
-          <span id="stat-local-listeners-badge" style="font-size: 9px; font-weight: 700; color: var(--color-gold-600); background: #fef9c3; padding: 1px 4px; border-radius: 3px;">0명</span>
+          <span>
+            <span data-lang="ko">🏛️ 현장 Wi-Fi</span>
+            <span data-lang="en">🏛️ Local Wi-Fi</span>
+          </span>
+          <span id="stat-local-listeners-badge" style="font-size: 9px; font-weight: 700; color: var(--color-gold-600); background: #fef9c3; padding: 1px 4px; border-radius: 3px;">0</span>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px;">
-          <span style="color: var(--color-text-secondary);">네트워크 RTT:</span>
+          <span style="color: var(--color-text-secondary);">
+            <span data-lang="ko">네트워크 RTT:</span>
+            <span data-lang="en">Network RTT:</span>
+          </span>
           <strong id="stat-local-rtt" style="font-family: 'Consolas', monospace; color: var(--color-navy-900);">—</strong>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px;">
-          <span style="color: var(--color-text-secondary);">추정 전체 지연:</span>
+          <span style="color: var(--color-text-secondary);">
+            <span data-lang="ko">추정 전체 지연:</span>
+            <span data-lang="en">Est. Total Delay:</span>
+          </span>
           <strong id="stat-local-est-e2e" style="font-family: 'Consolas', monospace; color: var(--color-success-dark);">—</strong>
         </div>
       </div>
@@ -91,15 +113,24 @@
       <!-- Public HTTPS -->
       <div style="padding: 6px 8px; background: #f8fafc; border-radius: 4px; border: 1px solid #e2e8f0;">
         <div style="font-size: 10px; color: var(--color-navy-900); font-weight: 700; display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
-          <span>🔒 공용 HTTPS</span>
-          <span id="stat-public-listeners-badge" style="font-size: 9px; font-weight: 700; color: var(--color-success-dark); background: var(--color-success-bg); padding: 1px 4px; border-radius: 3px;">0명</span>
+          <span>
+            <span data-lang="ko">🔒 공용 HTTPS</span>
+            <span data-lang="en">🔒 Public HTTPS</span>
+          </span>
+          <span id="stat-public-listeners-badge" style="font-size: 9px; font-weight: 700; color: var(--color-success-dark); background: var(--color-success-bg); padding: 1px 4px; border-radius: 3px;">0</span>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px;">
-          <span style="color: var(--color-text-secondary);">네트워크 RTT:</span>
+          <span style="color: var(--color-text-secondary);">
+            <span data-lang="ko">네트워크 RTT:</span>
+            <span data-lang="en">Network RTT:</span>
+          </span>
           <strong id="stat-public-rtt" style="font-family: 'Consolas', monospace; color: var(--color-navy-900);">—</strong>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px;">
-          <span style="color: var(--color-text-secondary);">추정 전체 지연:</span>
+          <span style="color: var(--color-text-secondary);">
+            <span data-lang="ko">추정 전체 지연:</span>
+            <span data-lang="en">Est. Total Delay:</span>
+          </span>
           <strong id="stat-public-est-e2e" style="font-family: 'Consolas', monospace; color: var(--color-success-dark);">—</strong>
         </div>
       </div>
