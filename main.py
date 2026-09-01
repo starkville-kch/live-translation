@@ -113,7 +113,10 @@ if __name__ == "__main__":
     admin_url = _admin_url(cfg)
     live_url = f"{base_url}/live"
     public_url = cfg.get("public_url")
-    public_live_url = f"{str(public_url).rstrip('/')}/live" if public_url else "https://live.starkvillekoreanchurch.org/live"
+    public_live_url = str(public_url).rstrip('/') if public_url else "https://live.starkvillekoreanchurch.org"
+
+
+
     browser_url = f"{_format_url('localhost', port)}/admin"
     fallback_url = _format_url("192.168.0.169", port)
 

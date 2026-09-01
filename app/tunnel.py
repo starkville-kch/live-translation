@@ -12,7 +12,7 @@ from typing import Optional
 from app.logger import server_log
 from app.cloudflared_service import CloudflaredService
 
-DEFAULT_PUBLIC_URL = "https://live.starkvillekoreanchurch.org/live"
+DEFAULT_PUBLIC_URL = "https://live.starkvillekoreanchurch.org"
 
 
 class CloudflareTunnelManager:
@@ -24,10 +24,9 @@ class CloudflareTunnelManager:
     ) -> None:
         self.port = port
         self.enabled = enabled
-        self._public_url = (public_url or DEFAULT_PUBLIC_URL).strip()
-        if not self._public_url.endswith("/live"):
-            self._public_url = f"{self._public_url.rstrip('/')}/live"
-        self._tunnel_url: Optional[str] = self._public_url.rsplit("/live", 1)[0]
+        self._public_url = (public_url or DEFAULT_PUBLIC_URL).strip().rstrip("/")
+        self._tunnel_url: Optional[str] = self._public_url
+
         self._is_ready = False
         self._status = "reconnecting" if enabled else "unavailable"
         self._error_message: Optional[str] = None

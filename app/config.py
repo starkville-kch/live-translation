@@ -79,7 +79,9 @@ DEFAULT_CONFIG = {
         "name": "Starkville Korean Church",
         "short_name": "SKC",
         "logo": "branding/church-logo.png",
+        "default_ui_language": "ko",
     },
+
     "translation": {
         "expected_source_language": "ko",
         "supported_targets": ["en", "uk", "zh"],
@@ -181,7 +183,9 @@ def church_cfg() -> dict:
         "name": "Starkville Korean Church",
         "short_name": "SKC",
         "logo": "branding/church-logo.png",
+        "default_ui_language": "ko",
     })
+
 
 
 def audio_cfg() -> dict:

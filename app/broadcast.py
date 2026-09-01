@@ -236,11 +236,13 @@ class CaptionBroadcaster:
         self._current_source += delta
         self._push(CaptionEvent(
             kind="source",
+            text=delta,
             source=delta,
             target="",
             source_lang=self.source_lang,
             target_lang=self.target_lang,
         ))
+
 
     def on_caption_delta(self, delta: str) -> None:
         self._unavailable = False

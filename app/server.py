@@ -260,11 +260,12 @@ def _get_live_urls() -> tuple[str, str, str]:
 
     pub_url = cfg.get("public_url")
     if pub_url:
-        public_url = f"{str(pub_url).rstrip('/')}/live"
+        public_url = str(pub_url).rstrip('/')
     else:
-        public_url = "https://live.starkvillekoreanchurch.org/live"
+        public_url = "https://live.starkvillekoreanchurch.org"
 
     return local_url, fallback_url, public_url
+
 
 
 _tunnel_logged = False
@@ -493,8 +494,11 @@ def _write_session_log() -> None:
             (session_dir / "aligned.txt").write_text("\n".join(aligned_legacy), encoding="utf-8")
 
         server_log.info("Session exported: %s (%d active targets)", session_dir, len(manager.sessions))
+        return f"logs/sessions/{ts}"
     except Exception as e:
         server_log.warning("Could not write session log: %s", e)
+        return None
+
 
 
 
@@ -666,11 +670,13 @@ async def _sse_generator(request: Request, q: asyncio.Queue, target_broadcaster:
                 break
             try:
                 event = await asyncio.wait_for(q.get(), timeout=20.0)
+                text_val = event.source if event.kind == "source" else (event.target or event.text)
                 payload = {
                     "kind": event.kind,
-                    "text": event.target or event.text,
+                    "text": text_val,
                     "target": event.target,
                     "source": event.source,
+                    "ko": event.source or getattr(event, "ko", ""),
                     "source_lang": event.source_lang,
                     "target_lang": event.target_lang,
                 }
@@ -678,9 +684,9 @@ async def _sse_generator(request: Request, q: asyncio.Queue, target_broadcaster:
                     runtime = _runtime_seconds()
                     m, s = divmod(int(runtime), 60)
                     payload["time_str"] = f"{m:02d}:{s:02d}"
-                    if event.source or event.ko:
-                        payload["ko"] = event.source or event.ko
                 yield f"data: {json.dumps(payload)}\n\n"
+
+
             except asyncio.TimeoutError:
                 yield ": keepalive\n\n"
     finally:
@@ -829,10 +835,16 @@ async def auth_logout(response: Response):
 
 # ── Operator control API ───────────────────────────────────────────────────────
 async def _teardown():
-    global _state
+    global _state, _paused, _pause_start
+    saved_dir = _write_session_log()
+    if saved_dir:
+        operator_events.add("info", f"Session logs saved: {saved_dir}")
     await manager.stop()
-    _write_session_log()
+    _paused = False
+    _pause_start = None
     _state = ServiceState.STOPPED
+
+
 
 
 async def _auto_stop_check():
@@ -1295,7 +1307,9 @@ async def get_status():
             "model": model_resolver.active_model,
         },
         "translation": translation_info,
+        "church": church_cfg(),
         "models": model_resolver.get_state(),
+
         "attendees": max(
             telemetry.get("total_listeners") or 0,
             total_clients,

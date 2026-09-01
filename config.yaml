@@ -27,8 +27,10 @@ network:
 translation:
   default_active_targets:
   - en
+  - zh
   expected_source_language: ko
   supported_targets:
   - en
   - uk
   - zh
+  - es

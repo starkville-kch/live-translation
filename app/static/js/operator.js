@@ -253,8 +253,76 @@ if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
 }
 
 // ============================================================
+// LANGUAGE DRIFT CORRECTION UI
+// ============================================================
+function updateDriftUI(enabled) {
+
+  const isEn = getOperatorUiLanguage() === 'en';
+  const descEl = document.getElementById('stat-drift-status');
+  const isKoreanSource = (_expectedSource === 'ko');
+
+  if (radioDriftAuto) {
+    radioDriftAuto.disabled = !isKoreanSource;
+    if (!isKoreanSource) radioDriftAuto.checked = false;
+  }
+
+  if (!isKoreanSource) {
+    if (radioDriftManual) radioDriftManual.checked = true;
+    if (descEl) {
+      descEl.textContent = isEn
+        ? 'Auto language recovery is currently available for Korean speech.'
+        : '자동 언어 복구는 현재 한국어 발화에만 지원됩니다.';
+      descEl.style.color = 'var(--color-text-muted)';
+    }
+    return;
+  }
+
+  if (enabled) {
+    if (radioDriftAuto) radioDriftAuto.checked = true;
+    if (descEl) {
+      descEl.textContent = isEn ? 'Auto recovery on unexpected language drift' : '잘못된 언어 감지 시 세션 자동 리셋 (Clean Reset)';
+      descEl.style.color = 'var(--color-navy-900)';
+    }
+  } else {
+    if (radioDriftManual) radioDriftManual.checked = true;
+    if (descEl) {
+      descEl.textContent = isEn ? 'Manual recovery on unexpected drift (Pause → Resume)' : '잘못된 언어 감지 시 수동 교정 (Pause → Resume)';
+      descEl.style.color = 'var(--color-text-muted)';
+    }
+  }
+}
+
+if (radioDriftManual) {
+  radioDriftManual.addEventListener('change', () => {
+    if (radioDriftManual.checked) {
+      fetch('/api/drift-correction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_drift_correction: false })
+      }).then(() => updateDriftUI(false)).catch(() => {});
+    }
+  });
+}
+if (radioDriftAuto) {
+  radioDriftAuto.addEventListener('change', () => {
+    if (_expectedSource !== 'ko') {
+      radioDriftManual.checked = true;
+      return;
+    }
+    if (radioDriftAuto.checked) {
+      fetch('/api/drift-correction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_drift_correction: true })
+      }).then(() => updateDriftUI(true)).catch(() => {});
+    }
+  });
+}
+
+// ============================================================
 // UI LANGUAGE SELECTION
 // ============================================================
+
 let _currentUiLang = localStorage.getItem('skc_ui_lang') || 'ko';
 
 function getOperatorUiLanguage() {
@@ -521,11 +589,13 @@ if (btnStop) {
       _paused = false;
       _pauseTimerLocal = 0;
       updateControlBar({ state: 'stopped', service_running: false });
+      updateLanguageTargets({ service_running: false, paused: false });
       if (captionEs) {
         captionEs.close();
         captionEs = null;
       }
     }
+
   });
 }
 
@@ -686,8 +756,9 @@ function updateDriftUI(enabled) {
 // ============================================================
 function copyPublicLink() {
   const el = document.getElementById('qr-public-url');
-  const url = el ? el.textContent.trim() : 'https://live.starkvillekoreanchurch.org/live';
+  const url = el ? el.textContent.trim() : 'https://live.starkvillekoreanchurch.org';
   if (navigator.clipboard && navigator.clipboard.writeText) {
+
     navigator.clipboard.writeText(url).then(() => {
       const btn = document.getElementById('btn-copy-public-link');
       if (btn) {
@@ -849,29 +920,33 @@ function startStatusPoll() {
     }
 
     // Telemetry & Latency Breakdown
+    const isEn = getOperatorUiLanguage() === 'en';
     if (st.telemetry) {
       const t = st.telemetry;
       const gLatEl = document.getElementById('stat-gemini-lat');
-      if (gLatEl) gLatEl.textContent = t.gemini_latency_ms ? t.gemini_latency_ms + ' ms' : '—';
+      if (gLatEl) gLatEl.textContent = (t.gemini_latency_ms !== null && t.gemini_latency_ms !== undefined) ? Math.round(t.gemini_latency_ms) + ' ms' : '—';
 
       const lRttEl = document.getElementById('stat-local-rtt');
-      if (lRttEl) lRttEl.textContent = (t.local_rtt_ms !== null && t.local_rtt_ms !== undefined) ? t.local_rtt_ms + ' ms' : '—';
+      if (lRttEl) lRttEl.textContent = (t.local_rtt_ms !== null && t.local_rtt_ms !== undefined) ? Math.round(t.local_rtt_ms) + ' ms' : '—';
 
       const lEstEl = document.getElementById('stat-local-est-e2e');
       if (lEstEl) lEstEl.textContent = t.est_local_delay_s ? '~' + t.est_local_delay_s + ' s' : '—';
 
       const lListEl = document.getElementById('stat-local-listeners-badge');
-      if (lListEl) lListEl.textContent = (t.local_listeners || 0) + '명';
+      const lCount = t.local_listeners || 0;
+      if (lListEl) lListEl.textContent = isEn ? `${lCount} ${lCount === 1 ? 'listener' : 'listeners'}` : `${lCount}명`;
 
       const pRttEl = document.getElementById('stat-public-rtt');
-      if (pRttEl) pRttEl.textContent = (t.public_rtt_ms !== null && t.public_rtt_ms !== undefined) ? t.public_rtt_ms + ' ms' : '—';
+      if (pRttEl) pRttEl.textContent = (t.public_rtt_ms !== null && t.public_rtt_ms !== undefined) ? Math.round(t.public_rtt_ms) + ' ms' : '—';
 
       const pEstEl = document.getElementById('stat-public-est-e2e');
       if (pEstEl) pEstEl.textContent = t.est_public_delay_s ? '~' + t.est_public_delay_s + ' s' : '—';
 
       const pListEl = document.getElementById('stat-public-listeners-badge');
-      if (pListEl) pListEl.textContent = (t.public_listeners || 0) + '명';
+      const pCount = t.public_listeners || 0;
+      if (pListEl) pListEl.textContent = isEn ? `${pCount} ${pCount === 1 ? 'listener' : 'listeners'}` : `${pCount}명`;
     }
+
 
     // Session metrics
     const attEl = document.getElementById('stat-attendees');
@@ -957,11 +1032,16 @@ function startStatusPoll() {
       if (st.church.short_name) {
         document.querySelectorAll('.title-short').forEach(el => el.textContent = st.church.short_name);
       }
+      if (st.church.default_ui_language && !localStorage.getItem('skc_ui_lang')) {
+        setOperatorUiLanguage(st.church.default_ui_language);
+      }
     }
 
+
     // Update Attendee Access Card
-    const publicLiveLink = st.live_url_public || st.public_attendee_url || st.live_url_primary || 'https://live.starkvillekoreanchurch.org/live';
+    const publicLiveLink = st.live_url_public || st.public_attendee_url || st.live_url_primary || 'https://live.starkvillekoreanchurch.org';
     const localLiveLink = st.live_url_local || st.live_url_fallback || 'http://skc.local:8080/live';
+
 
     const qrPubUrlEl = document.getElementById('qr-public-url');
     if (qrPubUrlEl) {
@@ -1236,12 +1316,14 @@ function connectSSE() {
 
     if (msg.kind === 'source') {
       const p = getOrCreateLivePair();
-      p.koEl.textContent += msg.text;
+      p.koEl.textContent += (msg.source || msg.text || '');
     } else if (msg.kind === 'update') {
       const p = getOrCreateLivePair();
-      p.enEl.textContent = msg.text;
+      p.enEl.textContent = (msg.target || msg.text || '');
     } else if (msg.kind === 'commit') {
-      if (livePair && msg.text) livePair.enEl.textContent = msg.text;
+      const p = getOrCreateLivePair();
+      if (msg.target || msg.text) p.enEl.textContent = (msg.target || msg.text);
+      if (msg.source || msg.ko) p.koEl.textContent = (msg.source || msg.ko);
       commitLivePair(msg.time_str || null);
     } else if (msg.kind === 'unavailable') {
       commitLivePair(null);
@@ -1265,6 +1347,7 @@ function connectSSE() {
     if (previewWrap) previewWrap.scrollTop = previewWrap.scrollHeight;
   };
 }
+
 
 // ============================================================
 // TRANSLATION LANGUAGES (PHASE 6)
@@ -1444,9 +1527,9 @@ async function saveSelectedTargets() {
 
 function updateLanguageTargets(st) {
   const isRunning = Boolean(st && st.service_running);
-  const isPaused = Boolean(st && st.paused);
-  const isLocked = isRunning || isPaused;
+  const isLocked = isRunning;
   const isEn = getOperatorUiLanguage() === 'en';
+
 
   const badgeEl = document.getElementById('lang-panel-badge');
   const srcSelect = document.getElementById('lang-source-select');
@@ -1493,7 +1576,8 @@ function updateLanguageTargets(st) {
         const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : tgt.toUpperCase();
         const sess = sessionsMap[tgt] || {};
         const status = sess.status || (isRunning ? 'connected' : 'connecting');
-        const latencyMs = (sess.latency_ms !== null && sess.latency_ms !== undefined) ? `${sess.latency_ms} ms` : ((tgt === translation?.primary_target && st.telemetry?.gemini_latency_ms) ? `${st.telemetry.gemini_latency_ms} ms` : '—');
+        const latencyMs = (sess.latency_ms !== null && sess.latency_ms !== undefined) ? `${Math.round(sess.latency_ms)} ms` : ((tgt === translation?.primary_target && st.telemetry?.gemini_latency_ms) ? `${Math.round(st.telemetry.gemini_latency_ms)} ms` : '—');
+
         const listeners = listenersByTarget[tgt] !== undefined ? listenersByTarget[tgt] : (tgt === translation?.primary_target ? (st.attendees || 0) : 0);
 
         let statusClass = 'live';
@@ -1663,7 +1747,9 @@ setOperatorUiLanguage(_currentUiLang);
 checkAuth();
 loadDevices();
 loadLanguageConfiguration();
+connectSSE();
 startStatusPoll();
 startEventPoll();
+
 
 

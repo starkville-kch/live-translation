@@ -149,3 +149,41 @@ def test_glossary_isolation_across_languages():
     sess_en_zh = mgr._create_session_for_target("zh", "en")
     assert sess_en_zh._glossary is None
 
+
+def test_real_api_stop_generates_session_logs(tmp_path):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    client = TestClient(app)
+
+    with patch("app.server.logging_cfg", return_value={"log_dir": str(log_dir)}), \
+         patch.object(GeminiSession, "start", new_callable=AsyncMock), \
+         patch.object(AudioCapture, "start", MagicMock()), \
+         patch.object(AudioCapture, "stop", MagicMock()):
+
+        # Start session via API
+        res_start = client.post("/api/start", json={"targets": ["en"], "expected_source_language": "ko"})
+        assert res_start.status_code == 200
+
+        sess_en = manager.sessions["en"]
+        sess_en._transcript = [
+            TranscriptEntry(timestamp=100.0, source="안녕하세요 여러분", target="Hello everyone", source_lang="ko", target_lang="en"),
+        ]
+
+        # Stop session via API
+        res_stop = client.post("/api/stop")
+        assert res_stop.status_code == 200
+
+        # Check that session log directory was created and contains all expected files
+        session_dirs = list((log_dir / "sessions").glob("*"))
+        assert len(session_dirs) == 1
+        s_dir = session_dirs[0]
+
+        assert (s_dir / "session.json").exists()
+        assert (s_dir / "source.txt").exists()
+        assert (s_dir / "target_en.txt").exists()
+        assert (s_dir / "aligned_en.txt").exists()
+
+        assert "Hello everyone" in (s_dir / "target_en.txt").read_text(encoding="utf-8")
+        assert "안녕하세요 여러분" in (s_dir / "source.txt").read_text(encoding="utf-8")
+
+
