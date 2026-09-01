@@ -434,15 +434,17 @@ def test_configuration_value_error_is_not_retried():
         model_resolver.lock_session("gemini-3.5-live-translate-preview")
 
         # Mock _run_session to raise a ValueError (non-retryable config error)
-        session._run_session = AsyncMock(side_effect=ValueError("language_codes parameter is only supported in Gemini Enterprise mode"))
+        session._run_session = AsyncMock(side_effect=ValueError("Simulated invalid configuration parameter"))
 
-        await session._run_with_retry()
+        with patch("app.gemini_session.session_log"), patch("app.gemini_session.server_log"):
+            await session._run_with_retry()
 
         # Should fail immediately without retrying
         assert session.state.status == SessionStatus.FAILED
         assert "Configuration error" in session.state.last_event
         assert session._attempt == 0
         session._run_session.assert_called_once()
+
 
         model_resolver.unlock_session()
 

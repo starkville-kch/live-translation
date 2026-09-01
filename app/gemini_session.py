@@ -170,9 +170,13 @@ class GeminiSession:
         self._has_verified_output: bool = False
         self._dropped_audio_chunks: int = 0
         self._auto_drift_correction: bool = bool(gemini_cfg().get("auto_drift_correction", False))
+
         self._drift_history: collections.deque = collections.deque(maxlen=3)
         self._consecutive_clean_turns: int = 0
         self._last_watchdog_reset_at: float = 0.0
+        self._turn_id: int = 0
+        self._last_evaluated_turn_id: int = -1
+
 
     @property
     def dropped_audio_chunks(self) -> int:
@@ -245,77 +249,127 @@ class GeminiSession:
         self._commit_current_turn()
 
     def _commit_current_turn(self) -> None:
-        if self._current_source.strip() or self._current_target.strip():
-            src = self._current_source.strip()
-            tgt = self._current_target.strip()
-            if self._glossary and src and self.expected_source_language == "ko" and self.target_language_code == "en":
-                tgt = self._glossary.correct(src, tgt)
-            self._transcript.append(TranscriptEntry(
-                timestamp=self._turn_start or time.monotonic(),
-                source=src,
-                target=tgt,
-                source_lang=self.expected_source_language,
-                target_lang=self.target_language_code,
-            ))
-            session_log.info(
-                "[%s] [Turn committed] %s (%s): %s | %s (%s): %s",
-                self.tag,
-                self.expected_source_language.upper(),
-                self._turn_in_lang or "auto",
-                src,
-                self.target_language_code.upper(),
-                self._turn_out_lang or self.target_language_code,
-                tgt,
-            )
+        if not (self._current_source.strip() or self._current_target.strip()):
+            return
 
-            # Score completed turn for language drift
-            turn_score = evaluate_drift_score(
-                self._turn_in_lang,
-                src,
-                self._turn_out_lang,
-                tgt,
-                expected_source=self.expected_source_language,
-                target_language=self.target_language_code,
-            )
-            self._drift_history.append(turn_score)
+        self._turn_id += 1
+        current_turn_id = self._turn_id
+        src = self._current_source.strip()
+        tgt = self._current_target.strip()
+        in_lang = self._turn_in_lang
+        out_lang = self._turn_out_lang
 
-            if turn_score == 0:
-                self._consecutive_clean_turns += 1
-                if self._consecutive_clean_turns >= 2:
-                    self._drift_history.clear()
-            else:
-                self._consecutive_clean_turns = 0
-                session_log.warning(
-                    "[%s] [Drift] Completed turn flagged: in_lang=%s, out_lang=%s, score=+%d",
-                    self.tag, self._turn_in_lang, self._turn_out_lang, turn_score
-                )
+        if self._glossary and src and self.expected_source_language == "ko" and self.target_language_code == "en":
+            tgt = self._glossary.correct(src, tgt)
 
-            total_drift = sum(self._drift_history)
-            if total_drift >= 3:
-                now = time.monotonic()
-                if self._auto_drift_correction:
-                    if (now - self._last_watchdog_reset_at) >= 15.0:
-                        self._last_watchdog_reset_at = now
-                        server_log.warning("[%s] Auto drift recovery: score=%d >= 3. Resetting session.", self.tag, total_drift)
-                        operator_events.add("warning", f"Auto drift recovery triggered [{self.target_language_code}] (score {total_drift})")
-                        asyncio.create_task(self.reset_clean(reason="Language drift watchdog"))
-                else:
-                    session_log.info(
-                        "[%s] [Drift] Score=%d >= 3 (auto_drift_correction is OFF; operator manual Pause->Resume available)",
-                        self.tag, total_drift
-                    )
-                    self._emit(last_event="⚠ 비정상 언어 감지 (수동 복구: Pause -> Resume)")
-                    operator_events.add(
-                        "warning",
-                        f"Language drift detected [{self.target_language_code}] (score {total_drift}) — manual Pause -> Resume available"
-                    )
+        self._transcript.append(TranscriptEntry(
+            timestamp=self._turn_start or time.monotonic(),
+            source=src,
+            target=tgt,
+            source_lang=self.expected_source_language,
+            target_lang=self.target_language_code,
+        ))
 
+        session_log.info(
+            "[%s] [Turn committed] %s (%s): %s | %s (%s): %s",
+            self.tag,
+            self.expected_source_language.upper(),
+            in_lang or "auto",
+            src,
+            self.target_language_code.upper(),
+            out_lang or self.target_language_code,
+            tgt,
+        )
+
+        # Clear turn accumulators immediately to prevent re-committing same turn
         self._current_source = ""
         self._current_target = ""
         self._turn_in_lang = None
         self._turn_out_lang = None
         self._turn_start = None
         self._first_audio_in_turn_sent_at = None
+
+        # Evaluate drift score exactly once per turn
+        if current_turn_id > self._last_evaluated_turn_id:
+            self._last_evaluated_turn_id = current_turn_id
+            self._evaluate_turn_drift(current_turn_id, in_lang, src, out_lang, tgt)
+
+    def _evaluate_turn_drift(
+        self,
+        turn_id: int,
+        in_lang: str | None,
+        src: str,
+        out_lang: str | None,
+        tgt: str,
+    ) -> None:
+        turn_score = evaluate_drift_score(
+            in_lang,
+            src,
+            out_lang,
+            tgt,
+            expected_source=self.expected_source_language,
+            target_language=self.target_language_code,
+        )
+        self._drift_history.append(turn_score)
+
+        if turn_score == 0:
+            self._consecutive_clean_turns += 1
+            if self._consecutive_clean_turns >= 2:
+                self._drift_history.clear()
+        else:
+            self._consecutive_clean_turns = 0
+            session_log.info(
+                "[%s] [Drift] turn=%d source=%s expected=%s score=+%d",
+                self.tag,
+                turn_id,
+                in_lang or "unknown",
+                self.expected_source_language,
+                turn_score,
+            )
+
+        total_drift = sum(self._drift_history)
+        if total_drift > 0:
+            session_log.info(
+                "[%s] [Drift] confirmation=%d/3",
+                self.tag,
+                total_drift,
+            )
+
+        # Drift auto-recovery:
+        # 1. Total drift score >= 3 (sustained across turns)
+        # 2. Only active when expected_source_language == "ko"
+        # 3. Only active when auto_drift_correction is True
+        # 4. Debounced by 15.0 seconds
+        if total_drift >= 3:
+            now = time.monotonic()
+            if self.expected_source_language == "ko" and self._auto_drift_correction:
+                if (now - self._last_watchdog_reset_at) >= 15.0:
+                    self._last_watchdog_reset_at = now
+                    session_log.info("[%s] [Drift] recovered via clean session reset", self.tag)
+                    server_log.warning(
+                        "[%s] Auto drift recovery: score=%d >= 3. Resetting session cleanly.",
+                        self.tag,
+                        total_drift,
+                    )
+                    operator_events.add(
+                        "warning",
+                        f"Auto drift recovery triggered [{self.target_language_code}] (score {total_drift})"
+                    )
+                    asyncio.create_task(self.reset_clean(reason="Language drift watchdog"))
+            else:
+                session_log.info(
+                    "[%s] [Drift] Score=%d >= 3 (auto recovery disabled: expected_source=%s, auto_drift_correction=%s)",
+                    self.tag,
+                    total_drift,
+                    self.expected_source_language,
+                    self._auto_drift_correction,
+                )
+                self._emit(last_event="⚠ 비정상 언어 감지 (수동 복구: Pause -> Resume)")
+                operator_events.add(
+                    "warning",
+                    f"Language drift detected [{self.target_language_code}] (score {total_drift}) — manual Pause -> Resume available"
+                )
+
 
     async def _auto_commit_loop(self, epoch: int) -> None:
         try:

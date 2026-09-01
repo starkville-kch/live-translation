@@ -189,3 +189,12 @@ def test_public_host_guard_allows_api_languages_and_blocks_targets():
     # /api/translation/targets should be blocked (404 / denied on public host)
     res_targets = client.get("/api/translation/targets", headers=pub_headers)
     assert res_targets.status_code == 404
+
+
+def test_status_default_drift_correction_is_manual_before_start():
+    client = TestClient(app)
+    res = client.get("/api/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["auto_drift_correction"] is False
+

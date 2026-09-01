@@ -1019,10 +1019,11 @@ async def resume_service(request: Request = None):
 
 
 @app.post("/api/config/auto-drift-correction")
+@app.post("/api/drift-correction")
 async def set_auto_drift_correction(request: Request, body: dict):
     if auth_err := _check_auth(request):
         return auth_err
-    enabled = bool(body.get("enabled", False))
+    enabled = bool(body.get("enabled", body.get("auto_drift_correction", False)))
     manager.set_auto_drift_correction(enabled)
     if session:
         session.set_auto_drift_correction(enabled)
@@ -1273,7 +1274,7 @@ async def get_status():
         "billed_audio_s": round(_billed_seconds, 1),
 
         "auto_stop_timeout_min": audio_cfg().get("auto_stop_timeout_min", 10),
-        "auto_drift_correction": primary_sess.auto_drift_correction if primary_sess else True,
+        "auto_drift_correction": primary_sess.auto_drift_correction if primary_sess else manager.auto_drift_correction,
         "session_epoch": primary_sess.session_epoch if primary_sess else 0,
         "device_index": audio_cfg().get("device_index", 0),
         "auto_restart_attempt": _auto_restart_attempt,

@@ -711,45 +711,6 @@ if (btnTestModel) {
   });
 }
 
-async function setDriftCorrection(enabled) {
-  try {
-    await fetch('/api/config/auto-drift-correction', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: enabled })
-    });
-    autoDriftCorrectionEnabled = enabled;
-    updateDriftUI(autoDriftCorrectionEnabled);
-  } catch (err) {
-    console.error('Failed to update drift correction:', err);
-    updateDriftUI(autoDriftCorrectionEnabled);
-  }
-}
-
-if (radioDriftManual && radioDriftAuto) {
-  radioDriftManual.addEventListener('change', () => setDriftCorrection(false));
-  radioDriftAuto.addEventListener('change', () => setDriftCorrection(true));
-}
-
-function updateDriftUI(enabled) {
-  const descEl = document.getElementById('stat-drift-status');
-  const isEn = getOperatorUiLanguage() === 'en';
-  if (enabled) {
-    if (radioDriftAuto) radioDriftAuto.checked = true;
-    if (descEl) {
-      descEl.textContent = isEn ? 'Auto-recovers session on language drift' : '잘못된 언어 감지 시 세션 자동 교정';
-      descEl.style.color = 'var(--color-success-700)';
-      descEl.style.fontWeight = '600';
-    }
-  } else {
-    if (radioDriftManual) radioDriftManual.checked = true;
-    if (descEl) {
-      descEl.textContent = isEn ? 'Manual correction (Pause → Resume)' : '잘못된 언어 감지 시 수동 교정 (Pause → Resume)';
-      descEl.style.color = 'var(--color-text-muted)';
-      descEl.style.fontWeight = '400';
-    }
-  }
-}
 
 // ============================================================
 // ATTENDEE ACCESS

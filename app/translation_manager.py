@@ -21,6 +21,7 @@ from typing import Callable, Dict, List, Optional
 
 from app.audio import AudioCapture
 from app.broadcast import CaptionBroadcaster, CaptionEvent
+from app.config import gemini_cfg
 from app.gemini_session import GeminiSession, SessionState
 from app.languages import is_valid_language_code
 from app.logger import server_log
@@ -49,7 +50,8 @@ class TranslationManager:
         self.broadcasters: Dict[str, CaptionBroadcaster] = {}
         self.active_targets: List[str] = [default_target]
         self.expected_source_language: str = default_source
-        self.auto_drift_correction: bool = False
+        self.auto_drift_correction: bool = bool(gemini_cfg().get("auto_drift_correction", False))
+
 
         # Ensure default primary broadcaster is available before start()
         self.broadcasters[default_target] = CaptionBroadcaster(
