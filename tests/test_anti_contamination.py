@@ -291,37 +291,32 @@ def test_drift_scored_on_completed_turns_only_with_rolling_window():
     session = GeminiSession(on_caption=lambda c: None)
     session._auto_drift_correction = False
 
-    # Turn 1: ko (0) -> clean
+    # Turn 1: ko (0) -> clean turn keeps drift history empty (0/3)
     session._current_ko = "말씀을 나누겠습니다"
     session._current_en = "Let us share the Word"
     session._turn_in_lang = "ko"
     session._turn_out_lang = "en"
     session._commit_current_turn()
-    assert list(session._drift_history) == [0]
+    assert list(session._drift_history) == []
+    assert sum(session._drift_history) == 0
 
-    # Turn 2: ja (+1)
+    # Turn 2: ja (+1) -> drift detected (1/3)
     session._current_ko = "はい、皆さん"
     session._current_en = "Yes, everyone"
     session._turn_in_lang = "ja"
     session._turn_out_lang = "en"
     session._commit_current_turn()
-    assert list(session._drift_history) == [0, 1]
+    assert list(session._drift_history) == [1]
+    assert sum(session._drift_history) == 1
 
-    # Turn 3: ko (0)
+    # Turn 3: ko (0) -> clean expected source turn immediately resets confirmation to 0/3
     session._current_ko = "다시 한국어 말씀"
     session._current_en = "Korean sermon again"
     session._turn_in_lang = "ko"
     session._turn_out_lang = "en"
     session._commit_current_turn()
-    assert list(session._drift_history) == [0, 1, 0]
-
-    # Turn 4: ko (0) -> 2 consecutive clean turns clear the drift deque!
-    session._current_ko = "두번째 한국어 말씀"
-    session._current_en = "Second Korean sermon"
-    session._turn_in_lang = "ko"
-    session._turn_out_lang = "en"
-    session._commit_current_turn()
     assert len(session._drift_history) == 0
+    assert sum(session._drift_history) == 0
 
 
 def test_auto_drift_correction_off_does_not_reset():

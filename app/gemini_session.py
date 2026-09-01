@@ -310,13 +310,18 @@ class GeminiSession:
             expected_source=self.expected_source_language,
             target_language=self.target_language_code,
         )
-        self._drift_history.append(turn_score)
-
         if turn_score == 0:
+            had_drift = len(self._drift_history) > 0
+            self._drift_history.clear()
             self._consecutive_clean_turns += 1
-            if self._consecutive_clean_turns >= 2:
-                self._drift_history.clear()
+            if had_drift:
+                session_log.info(
+                    "[%s] [Drift] confirmation=0/3 (reset by clean %s turn)",
+                    self.tag,
+                    self.expected_source_language,
+                )
         else:
+            self._drift_history.append(turn_score)
             self._consecutive_clean_turns = 0
             session_log.info(
                 "[%s] [Drift] turn=%d source=%s expected=%s score=+%d",

@@ -395,14 +395,24 @@ def _write_session_log() -> Optional[str]:
         summary.txt     — Concise operational performance & billing summary
     """
     try:
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_dir = Path(logging_cfg().get("log_dir", "logs")) / "sessions" / ts
-        session_dir.mkdir(parents=True, exist_ok=True)
-
         for s in manager.sessions.values():
             s.flush_current_turn()
 
         runtime = _runtime_seconds()
+        max_turns = max([len(s.transcript) for s in manager.sessions.values()], default=0)
+
+        # Do not export zero-content sessions (e.g. initial teardown before first start, or instant cancel)
+        if max_turns == 0 and runtime < 5.0:
+            server_log.debug("Skipping session export: zero turns and negligible runtime (<5s)")
+            return None
+        if not manager.sessions and max_turns == 0:
+            server_log.debug("Skipping session export: no active sessions or turns")
+            return None
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_dir = Path(logging_cfg().get("log_dir", "logs")) / "sessions" / ts
+        session_dir.mkdir(parents=True, exist_ok=True)
+
         active_tgts = list(manager.active_targets) if manager.active_targets else ["en"]
         per_target_cost = _billed_seconds * _COST_PER_AUDIO_SEC
         total_cost = len(active_tgts) * per_target_cost
@@ -415,7 +425,6 @@ def _write_session_log() -> Optional[str]:
         )
 
         primary_sess = manager.sessions.get(manager.primary_target)
-        max_turns = max([len(s.transcript) for s in manager.sessions.values()], default=0)
 
         t0 = _service_start_time if _service_start_time is not None else None
         if t0 is None:

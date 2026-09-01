@@ -1349,6 +1349,14 @@ function updateMonitorTargetUI(targets, primaryTarget) {
 
 function connectAudio() {
   disconnectAudio();
+  if (!audioEnabled || !_serviceRunning || _paused) {
+    return;
+  }
+  const currentActive = window._lastStatusSnapshot?.translation?.active_targets || _selectedTargets || [];
+  if (!currentActive.includes(_monitorTarget)) {
+    console.log('[Audio] Monitor target', _monitorTarget, 'is not currently active; suppressing WebSocket');
+    return;
+  }
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const target = _monitorTarget || 'en';
   const url = proto + '//' + location.host + '/audio-stream?lang=' + encodeURIComponent(target);
@@ -1356,10 +1364,16 @@ function connectAudio() {
   audioWs.binaryType = 'arraybuffer';
   audioWs.onmessage = (e) => playPCM16(e.data);
   audioWs.onerror = () => {};
-  audioWs.onclose = () => {
+  audioWs.onclose = (ev) => {
     audioWs = null;
-    // Reconnect to same selected target if still enabled and running — never silently fall back
-    if (audioEnabled && _serviceRunning && !_paused) {
+    // Do NOT retry if connection was rejected (e.g. 1008 policy/inactive)
+    if (ev && (ev.code === 1008 || ev.code === 4003 || ev.code === 4403)) {
+      console.warn('[Audio] WebSocket rejected by server:', ev.code, ev.reason);
+      disableAudio();
+      return;
+    }
+    const currentActive = window._lastStatusSnapshot?.translation?.active_targets || _selectedTargets || [];
+    if (audioEnabled && _serviceRunning && !_paused && currentActive.includes(_monitorTarget)) {
       setTimeout(() => {
         if (audioEnabled && _serviceRunning && !_paused) {
           connectAudio();
@@ -1419,6 +1433,11 @@ if (btnAudio) {
     if (audioEnabled) {
       disableAudio();
     } else {
+      if (!_serviceRunning || _paused) {
+        const isEn = getOperatorUiLanguage() === 'en';
+        alert(isEn ? 'Translation must be running to monitor audio.' : '통역 서비스가 실행 중일 때만 음성을 모니터링할 수 있습니다.');
+        return;
+      }
       let accepted = false;
       try { accepted = (sessionStorage.getItem('skc_earphone_accepted') === 'true'); } catch(_) {}
       if (accepted) {

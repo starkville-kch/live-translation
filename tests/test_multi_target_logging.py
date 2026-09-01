@@ -208,3 +208,14 @@ def test_real_api_stop_generates_session_logs(tmp_path):
         assert "안녕하세요 여러분" in (s_dir / "transcript.md").read_text(encoding="utf-8")
 
 
+def test_empty_session_does_not_export_logs(tmp_path):
+    """Zero-turn and negligible runtime sessions must not create empty log folders."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with patch("app.server.logging_cfg", return_value={"log_dir": str(log_dir)}):
+        asyncio.run(manager.stop())
+        result = _write_session_log()
+        assert result is None
+        assert not (log_dir / "sessions").exists() or len(list((log_dir / "sessions").glob("*"))) == 0
+
+

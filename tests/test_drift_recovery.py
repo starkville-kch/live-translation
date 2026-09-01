@@ -61,15 +61,15 @@ def test_one_non_korean_anomaly_does_not_trigger_recovery():
     assert sum(session._drift_history) == 1
     session.reset_clean.assert_not_called()
 
-    # Followed by 2 clean Korean turns -> drift history should clear
-    for i in range(2):
-        session._current_source = f"은혜로운 말씀 {i}"
-        session._current_target = f"Graceful word {i}"
-        session._turn_in_lang = "ko"
-        session._turn_out_lang = "en"
-        session._commit_current_turn()
+    # Followed by 1 clean Korean turn -> drift history clears immediately back to 0/3
+    session._current_source = "은혜로운 말씀"
+    session._current_target = "Graceful word"
+    session._turn_in_lang = "ko"
+    session._turn_out_lang = "en"
+    session._commit_current_turn()
 
     assert len(session._drift_history) == 0
+    assert sum(session._drift_history) == 0
     session.reset_clean.assert_not_called()
 
 
@@ -160,7 +160,8 @@ def test_korean_resumes_normally_after_recovery():
         session._turn_out_lang = "en"
         session._commit_current_turn()
 
-        assert list(session._drift_history) == [0]
+        assert list(session._drift_history) == []
+        assert sum(session._drift_history) == 0
         assert session._consecutive_clean_turns == 1
 
     asyncio.run(_run())

@@ -250,6 +250,9 @@
     animation: slideUp 0.4s ease-out;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
   .line-source, .line-ko {
     display: none;
@@ -283,6 +286,9 @@
     color: var(--color-navy-900);
     font-weight: 500;
     min-height: 3.5em;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
 
   @keyframes slideUp {
@@ -636,26 +642,16 @@ function connect() {
       const text = (msg.target || msg.text || '').trim();
       const sourceText = (msg.source || msg.ko || '').trim();
       if (text) {
-        let para = historyInner.lastElementChild;
-        const needsNew = !para || /[.!?]$/.test(para.dataset.last || '');
-        if (needsNew) {
-          para = document.createElement('div');
-          para.className = 'line';
-          const srcDiv = document.createElement('div');
-          srcDiv.className = 'line-source';
-          para.appendChild(srcDiv);
-          para.addEventListener('click', () => para.classList.toggle('source-open'));
-          historyInner.appendChild(para);
-          while (historyInner.children.length > 12) historyInner.removeChild(historyInner.firstChild);
-        }
-        const srcDiv = para.querySelector('.line-source') || para.querySelector('.line-ko');
-        const existing = [...para.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
-        if (existing) {
-          existing.textContent += ' ' + text;
-        } else {
-          para.insertBefore(document.createTextNode(text), srcDiv);
-        }
-        if (sourceText) srcDiv.textContent = (srcDiv.textContent ? srcDiv.textContent + ' ' : '') + sourceText;
+        const para = document.createElement('div');
+        para.className = 'line';
+        const srcDiv = document.createElement('div');
+        srcDiv.className = 'line-source';
+        if (sourceText) srcDiv.textContent = sourceText;
+        para.appendChild(document.createTextNode(text));
+        para.appendChild(srcDiv);
+        para.addEventListener('click', () => para.classList.toggle('source-open'));
+        historyInner.appendChild(para);
+        while (historyInner.children.length > 25) historyInner.removeChild(historyInner.firstChild);
         para.dataset.last = text;
         historyEl.scrollTop = historyEl.scrollHeight;
       }
