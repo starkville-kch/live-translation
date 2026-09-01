@@ -432,6 +432,7 @@ const langNoticeText = document.getElementById('lang-notice-text');
 
 let currentTargetLang = '';
 let activeLanguages = [];
+let awaitingFirstTurnForLang = null;  // set on lang switch, cleared on first update/commit
 
 function showNotice(msg) {
   if (!msg) {
@@ -441,6 +442,11 @@ function showNotice(msg) {
     langNoticeText.textContent = msg;
     langNotice.classList.remove('hidden');
   }
+}
+
+function displayName(code) {
+  const l = activeLanguages.find(x => x.code === code);
+  return l ? l.display : code.toUpperCase();
 }
 
 function clearCurrentTranslationView() {
@@ -461,12 +467,22 @@ function switchLanguage(newLang, updateUrl = true) {
     window.history.replaceState({}, '', newUrl.toString());
   }
 
+  // Clear all committed lines and the in-progress caption immediately
   clearCurrentTranslationView();
+
+  // Show a "waiting" notice so the attendee knows what target is active
+  awaitingFirstTurnForLang = newLang;
+  showNotice(`${displayName(newLang)} selected — waiting for next translation…`);
+
+  // Rebind streams
   disconnectAudio();
   connect();
   if (audioEnabled && !isPaused) {
     connectAudio();
   }
+
+  // Immediately notify server of new target so operator listeners_by_target updates
+  sendTelemetryTargetUpdate(newLang);
 }
 
 // ── Font size ──────────────────────────────────────────────────────────────
@@ -662,6 +678,11 @@ function connect() {
     if (msg.kind === 'ping') return;
 
     if (msg.kind === 'update') {
+      // Dismiss the "waiting" notice on first real content
+      if (awaitingFirstTurnForLang === currentTargetLang) {
+        awaitingFirstTurnForLang = null;
+        showNotice(null);
+      }
       current.textContent = msg.target || msg.text || '';
       if (audioEnabled && !audioWs && !isPaused) {
         connectAudio();
@@ -673,6 +694,11 @@ function connect() {
       const text = (msg.target || msg.text || '').trim();
       const sourceText = (msg.source || msg.ko || '').trim();
       if (text) {
+        // Dismiss the "waiting" notice on first committed turn
+        if (awaitingFirstTurnForLang === currentTargetLang) {
+          awaitingFirstTurnForLang = null;
+          showNotice(null);
+        }
         const para = document.createElement('div');
         para.className = 'line';
         const srcDiv = document.createElement('div');
@@ -796,40 +822,52 @@ loadChurchInfo();
 initLanguageSelection();
 
 // ── Telemetry ping/pong ───────────────────────────────────────────────────
+let _telemetryWs = null;
+let _telemetryClientId = sessionStorage.getItem('skc_cid');
+if (!_telemetryClientId) {
+  _telemetryClientId = 'c_' + Math.random().toString(36).substring(2, 10);
+  sessionStorage.setItem('skc_cid', _telemetryClientId);
+}
+
+function sendTelemetryTargetUpdate(lang) {
+  if (_telemetryWs && _telemetryWs.readyState === WebSocket.OPEN) {
+    _telemetryWs.send(JSON.stringify({
+      type: 'target_changed',
+      client_id: _telemetryClientId,
+      target_lang: lang,
+    }));
+  }
+}
+
 (function setupTelemetry() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  let clientId = sessionStorage.getItem('skc_cid');
-  if (!clientId) {
-    clientId = 'c_' + Math.random().toString(36).substring(2, 10);
-    sessionStorage.setItem('skc_cid', clientId);
-  }
-  let tWs = null;
   let timer = null;
   function initTelemetry() {
     try {
-      tWs = new WebSocket(proto + '//' + location.host + '/ws/telemetry');
-      tWs.onopen = () => {
+      const ws = new WebSocket(proto + '//' + location.host + '/ws/telemetry');
+      _telemetryWs = ws;
+      ws.onopen = () => {
         if (timer) clearInterval(timer);
         timer = setInterval(() => {
-          if (tWs && tWs.readyState === WebSocket.OPEN) {
-            tWs.send(JSON.stringify({
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
               type: 'latency_ping',
-              client_id: clientId,
+              client_id: _telemetryClientId,
               client_sent_ms: performance.now(),
               hostname: window.location.hostname
             }));
           }
         }, 10000);
       };
-      tWs.onmessage = (e) => {
+      ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
           if (msg.type === 'latency_pong') {
             const rtt = performance.now() - msg.client_sent_ms;
-            if (tWs && tWs.readyState === WebSocket.OPEN) {
-              tWs.send(JSON.stringify({
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
                 type: 'latency_report',
-                client_id: clientId,
+                client_id: _telemetryClientId,
                 hostname: window.location.hostname,
                 rtt_ms: Math.round(rtt),
                 target_lang: currentTargetLang || 'en'
@@ -838,11 +876,12 @@ initLanguageSelection();
           }
         } catch(err) {}
       };
-      tWs.onclose = () => {
+      ws.onclose = () => {
+        if (_telemetryWs === ws) _telemetryWs = null;
         if (timer) clearInterval(timer);
         setTimeout(initTelemetry, 15000);
       };
-      tWs.onerror = () => {};
+      ws.onerror = () => {};
     } catch(err) {}
   }
   initTelemetry();

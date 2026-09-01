@@ -881,6 +881,11 @@ async def telemetry_stream(ws: WebSocket):
                             b.record_rtt(
                                 hostname, rtt_ms, client_id=client_id, target_lang=target_lang
                             )
+            elif msg_type == "target_changed":
+                client_id = str(data.get("client_id", ""))
+                target_lang = str(data.get("target_lang", ""))
+                if client_id and target_lang:
+                    manager.primary_broadcaster.update_target(client_id, target_lang)
 
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass

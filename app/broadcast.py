@@ -195,6 +195,19 @@ class CaptionBroadcaster:
             "listeners_by_target": by_target,
         }
 
+    def update_target(self, client_id: str, target_lang: str) -> None:
+        """Immediately update an existing client's target language association."""
+        clean_cid = str(client_id)[:64] if client_id else ""
+        clean_lang = str(target_lang).lower().strip() if target_lang else ""
+        if not clean_cid or not clean_lang:
+            return
+        now = time.monotonic()
+        existing = self._active_clients.get(clean_cid)
+        if existing:
+            route = existing[0]
+            self._active_clients[clean_cid] = (route, now, clean_lang)
+        # If client not yet seen (first report race), do nothing — next latency_report will register it
+
     @property
     def caption_count(self) -> int:
         return self._caption_count

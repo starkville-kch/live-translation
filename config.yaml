@@ -27,9 +27,8 @@ network:
   public_url: https://live.starkvillekoreanchurch.org
 translation:
   default_active_targets:
-  - zh
-  - es
-  expected_source_language: en
+  - en
+  expected_source_language: ko
   supported_targets:
   - en
   - uk

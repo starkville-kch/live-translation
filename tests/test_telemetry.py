@@ -31,3 +31,41 @@ def test_telemetry_input_validation():
     stats = b.get_telemetry_stats()
     assert stats["local_samples"] == 0
     assert stats["local_rtt_ms"] is None
+
+
+def test_language_switch_updates_listeners_by_target():
+    """
+    Attendee switches ZH -> EN -> ZH using same client_id.
+    listeners_by_target must move atomically; total stays at 1.
+    """
+    b = CaptionBroadcaster()
+
+    # Initial state: attendee on Chinese
+    b.record_rtt("localhost", 20.0, client_id="abc123", target_lang="zh")
+    stats = b.get_telemetry_stats()
+    assert stats["listeners_by_target"].get("zh", 0) == 1
+    assert stats["listeners_by_target"].get("en", 0) == 0
+    assert stats["total_listeners"] == 1
+
+    # Attendee switches ZH -> EN via target_changed
+    b.update_target("abc123", "en")
+    stats = b.get_telemetry_stats()
+    assert stats["listeners_by_target"].get("en", 0) == 1
+    assert stats["listeners_by_target"].get("zh", 0) == 0
+    assert stats["total_listeners"] == 1
+
+    # Attendee switches back EN -> ZH
+    b.update_target("abc123", "zh")
+    stats = b.get_telemetry_stats()
+    assert stats["listeners_by_target"].get("zh", 0) == 1
+    assert stats["listeners_by_target"].get("en", 0) == 0
+    assert stats["total_listeners"] == 1
+
+
+def test_update_target_unknown_client_is_noop():
+    """update_target for an unseen client_id must not create a phantom listener."""
+    b = CaptionBroadcaster()
+    b.update_target("ghost_client", "en")
+    stats = b.get_telemetry_stats()
+    assert stats["total_listeners"] == 0
+    assert stats["listeners_by_target"] == {}
