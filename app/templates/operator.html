@@ -36,16 +36,51 @@
       </div>
     </div>
 
-    <!-- Caption preview (Korean + English paired) -->
-    <div class="card">
-      <h2>
-        <span class="tooltip">
-          <span data-lang="ko">실시간 자막 미리보기 (Preview)</span>
-          <span data-lang="en">Live Captions Preview</span>
-          <span class="tooltiptext" data-lang="ko">Gemini가 번역한 한국어 원문과 영어 번역문을 실시간으로 쌍으로 보여줍니다. 참석자 화면에 표시되는 내용과 동일합니다.</span>
-          <span class="tooltiptext" data-lang="en">Live paired source speech and translated captions, identical to what attendees see.</span>
-        </span>
-      </h2>
+    <!-- Caption preview (Paired source + monitored target) -->
+    <div class="card" id="card-preview">
+      <div class="preview-header-row">
+        <h2>
+          <span class="tooltip">
+            <span data-lang="ko">실시간 자막 미리보기 (Preview)</span>
+            <span data-lang="en">Live Captions Preview</span>
+            <span class="tooltiptext" data-lang="ko">Gemini가 번역한 실시간 발화와 통역 자막을 확인합니다.</span>
+            <span class="tooltiptext" data-lang="en">Live paired source speech and translated captions.</span>
+          </span>
+        </h2>
+
+        <!-- Header Right: Unified Monitor Controls (Target Selector + Squeezed Audio Playback) -->
+        <div class="preview-monitor-controls">
+          <!-- Unified Monitor Target Selector (hidden when <= 1 active target) -->
+          <div id="preview-monitor-target-wrap" class="monitor-target-wrap" style="display: none;">
+            <label for="monitor-target-select" class="monitor-target-label">
+              <span data-lang="ko">모니터 언어:</span>
+              <span data-lang="en">Monitor Target:</span>
+            </label>
+            <select id="monitor-target-select" class="monitor-target-select" aria-label="Select operator monitor target language">
+              <!-- Populated dynamically: English, Ukrainian, Chinese, etc. -->
+            </select>
+          </div>
+
+          <!-- Squeezed Audio Playback Controls -->
+          <div class="preview-audio-controls">
+            <button type="button" id="btn-audio" class="btn-playback-mini off" title="실시간 통역 음성 듣기 / 중지">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+                <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+              </svg>
+              <span class="text">
+                <span data-lang="ko">🎧 듣기</span>
+                <span data-lang="en">🎧 Listen</span>
+              </span>
+            </button>
+            <div id="volume-wrapper" class="preview-volume-wrap" style="display: none;">
+              <span style="font-size: 11px;">🔊</span>
+              <input id="vol-slider" type="range" min="0" max="1" step="0.05" value="0.8" class="preview-vol-slider" title="Monitor Volume">
+              <span id="vol-label" class="preview-vol-label">80%</span>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="preview-wrap"><div id="preview"></div></div>
     </div>
 
@@ -130,47 +165,7 @@
       </a>
     </div>
 
-    <!-- Audio playback monitor -->
-    <div class="card" id="card-audio-monitor">
-      <h2>
-        <span class="tooltip tooltip-left">
-          <span data-lang="ko">🎧 음성 통역 모니터 (Audio Monitor)</span>
-          <span data-lang="en">🎧 Audio Monitor</span>
-          <span class="tooltiptext" data-lang="ko">관리자가 이어폰을 꽂고 번역된 실시간 통역 음성을 간헐적으로 점검(Spot-check)하기 위한 영역입니다.</span>
-          <span class="tooltiptext" data-lang="en">Earphone spot-check tool for operators to verify translated audio stream.</span>
-        </span>
-      </h2>
-      <div class="card-body">
-        <!-- Multi-target Monitor Selection (hidden when only 1 active target) -->
-        <div id="monitor-target-section" style="display: none; margin-bottom: 12px; width: 100%;">
-          <label for="monitor-target-select" style="font-size: 11px; font-weight: 700; color: var(--color-navy-900); text-transform: uppercase; letter-spacing: 0.03em; display: block; margin-bottom: 4px;">
-            <span data-lang="ko">모니터 언어 (Monitor Target)</span>
-            <span data-lang="en">Monitor Target</span>
-          </label>
-          <select id="monitor-target-select" style="width: 100%; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--color-warm-300); background: #ffffff; font-size: 13px; font-weight: 600; color: var(--color-navy-900); cursor: pointer;">
-            <!-- Populated dynamically: English, Ukrainian, Chinese, etc. -->
-          </select>
-        </div>
 
-        <div class="audio-row" style="width: 100%;">
-          <button type="button" id="btn-audio" class="btn-playback off" title="실시간 통역 음성 듣기 / 중지">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
-              <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
-            </svg>
-            <span class="text">
-              <span data-lang="ko">🎧 듣기</span>
-              <span data-lang="en">🎧 Listen</span>
-            </span>
-          </button>
-          <div id="volume-wrapper" style="display: none; align-items: center; gap: 8px; margin-top: 8px; width: 100%;">
-            <span style="font-size: 13px;">🔊</span>
-            <input id="vol-slider" type="range" min="0" max="1" step="0.05" value="0.8" style="flex: 1; accent-color: var(--color-gold-500);">
-            <span id="vol-label" style="font-size: 12px; color: var(--color-text-muted); min-width: 32px; text-align: right;">80%</span>
-          </div>
-        </div>
-      </div>
-    </div>
 
     {% include "operator/_event_log.html" %}
 

@@ -37,10 +37,11 @@ const modal             = document.getElementById('earphone-modal');
 const btnAudio          = document.getElementById('btn-audio');
 const volSlider         = document.getElementById('vol-slider');
 const volLabel          = document.getElementById('vol-label');
-const volWrapper            = document.getElementById('volume-wrapper');
-const monitorTargetSection  = document.getElementById('monitor-target-section');
-const monitorTargetSelect   = document.getElementById('monitor-target-select');
-let _selectedMonitorLang    = 'en';
+const volWrapper                = document.getElementById('volume-wrapper');
+const previewMonitorTargetWrap  = document.getElementById('preview-monitor-target-wrap');
+const monitorTargetSelect       = document.getElementById('monitor-target-select');
+const audioMonitorLangDisplay   = document.getElementById('audio-monitor-lang-display');
+let _monitorTarget              = 'en';
 const selDevice         = document.getElementById('device-select');
 const btnRefreshDevices = document.getElementById('btn-refresh-devices');
 const radioDriftManual  = document.getElementById('drift-manual');
@@ -1186,82 +1187,137 @@ function getTargetLanguageName(code, uiLang) {
 
 function renderAudioButton() {
   if (!btnAudio) return;
-  const targetCode = _selectedMonitorLang || 'en';
+  const isEn = getOperatorUiLanguage() === 'en';
+  const targetCode = _monitorTarget || 'en';
+  const info = _catalogMap ? _catalogMap.get(targetCode) : null;
+  const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : targetCode.toUpperCase();
   const nameKo = getTargetLanguageName(targetCode, 'ko');
   const nameEn = getTargetLanguageName(targetCode, 'en');
 
+  const wrap = document.getElementById('preview-monitor-target-wrap');
+  const isSelectorVisible = wrap && wrap.style.display !== 'none';
+
   if (audioEnabled) {
-    btnAudio.className = 'btn-playback on';
-    btnAudio.title = `${nameEn} monitoring active — click to mute`;
+    btnAudio.className = 'btn-playback-mini on';
+    btnAudio.title = `${displayName} monitoring active — click to stop`;
     btnAudio.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
         <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
       </svg>
       <span class="text">
-        <span data-lang="ko">🔊 ${nameKo} 모니터링 중 — 정지</span>
-        <span data-lang="en">🔊 Monitoring ${nameEn} — Stop</span>
+        <span data-lang="ko">🔊 정지</span>
+        <span data-lang="en">🔊 Stop</span>
       </span>
     `;
-    if (volWrapper) volWrapper.style.display = 'flex';
+    if (volWrapper) volWrapper.style.display = 'inline-flex';
   } else {
-    btnAudio.className = 'btn-playback off';
-    btnAudio.title = 'Click to spot-check live translation audio';
+    btnAudio.className = 'btn-playback-mini off';
+    btnAudio.title = `Click to spot-check ${displayName} audio`;
+    const labelKo = isSelectorVisible ? '🎧 듣기' : `🎧 ${nameKo} 듣기`;
+    const labelEn = isSelectorVisible ? '🎧 Listen' : `🎧 Listen to ${nameEn}`;
     btnAudio.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
         <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
       </svg>
       <span class="text">
-        <span data-lang="ko">🎧 듣기</span>
-        <span data-lang="en">🎧 Listen</span>
+        <span data-lang="ko">${labelKo}</span>
+        <span data-lang="en">${labelEn}</span>
       </span>
     `;
     if (volWrapper) volWrapper.style.display = 'none';
   }
 }
 
+function updateAudioMonitorDisplay() {
+  const displayEl = document.getElementById('audio-monitor-lang-display');
+  if (displayEl) {
+    const targetCode = _monitorTarget || 'en';
+    const info = _catalogMap ? _catalogMap.get(targetCode) : null;
+    const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : targetCode.toUpperCase();
+    displayEl.textContent = displayName;
+  }
+  renderAudioButton();
+}
+
+function setMonitorTarget(newTarget) {
+  if (!newTarget) return;
+  const isChanged = (newTarget !== _monitorTarget);
+  _monitorTarget = newTarget;
+
+  if (monitorTargetSelect && monitorTargetSelect.value !== newTarget) {
+    monitorTargetSelect.value = newTarget;
+  }
+
+  // 1. Auto-mute active audio (safe switching)
+  if (audioEnabled) {
+    disableAudio();
+  }
+
+  // 2. Update Audio Monitor label & button
+  updateAudioMonitorDisplay();
+
+  // 3. If changed, close & rebind SSE preview to new target and clear preview
+  if (isChanged) {
+    resetPreview();
+    connectSSE();
+  }
+
+  // 4. Mark currently monitored target in Today's Translation Languages
+  if (window._lastStatusSnapshot) {
+    updateLanguageTargets(window._lastStatusSnapshot);
+  }
+}
+
 function updateMonitorTargetUI(targets, primaryTarget) {
-  if (!monitorTargetSection || !monitorTargetSelect) return;
+  const wrap = document.getElementById('preview-monitor-target-wrap');
+  const sel = document.getElementById('monitor-target-select');
+  if (!wrap || !sel) return;
+
   const list = Array.isArray(targets) && targets.length > 0 ? targets : (primaryTarget ? [primaryTarget] : ['en']);
 
   if (list.length <= 1) {
-    monitorTargetSection.style.display = 'none';
-    _selectedMonitorLang = list[0] || primaryTarget || 'en';
-  } else {
-    monitorTargetSection.style.display = 'block';
-
-    const currentOptions = Array.from(monitorTargetSelect.options).map(o => o.value);
-    const isSame = currentOptions.length === list.length && currentOptions.every((val, i) => val === list[i]);
-
-    if (!isSame) {
-      const prevSelected = _selectedMonitorLang;
-      monitorTargetSelect.innerHTML = '';
-      list.forEach(code => {
-        const info = _catalogMap.get(code);
-        const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
-        const opt = document.createElement('option');
-        opt.value = code;
-        opt.textContent = displayName;
-        monitorTargetSelect.appendChild(opt);
-      });
-
-      if (list.includes(prevSelected)) {
-        _selectedMonitorLang = prevSelected;
-      } else {
-        _selectedMonitorLang = list[0];
-      }
-      monitorTargetSelect.value = _selectedMonitorLang;
+    wrap.style.display = 'none';
+    const soleTarget = list[0] || primaryTarget || 'en';
+    if (_monitorTarget !== soleTarget) {
+      setMonitorTarget(soleTarget);
+    } else {
+      updateAudioMonitorDisplay();
     }
+    return;
   }
 
-  renderAudioButton();
+  wrap.style.display = 'inline-flex';
+
+  const currentOptions = Array.from(sel.options).map(o => o.value);
+  const isSame = currentOptions.length === list.length && currentOptions.every((val, i) => val === list[i]);
+
+  if (!isSame) {
+    sel.innerHTML = '';
+    list.forEach(code => {
+      const info = _catalogMap ? _catalogMap.get(code) : null;
+      const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = displayName;
+      sel.appendChild(opt);
+    });
+  }
+
+  if (!list.includes(_monitorTarget)) {
+    const defaultTarget = list.includes(primaryTarget) ? primaryTarget : list[0];
+    setMonitorTarget(defaultTarget);
+  } else {
+    sel.value = _monitorTarget;
+    updateAudioMonitorDisplay();
+  }
 }
 
 function connectAudio() {
   disconnectAudio();
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const target = _selectedMonitorLang || 'en';
+  const target = _monitorTarget || 'en';
   const url = proto + '//' + location.host + '/audio-stream?lang=' + encodeURIComponent(target);
   audioWs = new WebSocket(url);
   audioWs.binaryType = 'arraybuffer';
@@ -1292,7 +1348,7 @@ function enableAudio() {
   audioEnabled = true;
   connectAudio();
   renderAudioButton();
-  if (volWrapper) volWrapper.style.display = 'flex';
+  if (volWrapper) volWrapper.style.display = 'inline-flex';
   if (modal) modal.classList.add('hidden');
   updateVolLabel();
 }
@@ -1343,15 +1399,7 @@ if (btnAudio) {
 
 if (monitorTargetSelect) {
   monitorTargetSelect.addEventListener('change', () => {
-    const newTarget = monitorTargetSelect.value;
-    if (newTarget === _selectedMonitorLang) return;
-
-    if (audioEnabled) {
-      // Auto-mute first rather than suddenly playing another language
-      disableAudio();
-    }
-    _selectedMonitorLang = newTarget;
-    renderAudioButton();
+    setMonitorTarget(monitorTargetSelect.value);
   });
 }
 
@@ -1409,8 +1457,12 @@ function resetPreview() {
 }
 
 function connectSSE() {
-  if (captionEs) captionEs.close();
-  captionEs = new EventSource('/stream');
+  if (captionEs) {
+    try { captionEs.close(); } catch(_) {}
+    captionEs = null;
+  }
+  const streamUrl = _monitorTarget ? `/stream?lang=${encodeURIComponent(_monitorTarget)}` : '/stream';
+  captionEs = new EventSource(streamUrl);
   captionEs.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.kind === 'ping') return;
@@ -1749,6 +1801,7 @@ function updateLanguageTargets(st) {
         }
 
         const isPrimary = (tgt === primaryTarget);
+        const isMonitored = (tgt === _monitorTarget);
 
         const card = document.createElement('div');
         card.className = 'lang-session-card';
@@ -1758,7 +1811,10 @@ function updateLanguageTargets(st) {
               <span class="status-dot-mini ${statusClass}"></span>
               <span class="lang-session-name">${displayName}</span>
             </div>
-            ${isPrimary ? `<span class="primary-target-badge" style="font-size: 10px; padding: 1px 5px;"><span data-lang="ko">주 언어</span><span data-lang="en">Primary</span></span>` : ''}
+            <div style="display: flex; align-items: center; gap: 5px;">
+              ${isMonitored ? `<span class="monitor-target-indicator"><span data-lang="ko">👁 모니터</span><span data-lang="en">👁 Monitor</span></span>` : ''}
+              ${isPrimary ? `<span class="primary-target-badge" style="font-size: 10px; padding: 1px 5px;"><span data-lang="ko">주 언어</span><span data-lang="en">Primary</span></span>` : ''}
+            </div>
           </div>
           <div class="lang-session-sub">
             ${statusLabel} · ${latencyMs} · ${listeners} ${isEn ? (listeners === 1 ? 'listener' : 'listeners') : '명'}
