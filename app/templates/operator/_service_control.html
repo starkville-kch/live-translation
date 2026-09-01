@@ -1,0 +1,29 @@
+<!-- Earphone Warning Modal -->
+<div id="earphone-modal" class="hidden">
+  <div class="modal-box">
+    <div class="icon">🎧</div>
+    <h2>이어폰 사용 안내</h2>
+    <p>오디오 모니터링 기능은 소리가 스피커로 재생되지 않도록 주의해 주세요. 예배에 방해가 되지 않도록 <strong>유선 또는 블루투스 이어폰</strong>을 사용하시기 바랍니다.</p>
+    <button class="modal-confirm" id="modal-ok">이어폰 연결됨 (오디오 켜기)</button>
+    <button class="modal-skip" id="modal-skip">자막만 보기</button>
+  </div>
+</div>
+
+<!-- Input device + level meter -->
+<div class="card">
+  <h2>
+    <span class="tooltip">입력 장치 설정 (Input Device)
+      <span class="tooltiptext">번역에 사용할 오디오 입력 장치를 선택합니다. USB 믹서 또는 마이크를 선택하세요. 아래 레벨 미터로 신호 수신 여부를 확인할 수 있습니다. (Select the audio input device for translation. Use the level meter below to confirm signal.)</span>
+    </span>
+  </h2>
+  <div class="device-row">
+    <select id="device-select"><option>Loading…</option></select>
+    <button id="btn-refresh-devices" class="btn-refresh" type="button" title="오디오 장치 목록 새로고침 (Refresh Audio Devices)">
+      <svg class="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-1.19"/>
+      </svg>
+    </button>
+  </div>
+  <div class="meter-wrap"><div class="meter-bar" id="level-bar"></div></div>
+  <div class="meter-label" id="level-label">입력 레벨 (Input level)</div>
+</div>

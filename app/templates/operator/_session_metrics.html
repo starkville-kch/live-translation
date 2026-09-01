@@ -1,0 +1,44 @@
+<!-- Row 5: Session Metrics Grid (3x2) -->
+<div class="metrics-dashboard-grid" style="margin-top: 10px;">
+  <div class="stat-card-item">
+    <span class="stat-card-label tooltip">추정 총 접속자
+      <span class="tooltiptext">현재 자막/음성 스트림에 연결된 현장 및 공용 청취 기기의 추정 총합입니다. (Estimated Total Concurrent Listeners.)</span>
+    </span>
+    <span class="stat-card-val" id="stat-attendees">0</span>
+  </div>
+
+  <div class="stat-card-item">
+    <span class="stat-card-label tooltip">재연결 (Reconnects)
+      <span class="tooltiptext">Gemini Live API의 연결 불안정 혹은 10분 만료로 인해 재설정된 자동 복구 횟수입니다. (Auto-recovery count due to Gemini API connection drops.)</span>
+    </span>
+    <span class="stat-card-val" id="stat-reconnects">0</span>
+  </div>
+
+  <div class="stat-card-item">
+    <span class="stat-card-label tooltip">자막 수 (Captions)
+      <span class="tooltiptext">현재 세션 동안 번역되어 전송 완료된 자막 라인의 총 개수입니다. (Total translated caption paragraphs sent in this session.)</span>
+    </span>
+    <span class="stat-card-val" id="stat-captions">0</span>
+  </div>
+
+  <div class="stat-card-item">
+    <span class="stat-card-label tooltip">공용 체감 지연 (Est. Delay)
+      <span class="tooltiptext">AI 번역 시간 + 공용 네트워크 RTT + 음성 재생 버퍼를 합산한 공용 청취자 기준 추정 전체 지연 시간입니다. (Estimated E2E delay for public attendees.)</span>
+    </span>
+    <span class="stat-card-val" id="stat-overall-delay">—</span>
+  </div>
+
+  <div class="stat-card-item">
+    <span class="stat-card-label tooltip">운영 시간 (Runtime)
+      <span class="tooltiptext">예배 번역 시스템이 시작된 이후 총 가동 시간입니다. (Total active runtime of the translation server.)</span>
+    </span>
+    <span class="stat-card-val" id="stat-runtime">—</span>
+  </div>
+
+  <div class="stat-card-item">
+    <span class="stat-card-label tooltip">추정 API 비용 (Est. Cost)
+      <span class="tooltiptext">구글 제미나이 Live API의 유료 실시간 가격(분당 $0.0368) 기준으로 계산된 추정 요금입니다. (Estimated API cost based on Gemini Paid Tier.)</span>
+    </span>
+    <span class="stat-card-val cost" id="stat-cost">—</span>
+  </div>
+</div>
