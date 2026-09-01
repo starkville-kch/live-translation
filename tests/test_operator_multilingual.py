@@ -28,10 +28,10 @@ def test_operator_html_language_panel_structure():
     assert res.status_code == 200
     html = res.text
 
-    # 1. Right-rail language targets card
+    # 1. Right-rail language targets card with selectable source
     assert 'id="card-languages"' in html
     assert 'id="lang-panel-badge"' in html
-    assert 'id="lang-source-name"' in html
+    assert 'id="lang-source-select"' in html
     assert 'id="lang-targets-config-list"' in html
     assert 'id="lang-targets-active-list"' in html
     assert 'id="btn-open-manage-langs"' in html
@@ -41,6 +41,7 @@ def test_operator_html_language_panel_structure():
     assert 'id="manage-langs-search"' in html
     assert 'id="manage-langs-catalog-list"' in html
     assert 'id="btn-save-manage-langs"' in html
+    assert 'id="btn-close-manage-langs"' in html
 
     # 3. Bilingual labels exist
     assert 'data-lang="ko"' in html
@@ -60,16 +61,30 @@ def test_target_configuration_lifecycle_and_lock():
     assert "selected_targets" in data_get
     assert data_get["is_running"] is False
 
-    # 2. While stopped: update targets
+    # 2. While stopped: update source language (e.g. English church translating to Ukrainian)
+    res_put_en_src = client.put("/api/translation/targets", json={
+        "expected_source_language": "en",
+        "supported_targets": ["uk", "es", "zh"],
+        "targets": ["uk"],
+    })
+    assert res_put_en_src.status_code == 200
+    data_en_src = res_put_en_src.json()
+    assert data_en_src["translation"]["expected_source_language"] == "en"
+    assert data_en_src["translation"]["default_active_targets"] == ["uk"]
+
+    # 3. Restore Korean source with English and Ukrainian targets
     res_put = client.put("/api/translation/targets", json={
+        "expected_source_language": "ko",
         "supported_targets": ["en", "uk", "zh", "es"],
         "targets": ["en", "uk"],
     })
     assert res_put.status_code == 200
     data_put = res_put.json()
     assert data_put["ok"] is True
+    assert data_put["translation"]["expected_source_language"] == "ko"
     assert "es" in data_put["translation"]["supported_targets"]
     assert data_put["translation"]["default_active_targets"] == ["en", "uk"]
+
 
     # 3. Start service with active targets
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \

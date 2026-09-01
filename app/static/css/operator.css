@@ -1132,28 +1132,89 @@ header {
 }
 
 .lang-source-box {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #f8fafc;
-  border: 1px solid var(--color-warm-200);
-  border-radius: 6px;
-  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  padding: 0;
 }
-.lang-source-text {
+.lang-source-select {
+  width: 100%;
+  height: 36px;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-navy-900);
+  background: #ffffff;
+  border: 1px solid var(--color-warm-200);
+  border-radius: 6px;
+  padding: 0 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
 }
-.lang-fixed-badge {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  background: var(--color-warm-200);
+.lang-source-select:focus {
+  outline: none;
+  border-color: var(--color-gold-400);
+}
+.lang-source-select:disabled {
+  background: #f1f5f9;
   color: var(--color-text-secondary);
-  padding: 2px 6px;
-  border-radius: 4px;
+  cursor: not-allowed;
+  opacity: 0.85;
 }
+
+/* Modal Overlay & Card Fixes */
+.modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(15, 27, 45, 0.75) !important;
+  backdrop-filter: blur(4px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000 !important;
+  padding: 20px !important;
+}
+.modal-overlay.hidden {
+  display: none !important;
+}
+.modal-card {
+  background: #ffffff !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--color-warm-200) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3) !important;
+  padding: 20px 24px !important;
+  box-sizing: border-box !important;
+}
+.modal-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  width: 100% !important;
+  gap: 12px !important;
+}
+.modal-close-btn {
+  background: transparent !important;
+  border: none !important;
+  font-size: 24px !important;
+  line-height: 1 !important;
+  color: var(--color-text-muted) !important;
+  cursor: pointer !important;
+  padding: 4px 10px !important;
+  width: auto !important;
+  min-width: unset !important;
+  max-width: unset !important;
+  height: auto !important;
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  border-radius: 6px !important;
+  transition: all 0.15s ease !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.modal-close-btn:hover {
+  color: var(--color-navy-900) !important;
+  background: var(--color-warm-100) !important;
+}
+
 
 .lang-count-badge {
   font-size: 11px;

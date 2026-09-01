@@ -1286,11 +1286,54 @@ async function loadLanguageConfiguration() {
     _supportedTargets = data.supported_targets || ['en'];
     _selectedTargets = data.selected_targets || ['en'];
 
-    // Update Source Language display
-    const srcEl = document.getElementById('lang-source-name');
-    if (srcEl) {
-      const srcInfo = _catalogMap.get(_expectedSource);
-      srcEl.textContent = srcInfo ? srcInfo.display_name : _expectedSource.toUpperCase();
+    // Populate Source Language dropdown (Korean and English prioritized on top)
+    const srcSelect = document.getElementById('lang-source-select');
+    if (srcSelect) {
+      srcSelect.innerHTML = '';
+      const priorityCodes = ['ko', 'en'];
+      const topLangs = priorityCodes.map(code => _catalogMap.get(code)).filter(Boolean);
+      const otherLangs = _languagesCatalog
+        .filter(l => !priorityCodes.includes(l.code))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const sortedForSource = [...topLangs, ...otherLangs];
+
+      sortedForSource.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.code;
+        opt.textContent = l.native_name === l.name ? l.name : `${l.native_name} (${l.name})`;
+        if (l.code === _expectedSource) opt.selected = true;
+        srcSelect.appendChild(opt);
+      });
+
+
+      srcSelect.onchange = () => {
+        _expectedSource = srcSelect.value;
+        const newSrcInfo = _catalogMap.get(_expectedSource);
+        const newSrcName = newSrcInfo ? newSrcInfo.name : _expectedSource.toUpperCase();
+        const hadInSelected = _selectedTargets.includes(_expectedSource);
+        const hadInSupported = _supportedTargets.includes(_expectedSource);
+
+        // Ensure new source language is not in targets
+        _supportedTargets = _supportedTargets.filter(t => t !== _expectedSource);
+        if (_supportedTargets.length === 0) {
+          const fallbackTarget = _expectedSource === 'en' ? 'uk' : 'en';
+          _supportedTargets = [fallbackTarget];
+        }
+        _selectedTargets = _selectedTargets.filter(t => t !== _expectedSource);
+        if (_selectedTargets.length === 0) {
+          _selectedTargets = [_supportedTargets[0]];
+        }
+        saveSelectedTargets();
+        renderSelectedTargets();
+
+        if (hadInSelected || hadInSupported) {
+          showLanguageNotice(
+            `원문 언어가 ${newSrcInfo ? newSrcInfo.native_name : newSrcName}(으)로 변경되었습니다. 통역 대상에서 제외되었습니다.`,
+            `Source changed to ${newSrcName}. It was removed from target languages.`
+          );
+        }
+      };
     }
 
     renderSelectedTargets();
@@ -1299,12 +1342,27 @@ async function loadLanguageConfiguration() {
   }
 }
 
+let _langNoticeTimer = null;
+function showLanguageNotice(koMsg, enMsg) {
+  const hintEl = document.getElementById('lang-targets-hint');
+  if (!hintEl) return;
+  const isEn = getOperatorUiLanguage() === 'en';
+  if (_langNoticeTimer) clearTimeout(_langNoticeTimer);
+
+  hintEl.innerHTML = `<span style="color: var(--color-gold-500); font-weight: 600;">ℹ ${isEn ? enMsg : koMsg}</span>`;
+  _langNoticeTimer = setTimeout(() => {
+    updateLanguageCountAndHint();
+  }, 4500);
+}
+
+
 function renderSelectedTargets() {
   const listEl = document.getElementById('lang-targets-config-list');
   if (!listEl) return;
   listEl.innerHTML = '';
 
   _supportedTargets.forEach(code => {
+    if (code === _expectedSource) return;
     const info = _catalogMap.get(code);
     const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
     const isChecked = _selectedTargets.includes(code);
@@ -1362,7 +1420,11 @@ async function saveSelectedTargets() {
     const res = await fetch('/api/translation/targets', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targets: _selectedTargets })
+      body: JSON.stringify({
+        expected_source_language: _expectedSource,
+        supported_targets: _supportedTargets,
+        targets: _selectedTargets
+      })
     });
     if (res.status === 409) {
       console.warn('Cannot update targets while translation is running/paused');
@@ -1370,6 +1432,7 @@ async function saveSelectedTargets() {
     }
     const data = await res.json();
     if (data.ok && data.translation) {
+      _expectedSource = data.translation.expected_source_language || _expectedSource;
       _selectedTargets = data.translation.default_active_targets || _selectedTargets;
       _supportedTargets = data.translation.supported_targets || _supportedTargets;
       updateLanguageCountAndHint();
@@ -1386,11 +1449,17 @@ function updateLanguageTargets(st) {
   const isEn = getOperatorUiLanguage() === 'en';
 
   const badgeEl = document.getElementById('lang-panel-badge');
+  const srcSelect = document.getElementById('lang-source-select');
   const configList = document.getElementById('lang-targets-config-list');
   const activeList = document.getElementById('lang-targets-active-list');
   const btnManage = document.getElementById('btn-open-manage-langs');
   const hintEl = document.getElementById('lang-targets-hint');
   const countBadge = document.getElementById('lang-target-count-badge');
+
+  if (srcSelect) {
+    srcSelect.disabled = isLocked;
+  }
+
 
   if (isLocked) {
     if (badgeEl) {
