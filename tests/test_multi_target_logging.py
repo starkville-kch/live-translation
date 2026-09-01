@@ -60,44 +60,65 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
         assert len(session_dirs) == 1
         s_dir = session_dirs[0]
 
+        # Verify canonical 4-file layout
+        files = {p.name for p in s_dir.iterdir()}
+        assert files == {"session.json", "transcript.jsonl", "transcript.md", "summary.txt"}
+
         # 1. session.json manifest
         manifest_file = s_dir / "session.json"
         assert manifest_file.exists()
         manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        assert manifest["spoken_language"] == "ko"
         assert manifest["expected_source_language"] == "ko"
         assert manifest["active_targets"] == ["en", "uk"]
+        assert manifest["total_turns"] == 2
         assert "cost_by_target" in manifest
         assert "en" in manifest["cost_by_target"]
         assert "uk" in manifest["cost_by_target"]
 
-        # 2. source.txt
-        src_file = s_dir / "source.txt"
-        assert src_file.exists()
-        src_content = src_file.read_text(encoding="utf-8")
-        assert "안녕하세요 여러분" in src_content
-        assert "오늘 예배에 오신 것을 환영합니다" in src_content
+        # 2. transcript.jsonl (canonical machine-readable records)
+        jsonl_file = s_dir / "transcript.jsonl"
+        assert jsonl_file.exists()
+        lines = [json.loads(line) for line in jsonl_file.read_text(encoding="utf-8").strip().split("\n")]
+        assert len(lines) == 2
+        assert lines[0]["source"]["text"] == "안녕하세요 여러분"
+        assert lines[0]["source"]["lang"] == "ko"
+        assert lines[0]["targets"]["en"] == "Hello everyone"
+        assert lines[0]["targets"]["uk"] == "Всім привіт"
 
-        # 3. target_en.txt and target_uk.txt
-        tgt_en_file = s_dir / "target_en.txt"
-        tgt_uk_file = s_dir / "target_uk.txt"
-        assert tgt_en_file.exists()
-        assert tgt_uk_file.exists()
-        assert "Hello everyone" in tgt_en_file.read_text(encoding="utf-8")
-        assert "Всім привіт" in tgt_uk_file.read_text(encoding="utf-8")
+        assert lines[1]["source"]["text"] == "오늘 예배에 오신 것을 환영합니다"
+        assert lines[1]["targets"]["en"] == "Welcome to today's service"
+        assert lines[1]["targets"]["uk"] == "Ласкаво просимо на сьогоднішнє служіння"
 
-        # 4. aligned_en.txt and aligned_uk.txt
-        aligned_en_file = s_dir / "aligned_en.txt"
-        aligned_uk_file = s_dir / "aligned_uk.txt"
-        assert aligned_en_file.exists()
-        assert aligned_uk_file.exists()
+        # 3. transcript.md (human-readable chronological transcript)
+        md_file = s_dir / "transcript.md"
+        assert md_file.exists()
+        md_text = md_file.read_text(encoding="utf-8")
+        assert "# Translation Transcript" in md_text
+        assert "Spoken language: Korean" in md_text
+        assert "**Spoken — Korean**" in md_text
+        assert "**English**" in md_text
+        assert "**Українська (Ukrainian)**" in md_text
+        assert "Hello everyone" in md_text
+        assert "Всім привіт" in md_text
 
-        en_aligned_text = aligned_en_file.read_text(encoding="utf-8")
-        assert "[source] 안녕하세요 여러분" in en_aligned_text
-        assert "[target] Hello everyone" in en_aligned_text
+        # 4. summary.txt (operational summary)
+        summary_file = s_dir / "summary.txt"
+        assert summary_file.exists()
+        summary_text = summary_file.read_text(encoding="utf-8")
+        assert "Spoken:         Korean" in summary_text
+        assert "Active Targets: English, Ukrainian" in summary_text
+        assert "Committed turns:2" in summary_text
 
-        uk_aligned_text = aligned_uk_file.read_text(encoding="utf-8")
-        assert "[source] 안녕하세요 여러분" in uk_aligned_text
-        assert "[target] Всім привіт" in uk_aligned_text
+        # Retired legacy files MUST NOT exist
+        assert not (s_dir / "source.txt").exists()
+        assert not (s_dir / "ko.txt").exists()
+        assert not (s_dir / "en.txt").exists()
+        assert not (s_dir / "target_en.txt").exists()
+        assert not (s_dir / "target_uk.txt").exists()
+        assert not (s_dir / "aligned.txt").exists()
+        assert not (s_dir / "aligned_en.txt").exists()
+        assert not (s_dir / "aligned_uk.txt").exists()
 
 
 def test_multi_target_cost_accounting():
@@ -178,12 +199,12 @@ def test_real_api_stop_generates_session_logs(tmp_path):
         assert len(session_dirs) == 1
         s_dir = session_dirs[0]
 
-        assert (s_dir / "session.json").exists()
-        assert (s_dir / "source.txt").exists()
-        assert (s_dir / "target_en.txt").exists()
-        assert (s_dir / "aligned_en.txt").exists()
+        files = {p.name for p in s_dir.iterdir()}
+        assert files == {"session.json", "transcript.jsonl", "transcript.md", "summary.txt"}
 
-        assert "Hello everyone" in (s_dir / "target_en.txt").read_text(encoding="utf-8")
-        assert "안녕하세요 여러분" in (s_dir / "source.txt").read_text(encoding="utf-8")
+        assert "Hello everyone" in (s_dir / "transcript.jsonl").read_text(encoding="utf-8")
+        assert "안녕하세요 여러분" in (s_dir / "transcript.jsonl").read_text(encoding="utf-8")
+        assert "Hello everyone" in (s_dir / "transcript.md").read_text(encoding="utf-8")
+        assert "안녕하세요 여러분" in (s_dir / "transcript.md").read_text(encoding="utf-8")
 
 

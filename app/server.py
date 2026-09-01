@@ -47,14 +47,14 @@ Generated via ``_build_qr()`` using the ``qrcode`` + ``Pillow`` libraries:
   • Pixel-level gold (#b89445) recoloring of the three 7×7 finder patterns
   • White quiet-zone ellipse → navy inner circle → white PCA logo overlay
 
-Session transcript export
--------------------------
-On /api/stop, ``_write_session_log()`` writes four files to
+Session transcript export (v3.0 Canonical Format)
+-------------------------------------------------
+On /api/stop, ``_write_session_log()`` writes exactly four canonical files to
 ``logs/sessions/YYYYMMDD_HHMMSS/``:
-  summary.txt   — runtime, cost, model, turn count
-  ko.txt        — Korean source turns with timestamps
-  en.txt        — English translation turns with timestamps
-  aligned.txt   — Korean/English pairs interleaved for easy review
+  session.json    — Machine-readable manifest (session metadata, cost accounting, turns)
+  transcript.jsonl— Canonical machine-readable turn records (1 JSON per committed turn)
+  transcript.md   — Human-readable multi-language chronological transcript
+  summary.txt     — Concise operational performance & billing summary
 """
 import asyncio
 import io
@@ -63,9 +63,9 @@ import json
 import socket
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, List, Optional
 
 import qrcode
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -91,7 +91,7 @@ from app.config import (
 from app.events import operator_events
 from app.gemini_session import GeminiSession, SessionState, SessionStatus
 from app.glossary import GlossaryCorrector
-from app.languages import get_available_languages, is_valid_language_code
+from app.languages import get_available_languages, get_language, is_valid_language_code
 from app.logger import server_log
 from app.model_resolver import model_resolver, verify_model_compatibility
 from app.operator_auth import (
@@ -384,17 +384,15 @@ def _runtime_seconds() -> float:
     return max(0.0, elapsed)
 
 
-def _write_session_log() -> None:
-    """Write target-aware transcript files and session manifest into a timestamped session folder on stop.
+def _write_session_log() -> Optional[str]:
+    """Writes post-service session directory under logs/sessions/YYYYMMDD_HHMMSS/.
 
-    Output layout:
-        logs/sessions/20260901_110423/
-            session.json    — Machine-readable manifest (languages, runtime, cost by target, model)
-            source.txt      — Shared transcript of spoken source audio
-            target_en.txt   — English translation turns
-            target_uk.txt   — Ukrainian translation turns
-            aligned_en.txt  — Source + English interleaved
-            aligned_uk.txt  — Source + Ukrainian interleaved
+    Consolidated v3.0 format:
+    Exactly 4 canonical files regardless of target count:
+        session.json    — Machine-readable manifest (session metadata, cost accounting, turns)
+        transcript.jsonl— Canonical machine-readable turn records (1 JSON per committed turn)
+        transcript.md   — Human-readable multi-language chronological transcript
+        summary.txt     — Concise operational performance & billing summary
     """
     try:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -409,92 +407,154 @@ def _write_session_log() -> None:
         per_target_cost = _billed_seconds * _COST_PER_AUDIO_SEC
         total_cost = len(active_tgts) * per_target_cost
 
+        session_end_dt = datetime.now()
+        session_start_dt = (
+            session_end_dt - timedelta(seconds=runtime)
+            if runtime > 0
+            else session_end_dt
+        )
+
         primary_sess = manager.sessions.get(manager.primary_target)
-        entries = primary_sess.transcript if primary_sess else []
-        t0 = _service_start_time if _service_start_time is not None else (entries[0].timestamp if entries else 0.0)
+        max_turns = max([len(s.transcript) for s in manager.sessions.values()], default=0)
 
-        def ts_tag(t: float) -> str:
-            m, s = divmod(int(t - t0), 60)
-            return f"[{m:02d}:{s:02d}]"
+        t0 = _service_start_time if _service_start_time is not None else None
+        if t0 is None:
+            for s in manager.sessions.values():
+                if s.transcript:
+                    t0 = s.transcript[0].timestamp
+                    break
+        if t0 is None:
+            t0 = 0.0
 
-        # ── session.json ──────────────────────────────────────────────────
+        def turn_time_str(t: float) -> str:
+            offset = max(0.0, t - t0)
+            turn_dt = session_start_dt + timedelta(seconds=offset)
+            return turn_dt.strftime("%H:%M:%S")
+
+        # Collect consolidated turn records
+        consolidated_turns: List[dict] = []
+        for i in range(max_turns):
+            rep_entry = None
+            if primary_sess and i < len(primary_sess.transcript):
+                rep_entry = primary_sess.transcript[i]
+            else:
+                for s in manager.sessions.values():
+                    if i < len(s.transcript):
+                        rep_entry = s.transcript[i]
+                        break
+
+            if not rep_entry:
+                continue
+
+            time_label = turn_time_str(rep_entry.timestamp)
+            src_lang = rep_entry.source_lang or manager.expected_source_language
+            src_text = rep_entry.source
+
+            targets_dict = {}
+            for tgt, sess in manager.sessions.items():
+                if i < len(sess.transcript):
+                    targets_dict[tgt] = sess.transcript[i].target
+
+            consolidated_turns.append({
+                "timestamp": time_label,
+                "source": {
+                    "lang": src_lang,
+                    "text": src_text,
+                },
+                "targets": targets_dict,
+            })
+
+        src_info = get_language(manager.expected_source_language)
+        src_name = src_info.name if src_info else manager.expected_source_language.upper()
+
+        tgt_names = []
+        for tgt in active_tgts:
+            info = get_language(tgt)
+            tgt_names.append(info.name if info else tgt.upper())
+
+        # ── 1. session.json ───────────────────────────────────────────────
         session_manifest = {
             "session_id": ts,
+            "spoken_language": manager.expected_source_language,
             "expected_source_language": manager.expected_source_language,
             "active_targets": active_tgts,
-            "started_at": datetime.fromtimestamp(time.time() - runtime).isoformat() if runtime > 0 else datetime.now().isoformat(),
-            "ended_at": datetime.now().isoformat(),
+            "started_at": session_start_dt.isoformat(),
+            "ended_at": session_end_dt.isoformat(),
             "runtime_seconds": round(runtime, 1),
             "audio_billed_seconds": round(_billed_seconds, 1),
             "estimated_total_cost_usd": round(total_cost, 4),
             "cost_by_target": {tgt: round(per_target_cost, 4) for tgt in active_tgts},
+            "total_turns": len(consolidated_turns),
             "configured_model": gemini_cfg().get("model", model_resolver.preferred_model),
             "resolved_model": model_resolver.active_model,
             "model": model_resolver.active_model,
             "captions_by_target": {
-
                 tgt: manager.broadcasters[tgt].caption_count
                 for tgt in active_tgts if tgt in manager.broadcasters
             },
         }
         (session_dir / "session.json").write_text(json.dumps(session_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
-        # ── summary.txt (human-readable summary) ──────────────────────────
-        (session_dir / "summary.txt").write_text("\n".join([
-            f"Session ended:  {datetime.now().isoformat()}",
-            f"Source:         {manager.expected_source_language.upper()}",
-            f"Active Targets: {', '.join(active_tgts)}",
-            f"Runtime:        {runtime/60:.1f} min ({runtime:.0f}s)",
+        # ── 2. transcript.jsonl ───────────────────────────────────────────
+        jsonl_lines = [json.dumps(turn, ensure_ascii=False) for turn in consolidated_turns]
+        (session_dir / "transcript.jsonl").write_text("\n".join(jsonl_lines) + ("\n" if jsonl_lines else ""), encoding="utf-8")
+
+        # ── 3. transcript.md ──────────────────────────────────────────────
+        md_sections = [
+            "# Translation Transcript",
+            "",
+            f"Spoken language: {src_name}",
+            f"Targets: {', '.join(tgt_names)}",
+            "",
+        ]
+
+        for turn in consolidated_turns:
+            time_label = turn["timestamp"]
+            src_t = turn["source"]["text"]
+
+            md_sections.append(f"## {time_label}")
+            md_sections.append("")
+            md_sections.append(f"**Spoken — {src_name}**")
+            md_sections.append(src_t)
+            md_sections.append("")
+
+            for tgt in active_tgts:
+                t_val = turn["targets"].get(tgt, "")
+                t_info = get_language(tgt)
+                if t_info and t_info.native_name and t_info.native_name != t_info.name:
+                    tgt_header = f"**{t_info.native_name} ({t_info.name})**"
+                elif t_info:
+                    tgt_header = f"**{t_info.name}**"
+                else:
+                    tgt_header = f"**{tgt.upper()}**"
+
+                md_sections.append(tgt_header)
+                md_sections.append(t_val)
+                md_sections.append("")
+
+            md_sections.append("---")
+            md_sections.append("")
+
+        (session_dir / "transcript.md").write_text("\n".join(md_sections).rstrip() + "\n", encoding="utf-8")
+
+        # ── 4. summary.txt ────────────────────────────────────────────────
+        duration_min = int(runtime // 60)
+        duration_sec = int(runtime % 60)
+        summary_lines = [
+            f"Session:        {ts}",
+            f"Session ended:  {session_end_dt.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Duration:       {duration_min}m {duration_sec:02d}s ({runtime:.0f}s)",
+            f"Spoken:         {src_name}",
+            f"Active Targets: {', '.join(tgt_names)}",
+            f"Committed turns:{len(consolidated_turns)}",
             f"Audio billed:   {_billed_seconds:.0f}s per target",
             f"Est. total cost:${total_cost:.4f} USD",
             f"Model:          {model_resolver.active_model}",
-        ]), encoding="utf-8")
+        ]
+        (session_dir / "summary.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
-        # ── source.txt (common source transcript) ─────────────────────────
-        src_entries = entries
-        if not src_entries:
-            for s in manager.sessions.values():
-                if s.transcript:
-                    src_entries = s.transcript
-                    break
-
-        if src_entries:
-            (session_dir / "source.txt").write_text("\n".join(
-                f"{ts_tag(e.timestamp)}  {e.source}" for e in src_entries
-            ), encoding="utf-8")
-            (session_dir / f"{manager.expected_source_language}.txt").write_text("\n".join(
-                f"{ts_tag(e.timestamp)}  {e.source}" for e in src_entries
-            ), encoding="utf-8")
-
-        # ── per-target target_{tgt}.txt & aligned_{tgt}.txt ───────────────
-        for tgt, sess in manager.sessions.items():
-            s_entries = sess.transcript
-            (session_dir / f"target_{tgt}.txt").write_text("\n".join(
-                f"{ts_tag(e.timestamp)}  {e.target}" for e in s_entries
-            ), encoding="utf-8")
-            (session_dir / f"{tgt}.txt").write_text("\n".join(
-                f"{ts_tag(e.timestamp)}  {e.target}" for e in s_entries
-            ), encoding="utf-8")
-
-            aligned = []
-            for e in s_entries:
-                tag = ts_tag(e.timestamp)
-                aligned.append(f"{tag}  [source] {e.source}")
-                aligned.append(f"        [target] {e.target}")
-                aligned.append("")
-            (session_dir / f"aligned_{tgt}.txt").write_text("\n".join(aligned), encoding="utf-8")
-
-        # Legacy aligned.txt
-        if entries:
-            aligned_legacy = []
-            for e in entries:
-                tag = ts_tag(e.timestamp)
-                aligned_legacy.append(f"{tag}  {e.source_lang.upper()}: {e.source}")
-                aligned_legacy.append(f"        {e.target_lang.upper()}: {e.target}")
-                aligned_legacy.append("")
-            (session_dir / "aligned.txt").write_text("\n".join(aligned_legacy), encoding="utf-8")
-
-        server_log.info("Session exported: %s (%d active targets)", session_dir, len(manager.sessions))
+        server_log.info("Session exported: %s (canonical 4-file format, %d turns, %d active targets)",
+                        session_dir, len(consolidated_turns), len(manager.sessions))
         return f"logs/sessions/{ts}"
     except Exception as e:
         server_log.warning("Could not write session log: %s", e)
