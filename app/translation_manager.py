@@ -20,6 +20,7 @@ import time
 from typing import Callable, Dict, List, Optional
 
 from app.audio import AudioCapture
+from app.broadcast import CaptionBroadcaster, CaptionEvent
 from app.gemini_session import GeminiSession, SessionState
 from app.languages import is_valid_language_code
 from app.logger import server_log
@@ -34,6 +35,8 @@ class TranslationManager:
         on_audio: Optional[Callable[[str, bytes], None]] = None,
         on_session_state: Optional[Callable[[str, SessionState], None]] = None,
         glossary=None,
+        default_target: str = "en",
+        default_source: str = "ko",
     ):
         self.audio: AudioCapture = audio_capture or AudioCapture()
         self._on_caption = on_caption
@@ -43,8 +46,17 @@ class TranslationManager:
         self._glossary = glossary
 
         self.sessions: Dict[str, GeminiSession] = {}
-        self.active_targets: List[str] = []
-        self.expected_source_language: str = "ko"
+        self.broadcasters: Dict[str, CaptionBroadcaster] = {}
+        self.active_targets: List[str] = [default_target]
+        self.expected_source_language: str = default_source
+        self.auto_drift_correction: bool = False
+
+        # Ensure default primary broadcaster is available before start()
+        self.broadcasters[default_target] = CaptionBroadcaster(
+            glossary=self._glossary if (default_source == "ko" and default_target == "en") else None,
+            source_lang=default_source,
+            target_lang=default_target,
+        )
 
         self._is_running: bool = False
         self._is_paused: bool = False
@@ -66,8 +78,36 @@ class TranslationManager:
     def billed_seconds(self) -> float:
         return self._billed_seconds
 
+    @property
+    def primary_target(self) -> str:
+        return self.active_targets[0] if self.active_targets else "en"
+
+    @property
+    def primary_broadcaster(self) -> CaptionBroadcaster:
+        tgt = self.primary_target
+        if tgt not in self.broadcasters:
+            self.broadcasters[tgt] = CaptionBroadcaster(
+                glossary=self._glossary if (self.expected_source_language == "ko" and tgt == "en") else None,
+                source_lang=self.expected_source_language,
+                target_lang=tgt,
+            )
+        return self.broadcasters[tgt]
+
+    def get_broadcaster(self, target: str) -> Optional[CaptionBroadcaster]:
+        clean = (target or "").lower().strip()
+        return self.broadcasters.get(clean)
+
+    def set_auto_drift_correction(self, enabled: bool) -> None:
+        self.auto_drift_correction = bool(enabled)
+        for s in self.sessions.values():
+            s.set_auto_drift_correction(self.auto_drift_correction)
+            s.clear_drift_state()
+
     def _create_session_for_target(self, target: str, source: str) -> GeminiSession:
+        broadcaster = self.broadcasters[target]
+
         def _caption_cb(text: str) -> None:
+            broadcaster.on_caption_delta(text)
             if self._on_caption:
                 self._on_caption(target, text)
 
@@ -76,14 +116,18 @@ class TranslationManager:
                 self._on_session_state(target, state)
 
         def _source_cb(src_text: str) -> None:
+            # Distribute source text deltas across all broadcasters for tap-to-reveal original transcripts
+            for b in self.broadcasters.values():
+                b.on_source_delta(src_text)
             if self._on_source:
                 self._on_source(src_text)
 
         def _audio_cb(pcm_bytes: bytes) -> None:
+            broadcaster.on_audio_chunk(pcm_bytes)
             if self._on_audio:
                 self._on_audio(target, pcm_bytes)
 
-        return GeminiSession(
+        sess = GeminiSession(
             on_caption=_caption_cb,
             on_state_change=_state_cb,
             on_source_transcript=_source_cb,
@@ -92,6 +136,10 @@ class TranslationManager:
             target_language_code=target,
             expected_source_language=source,
         )
+        sess.set_auto_drift_correction(self.auto_drift_correction)
+        return sess
+
+
 
     async def _audio_pipe(self) -> None:
         """Non-blocking fan-out loop: pushes 16kHz PCM chunks to all active target session queues."""
@@ -165,9 +213,20 @@ class TranslationManager:
             self._start_time = time.monotonic()
             self._pause_start = None
 
-            # Create one independent GeminiSession per target
+            # Create / reset broadcasters and sessions for all active targets
             self.sessions.clear()
             for target in self.active_targets:
+                if target not in self.broadcasters:
+                    self.broadcasters[target] = CaptionBroadcaster(
+                        glossary=self._glossary if (clean_src == "ko" and target == "en") else None,
+                        source_lang=clean_src,
+                        target_lang=target,
+                    )
+                else:
+                    self.broadcasters[target].reset()
+                    self.broadcasters[target].source_lang = clean_src
+                    self.broadcasters[target].target_lang = target
+
                 session = self._create_session_for_target(target, clean_src)
                 self.sessions[target] = session
 
@@ -192,6 +251,11 @@ class TranslationManager:
             self._is_paused = True
             self._pause_start = time.monotonic()
             self.audio.pause()
+
+            for b in self.broadcasters.values():
+                b.drain_audio_clients()
+                b._push(CaptionEvent(kind="paused"))
+
             pause_coros = [s.pause_clean() for s in self.sessions.values()]
             if pause_coros:
                 await asyncio.gather(*pause_coros, return_exceptions=True)
@@ -203,6 +267,11 @@ class TranslationManager:
                 return
             self.audio.drain()
             self.audio.resume()
+
+            for b in self.broadcasters.values():
+                b.drain_audio_clients()
+                b._push(CaptionEvent(kind="resumed"))
+
             resume_coros = [s.resume_clean() for s in self.sessions.values()]
             if resume_coros:
                 await asyncio.gather(*resume_coros, return_exceptions=True)
@@ -235,6 +304,7 @@ class TranslationManager:
 
             self.sessions.clear()
             server_log.info("[TranslationManager] All target sessions and AudioCapture stopped.")
+
 
     async def reset_clean(self, reason: str = "Clean reset") -> None:
         async with self._lock:
