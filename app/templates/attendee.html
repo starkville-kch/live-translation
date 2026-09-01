@@ -197,9 +197,9 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  .line-ko {
+  .line-source, .line-ko {
     display: none;
-    font-family: 'Noto Sans KR', sans-serif;
+    font-family: 'Noto Sans KR', 'Inter', system-ui, sans-serif;
     font-size: 0.6em;
     color: var(--color-text-muted);
     line-height: 1.6;
@@ -207,7 +207,9 @@
     padding: 4px 8px;
     border-left: 2px solid var(--color-gold-300);
   }
-  .line.ko-open .line-ko { display: block; }
+  .line.source-open .line-source, .line.source-open .line-ko,
+  .line.ko-open .line-source, .line.ko-open .line-ko { display: block; }
+
 
   #current-wrapper {
     background: var(--color-warm-50);
@@ -333,7 +335,7 @@
 </div>
 
 <div id="tap-hint" style="text-align:center; font-size:12px; color:var(--color-text-muted); padding:4px 20px; background:var(--color-warm-50); border-bottom:1px solid var(--color-warm-100); flex-shrink:0;">
-  Tap a sentence to see the original Korean
+  Tap a sentence to see the original text
 </div>
 
 <div id="history">
@@ -524,33 +526,34 @@ function connect() {
       current.textContent = msg.text;
     } else if (msg.kind === 'commit') {
       const text = msg.text.trim();
-      const ko = (msg.ko || '').trim();
+      const sourceText = (msg.source || msg.ko || '').trim();
       if (text) {
         let para = historyInner.lastElementChild;
         const needsNew = !para || /[.!?]$/.test(para.dataset.last || '');
         if (needsNew) {
           para = document.createElement('div');
           para.className = 'line';
-          const koDiv = document.createElement('div');
-          koDiv.className = 'line-ko';
-          para.appendChild(koDiv);
-          para.addEventListener('click', () => para.classList.toggle('ko-open'));
+          const srcDiv = document.createElement('div');
+          srcDiv.className = 'line-source';
+          para.appendChild(srcDiv);
+          para.addEventListener('click', () => para.classList.toggle('source-open'));
           historyInner.appendChild(para);
           while (historyInner.children.length > 12) historyInner.removeChild(historyInner.firstChild);
         }
-        const koDiv = para.querySelector('.line-ko');
-        // Insert EN text as a text node before the ko div
+        const srcDiv = para.querySelector('.line-source') || para.querySelector('.line-ko');
+        // Insert translated text as a text node before the source div
         const existing = [...para.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
         if (existing) {
           existing.textContent += ' ' + text;
         } else {
-          para.insertBefore(document.createTextNode(text), koDiv);
+          para.insertBefore(document.createTextNode(text), srcDiv);
         }
-        if (ko) koDiv.textContent = (koDiv.textContent ? koDiv.textContent + ' ' : '') + ko;
+        if (sourceText) srcDiv.textContent = (srcDiv.textContent ? srcDiv.textContent + ' ' : '') + sourceText;
         para.dataset.last = text;
         historyEl.scrollTop = historyEl.scrollHeight;
       }
       current.textContent = '';
+
     } else if (msg.kind === 'paused') {
       current.textContent = '— Paused —';
       clearAudioQueue();
