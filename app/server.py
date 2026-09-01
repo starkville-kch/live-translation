@@ -77,6 +77,7 @@ from app.broadcast import CaptionBroadcaster, CaptionEvent
 from app.config import (
     audio_cfg,
     church_cfg,
+    gemini_cfg,
     get_app_root,
     logging_cfg,
     network_cfg,
@@ -85,6 +86,7 @@ from app.config import (
     save_translation_settings,
     translation_cfg,
 )
+
 from app.events import operator_events
 from app.gemini_session import GeminiSession, SessionState, SessionStatus
 from app.glossary import GlossaryCorrector
@@ -424,8 +426,11 @@ def _write_session_log() -> None:
             "audio_billed_seconds": round(_billed_seconds, 1),
             "estimated_total_cost_usd": round(total_cost, 4),
             "cost_by_target": {tgt: round(per_target_cost, 4) for tgt in active_tgts},
+            "configured_model": gemini_cfg().get("model", model_resolver.preferred_model),
+            "resolved_model": model_resolver.active_model,
             "model": model_resolver.active_model,
             "captions_by_target": {
+
                 tgt: manager.broadcasters[tgt].caption_count
                 for tgt in active_tgts if tgt in manager.broadcasters
             },
