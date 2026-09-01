@@ -982,7 +982,16 @@ async def start_service(request: Request = None, body: dict = None, from_auto_re
             await _teardown()
             device_index = body.get("device_index")
             t_cfg = translation_cfg()
-            active_targets = body.get("targets") or t_cfg["default_active_targets"]
+            if "targets" in body:
+                active_targets = body.get("targets")
+                if not active_targets:
+                    return JSONResponse(
+                        status_code=400,
+                        content={"ok": False, "error": "no_targets_selected", "message": "At least one target language must be selected."}
+                    )
+            else:
+                active_targets = t_cfg.get("default_active_targets", ["en"])
+
             expected_src = body.get("expected_source_language") or t_cfg["expected_source_language"]
 
             await manager.start(
@@ -999,6 +1008,14 @@ async def start_service(request: Request = None, body: dict = None, from_auto_re
             _state = ServiceState.RUNNING
             server_log.info("Service started with targets: %s", manager.active_targets)
             operator_events.add("success", f"Translation started ({', '.join(manager.active_targets).upper()})")
+        except ValueError as ve:
+            server_log.warning("Failed to start service: %s", ve)
+            await _teardown()
+            _state = ServiceState.STOPPED
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": "invalid_configuration", "message": str(ve)}
+            )
         except Exception as e:
             server_log.error("Failed to start service: %s", e)
             await _teardown()

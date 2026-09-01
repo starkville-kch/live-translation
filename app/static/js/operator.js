@@ -339,7 +339,7 @@ function getOperatorUiLanguage() {
   return _currentUiLang;
 }
 
-function setOperatorUiLanguage(lang, syncToServer = true) {
+function setOperatorUiLanguage(lang, syncToServer = false) {
   _currentUiLang = (lang === 'en') ? 'en' : 'ko';
   localStorage.setItem('skc_ui_lang', _currentUiLang);
   document.documentElement.setAttribute('lang', _currentUiLang);
@@ -554,14 +554,27 @@ function updateControlBar(st) {
 if (btnPrimaryAction) {
   btnPrimaryAction.addEventListener('click', async () => {
     if (!_serviceRunning) {
+      if (_selectedTargets.length === 0) {
+        const isEn = getOperatorUiLanguage() === 'en';
+        alert(isEn ? 'Please select at least one translation target language.' : '최소 하나 이상의 통역 언어를 선택해야 합니다.');
+        return;
+      }
       updateControlBar({ state: 'starting', service_running: true });
       const idx = parseInt(document.getElementById('device-select').value);
       try {
-        await fetch('/api/start', {
+        const res = await fetch('/api/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_index: idx })
+          body: JSON.stringify({
+            device_index: idx,
+            targets: _selectedTargets,
+            expected_source_language: _expectedSource
+          })
         });
+        const startData = await res.json().catch(() => ({}));
+        if (!res.ok || startData.ok === false) {
+          throw new Error(startData.message || startData.error || 'Failed to start translation');
+        }
         _serviceRunning = true;
         _paused = false;
         _pauseTimerLocal = 0;
@@ -575,7 +588,8 @@ if (btnPrimaryAction) {
       } catch (err) {
         console.error('Failed to start service:', err);
         _serviceRunning = false;
-        updateControlBar({ state: 'failed', service_running: false });
+        updateControlBar({ state: 'stopped', service_running: false });
+        alert(err.message || String(err));
       }
     } else if (_paused) {
       btnPrimaryAction.disabled = true;
