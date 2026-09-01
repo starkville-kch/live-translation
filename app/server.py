@@ -83,6 +83,7 @@ from app.config import (
     network_cfg,
     save_audio_device,
     save_auto_stop_timeout,
+    save_operator_ui_language,
     save_translation_settings,
     translation_cfg,
 )
@@ -1033,6 +1034,18 @@ async def set_auto_drift_correction(request: Request, body: dict):
     return {"ok": True, "auto_drift_correction": enabled, "enabled": enabled}
 
 
+@app.post("/api/config/ui-language")
+async def set_operator_ui_language_endpoint(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
+    lang = str(body.get("default_ui_language") or body.get("lang") or "ko").strip().lower()
+    clean_lang = "en" if lang == "en" else "ko"
+    save_operator_ui_language(clean_lang)
+    server_log.info("Operator default UI language saved to config.yaml: %s", clean_lang)
+    operator_events.add("config", f"Operator default UI language set to: {clean_lang}")
+    return {"ok": True, "default_ui_language": clean_lang}
+
+
 
 async def _auto_stop_on_failure(reason: str):
     global _state, _auto_restart_attempt, _auto_restart_reason
@@ -1283,6 +1296,7 @@ async def get_status():
         "church": {
             "name": ch.get("name", "Starkville Korean Church"),
             "short_name": ch.get("short_name", "SKC"),
+            "default_ui_language": ch.get("default_ui_language", "ko"),
         },
         "telemetry": {
             "gemini_latency_ms": gemini_lat,
@@ -1485,9 +1499,10 @@ async def attendee_page():
 
 @app.get("/admin", response_class=HTMLResponse)
 async def operator_page():
+    default_lang = church_cfg().get("default_ui_language", "ko")
     if getattr(sys, "frozen", False):
-        return _OPERATOR_HTML_CACHE
-    return _read_template("operator.html")
+        return _read_template("operator.html", default_ui_lang=default_lang)
+    return _read_template("operator.html", default_ui_lang=default_lang)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1495,7 +1510,7 @@ async def root_redirect():
     return RedirectResponse(url="/live", status_code=307)
 
 
-def _read_template(filename: str) -> str:
+def _read_template(filename: str, **kwargs) -> str:
     import sys
     from jinja2 import Environment, FileSystemLoader
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
@@ -1507,7 +1522,7 @@ def _read_template(filename: str) -> str:
 
     try:
         env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=False)
-        return env.get_template(filename).render()
+        return env.get_template(filename).render(**kwargs)
     except Exception as e:
         server_log.error("Failed to render template %s: %s", filename, str(e))
         return f"Error: Template {filename} failed to render: {e}"
@@ -1516,5 +1531,4 @@ def _read_template(filename: str) -> str:
 # Cache templates in production
 import sys
 _ATTENDEE_HTML_CACHE = _read_template("attendee.html")
-_OPERATOR_HTML_CACHE = _read_template("operator.html")
 

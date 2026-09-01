@@ -331,16 +331,25 @@ if (radioDriftAuto) {
 // UI LANGUAGE SELECTION
 // ============================================================
 
-let _currentUiLang = localStorage.getItem('skc_ui_lang') || 'ko';
+const _serverDefaultUiLang = (document.body && document.body.dataset && document.body.dataset.defaultUiLang) || 'ko';
+let _currentUiLang = localStorage.getItem('skc_ui_lang') || _serverDefaultUiLang;
 
 function getOperatorUiLanguage() {
   return _currentUiLang;
 }
 
-function setOperatorUiLanguage(lang) {
+function setOperatorUiLanguage(lang, syncToServer = true) {
   _currentUiLang = (lang === 'en') ? 'en' : 'ko';
   localStorage.setItem('skc_ui_lang', _currentUiLang);
   document.documentElement.setAttribute('lang', _currentUiLang);
+
+  if (syncToServer) {
+    fetch('/api/config/ui-language', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ default_ui_language: _currentUiLang })
+    }).catch(() => {});
+  }
 
   const btnEn = document.getElementById('btn-ui-en');
   const btnKo = document.getElementById('btn-ui-ko');
@@ -1010,7 +1019,7 @@ function startStatusPoll() {
         document.querySelectorAll('.title-short').forEach(el => el.textContent = st.church.short_name);
       }
       if (st.church.default_ui_language && !localStorage.getItem('skc_ui_lang')) {
-        setOperatorUiLanguage(st.church.default_ui_language);
+        setOperatorUiLanguage(st.church.default_ui_language, false);
       }
     }
 
@@ -1811,7 +1820,11 @@ if (btnSaveManage) {
     const newSupported = Array.from(_modalSelectedSupported);
     if (newSupported.length === 0) return;
 
+    const newlyAdded = newSupported.filter(code => !_supportedTargets.includes(code));
     let newSelected = _selectedTargets.filter(t => newSupported.includes(t));
+    newlyAdded.forEach(code => {
+      if (!newSelected.includes(code)) newSelected.push(code);
+    });
     if (newSelected.length === 0) {
       newSelected = [newSupported[0]];
     }

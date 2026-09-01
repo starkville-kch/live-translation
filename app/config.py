@@ -179,12 +179,13 @@ def gemini_api_key() -> str:
 
 
 def church_cfg() -> dict:
-    return _cfg.get("church", {
-        "name": "Starkville Korean Church",
-        "short_name": "SKC",
-        "logo": "branding/church-logo.png",
-        "default_ui_language": "ko",
-    })
+    c = _cfg.get("church", {})
+    return {
+        "name": c.get("name", "Starkville Korean Church"),
+        "short_name": c.get("short_name", "SKC"),
+        "logo": c.get("logo", "branding/church-logo.png"),
+        "default_ui_language": c.get("default_ui_language", "ko"),
+    }
 
 
 
@@ -221,8 +222,9 @@ def save_church_identity(
     short_name: str,
     hostname: str,
     logo_rel_path: str = "",
+    default_ui_language: str = "",
 ) -> None:
-    """Save church identity and hostname to config.yaml atomically."""
+    """Save church identity, hostname, and default UI language to config.yaml atomically."""
     if "church" not in _cfg:
         _cfg["church"] = {}
     _cfg["church"]["name"] = name.strip()
@@ -230,10 +232,22 @@ def save_church_identity(
     if logo_rel_path:
         _cfg["church"]["logo"] = logo_rel_path.strip()
 
+    if default_ui_language:
+        _cfg["church"]["default_ui_language"] = str(default_ui_language).strip().lower()
+
     if "network" not in _cfg:
         _cfg["network"] = {}
     _cfg["network"]["hostname"] = hostname.strip()
 
+    _atomic_yaml_write(_CONFIG_PATH, _cfg)
+
+
+def save_operator_ui_language(lang: str) -> None:
+    """Save operator's default UI language to config.yaml atomically."""
+    if "church" not in _cfg:
+        _cfg["church"] = {}
+    clean_lang = "en" if str(lang).strip().lower() == "en" else "ko"
+    _cfg["church"]["default_ui_language"] = clean_lang
     _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
 

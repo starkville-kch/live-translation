@@ -153,3 +153,32 @@ def test_pause_resume_status_lifecycle():
     server_mod._state = ServiceState.STOPPED
     server_mod._paused = False
     server_mod._pause_start = None
+
+
+def test_operator_default_ui_language_config():
+    client = TestClient(app)
+
+    # 1. Verify status contains default_ui_language in church info
+    st = client.get("/api/status").json()
+    assert "church" in st
+    assert "default_ui_language" in st["church"]
+    assert st["church"]["default_ui_language"] in ("ko", "en")
+
+    # 2. Verify admin HTML body has data-default-ui-lang attribute
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert 'data-default-ui-lang=' in resp.text
+
+    # 3. Update via endpoint
+    from unittest.mock import patch
+    with patch("app.server.is_authenticated", return_value=True):
+        res_post = client.post("/api/config/ui-language", json={"default_ui_language": "en"})
+        assert res_post.status_code == 200
+        assert res_post.json()["default_ui_language"] == "en"
+
+        st_after = client.get("/api/status").json()
+        assert st_after["church"]["default_ui_language"] == "en"
+
+        # Revert back to ko
+        client.post("/api/config/ui-language", json={"default_ui_language": "ko"})
+

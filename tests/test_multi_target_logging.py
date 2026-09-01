@@ -106,7 +106,7 @@ def test_multi_target_cost_accounting():
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
          patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
-        res_start = client.post("/api/start", json={"targets": ["en", "uk"]})
+        res_start = client.post("/api/start", json={"targets": ["en", "uk"], "expected_source_language": "ko"})
         assert res_start.status_code == 200
 
         res_st = client.get("/api/status")

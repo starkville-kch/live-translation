@@ -5,6 +5,7 @@ audio:
   device_index: 2
   sample_rate: 16000
 church:
+  default_ui_language: ko
   logo: branding/church-logo.png
   name: Starkville Korean Church
   short_name: SKC
