@@ -98,3 +98,52 @@ def test_telemetry_with_target_lang():
     assert stats["local_listeners"] >= 1
     assert "listeners_by_target" in stats
     assert stats["listeners_by_target"].get("uk", 0) >= 1
+
+
+def test_audio_stream_rejected_when_service_stopped():
+    """Connecting /audio-stream when translation is stopped returns 1008 policy close."""
+    client = TestClient(app)
+    with pytest.raises(Exception):
+        with client.websocket_connect("/audio-stream?lang=es") as ws:
+            ws.receive_bytes()
+
+
+def test_audio_stream_lifecycle_and_target_switching():
+    """
+    1. Start translation with [en, es, zh]
+    2. Connect /audio-stream?lang=es -> receives PCM chunks
+    3. Switch to /audio-stream?lang=zh -> receives Chinese PCM chunks
+    4. Verify old client queue is cleaned up from Spanish broadcaster
+    """
+    with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
+         patch.object(AudioCapture, "start", MagicMock()), \
+         patch.object(AudioCapture, "stop", MagicMock()):
+        asyncio.run(manager.start(active_targets=["en", "es", "zh"], expected_source_language="ko"))
+
+        b_es = manager.get_broadcaster("es")
+        b_zh = manager.get_broadcaster("zh")
+        assert b_es is not None
+        assert b_zh is not None
+
+        client = TestClient(app)
+
+        # 1. Connect Spanish audio WebSocket
+        with client.websocket_connect("/audio-stream?lang=es") as ws_es:
+            assert len(b_es._audio_clients) == 1
+            # Push test PCM chunk to Spanish broadcaster
+            b_es.on_audio_chunk(b"\x01\x02\x03\x04")
+            data = ws_es.receive_bytes()
+            assert data == b"\x01\x02\x03\x04"
+
+            # 2. Connect Chinese audio WebSocket
+            with client.websocket_connect("/audio-stream?lang=zh") as ws_zh:
+                assert len(b_zh._audio_clients) == 1
+                b_zh.on_audio_chunk(b"\x05\x06\x07\x08")
+                data_zh = ws_zh.receive_bytes()
+                assert data_zh == b"\x05\x06\x07\x08"
+
+            # After Chinese WS context exits, Chinese audio client must be cleaned up
+            assert len(b_zh._audio_clients) == 0
+
+        # After Spanish WS context exits, Spanish audio client must be cleaned up
+        assert len(b_es._audio_clients) == 0
