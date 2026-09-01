@@ -168,13 +168,19 @@ class GeminiSession:
         self._first_audio_in_turn_sent_at: float | None = None
         self._last_token_at: float = 0.0
         self._has_verified_output: bool = False
+        self._dropped_audio_chunks: int = 0
         self._auto_drift_correction: bool = bool(gemini_cfg().get("auto_drift_correction", False))
         self._drift_history: collections.deque = collections.deque(maxlen=3)
         self._consecutive_clean_turns: int = 0
         self._last_watchdog_reset_at: float = 0.0
 
     @property
+    def dropped_audio_chunks(self) -> int:
+        return self._dropped_audio_chunks
+
+    @property
     def _current_ko(self) -> str:
+
         """Backward compatibility alias for tests."""
         return self._current_source
 

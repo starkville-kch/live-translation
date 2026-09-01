@@ -381,23 +381,30 @@ def _runtime_seconds() -> float:
 
 
 def _write_session_log() -> None:
-    """Write per-language transcript files into a timestamped session folder on stop.
+    """Write target-aware transcript files and session manifest into a timestamped session folder on stop.
 
     Output layout:
-        logs/sessions/20260710_171124/
-            summary.txt     — runtime, cost, model
-            ko.txt          — Korean source turns, one per line with timestamps
-            en.txt          — English translation turns, one per line with timestamps
-            aligned.txt     — Korean + English interleaved, human-readable
+        logs/sessions/20260901_110423/
+            session.json    — Machine-readable manifest (languages, runtime, cost by target, model)
+            source.txt      — Shared transcript of spoken source audio
+            target_en.txt   — English translation turns
+            target_uk.txt   — Ukrainian translation turns
+            aligned_en.txt  — Source + English interleaved
+            aligned_uk.txt  — Source + Ukrainian interleaved
     """
     try:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_dir = Path(logging_cfg().get("log_dir", "logs")) / "sessions" / ts
         session_dir.mkdir(parents=True, exist_ok=True)
 
-        session.flush_current_turn()  # capture any in-progress turn not yet committed
+        for s in manager.sessions.values():
+            s.flush_current_turn()
+
         runtime = _runtime_seconds()
-        cost = _billed_seconds * _COST_PER_AUDIO_SEC
+        active_tgts = list(manager.active_targets) if manager.active_targets else ["en"]
+        per_target_cost = _billed_seconds * _COST_PER_AUDIO_SEC
+        total_cost = len(active_tgts) * per_target_cost
+
         primary_sess = manager.sessions.get(manager.primary_target)
         entries = primary_sess.transcript if primary_sess else []
         t0 = _service_start_time if _service_start_time is not None else (entries[0].timestamp if entries else 0.0)
@@ -406,43 +413,84 @@ def _write_session_log() -> None:
             m, s = divmod(int(t - t0), 60)
             return f"[{m:02d}:{s:02d}]"
 
-        # ── summary.txt ───────────────────────────────────────────────────
+        # ── session.json ──────────────────────────────────────────────────
+        session_manifest = {
+            "session_id": ts,
+            "expected_source_language": manager.expected_source_language,
+            "active_targets": active_tgts,
+            "started_at": datetime.fromtimestamp(time.time() - runtime).isoformat() if runtime > 0 else datetime.now().isoformat(),
+            "ended_at": datetime.now().isoformat(),
+            "runtime_seconds": round(runtime, 1),
+            "audio_billed_seconds": round(_billed_seconds, 1),
+            "estimated_total_cost_usd": round(total_cost, 4),
+            "cost_by_target": {tgt: round(per_target_cost, 4) for tgt in active_tgts},
+            "model": model_resolver.active_model,
+            "captions_by_target": {
+                tgt: manager.broadcasters[tgt].caption_count
+                for tgt in active_tgts if tgt in manager.broadcasters
+            },
+        }
+        (session_dir / "session.json").write_text(json.dumps(session_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        # ── summary.txt (human-readable summary) ──────────────────────────
         (session_dir / "summary.txt").write_text("\n".join([
-            f"Session ended: {datetime.now().isoformat()}",
-            f"Runtime:       {runtime/60:.1f} min ({runtime:.0f}s)",
-            f"Audio billed:  {_billed_seconds:.0f}s",
-            f"Est. cost:     ${cost:.4f} USD",
-            f"Targets:       {', '.join(manager.active_targets)}",
-            f"Primary turns: {len(entries)}",
-            f"Captions:      {manager.primary_broadcaster.caption_count}",
-            f"Model:         {model_resolver.active_model}",
+            f"Session ended:  {datetime.now().isoformat()}",
+            f"Source:         {manager.expected_source_language.upper()}",
+            f"Active Targets: {', '.join(active_tgts)}",
+            f"Runtime:        {runtime/60:.1f} min ({runtime:.0f}s)",
+            f"Audio billed:   {_billed_seconds:.0f}s per target",
+            f"Est. total cost:${total_cost:.4f} USD",
+            f"Model:          {model_resolver.active_model}",
         ]), encoding="utf-8")
 
-        # Export transcripts for all active sessions
+        # ── source.txt (common source transcript) ─────────────────────────
+        src_entries = entries
+        if not src_entries:
+            for s in manager.sessions.values():
+                if s.transcript:
+                    src_entries = s.transcript
+                    break
+
+        if src_entries:
+            (session_dir / "source.txt").write_text("\n".join(
+                f"{ts_tag(e.timestamp)}  {e.source}" for e in src_entries
+            ), encoding="utf-8")
+            (session_dir / f"{manager.expected_source_language}.txt").write_text("\n".join(
+                f"{ts_tag(e.timestamp)}  {e.source}" for e in src_entries
+            ), encoding="utf-8")
+
+        # ── per-target target_{tgt}.txt & aligned_{tgt}.txt ───────────────
         for tgt, sess in manager.sessions.items():
             s_entries = sess.transcript
+            (session_dir / f"target_{tgt}.txt").write_text("\n".join(
+                f"{ts_tag(e.timestamp)}  {e.target}" for e in s_entries
+            ), encoding="utf-8")
             (session_dir / f"{tgt}.txt").write_text("\n".join(
                 f"{ts_tag(e.timestamp)}  {e.target}" for e in s_entries
             ), encoding="utf-8")
 
-        if entries:
-            # ── source transcript ──────────────────────────────────────────
-            (session_dir / f"{manager.expected_source_language}.txt").write_text("\n".join(
-                f"{ts_tag(e.timestamp)}  {e.source}" for e in entries
-            ), encoding="utf-8")
-
-            # ── aligned.txt (source + primary target) ──────────────────────
             aligned = []
+            for e in s_entries:
+                tag = ts_tag(e.timestamp)
+                aligned.append(f"{tag}  [source] {e.source}")
+                aligned.append(f"        [target] {e.target}")
+                aligned.append("")
+            (session_dir / f"aligned_{tgt}.txt").write_text("\n".join(aligned), encoding="utf-8")
+
+        # Legacy aligned.txt
+        if entries:
+            aligned_legacy = []
             for e in entries:
                 tag = ts_tag(e.timestamp)
-                aligned.append(f"{tag}  {e.source_lang.upper()}: {e.source}")
-                aligned.append(f"        {e.target_lang.upper()}: {e.target}")
-                aligned.append("")
-            (session_dir / "aligned.txt").write_text("\n".join(aligned), encoding="utf-8")
+                aligned_legacy.append(f"{tag}  {e.source_lang.upper()}: {e.source}")
+                aligned_legacy.append(f"        {e.target_lang.upper()}: {e.target}")
+                aligned_legacy.append("")
+            (session_dir / "aligned.txt").write_text("\n".join(aligned_legacy), encoding="utf-8")
 
-        server_log.info("Session exported: %s (%d primary turns)", session_dir, len(entries))
+        server_log.info("Session exported: %s (%d active targets)", session_dir, len(manager.sessions))
     except Exception as e:
         server_log.warning("Could not write session log: %s", e)
+
 
 
 @asynccontextmanager
@@ -1181,12 +1229,21 @@ async def get_status():
     total_audio = sum(b.audio_client_count for b in manager.broadcasters.values()) if manager.broadcasters else broadcaster.audio_client_count
 
     t_cfg = translation_cfg()
+    active_tgts = list(manager.active_targets) if manager.is_running else t_cfg["default_active_targets"]
+    per_target_cost = _billed_seconds * _COST_PER_AUDIO_SEC
+    total_cost = len(active_tgts) * per_target_cost
+
+    session_states = mgr_state.get("sessions", {})
+    for tgt, s_info in session_states.items():
+        s_info["estimated_cost"] = round(per_target_cost, 4)
+
     translation_info = {
         "expected_source": manager.expected_source_language if manager.is_running else t_cfg["expected_source_language"],
         "selected_targets": t_cfg["default_active_targets"],
-        "active_targets": list(manager.active_targets) if manager.is_running else t_cfg["default_active_targets"],
+        "active_targets": active_tgts,
         "primary_target": manager.primary_target,
-        "sessions": mgr_state.get("sessions", {}),
+        "estimated_total_cost": round(total_cost, 4),
+        "sessions": session_states,
     }
 
     return {
@@ -1195,8 +1252,9 @@ async def get_status():
         "paused": _paused,
         "pause_duration_s": round(time.monotonic() - _pause_start, 1) if (_paused and _pause_start) else 0.0,
         "runtime_s": round(runtime, 1),
-        "cost_usd": round(cost, 4),
+        "cost_usd": round(total_cost, 4),
         "billed_audio_s": round(_billed_seconds, 1),
+
         "auto_stop_timeout_min": audio_cfg().get("auto_stop_timeout_min", 10),
         "auto_drift_correction": primary_sess.auto_drift_correction if primary_sess else True,
         "session_epoch": primary_sess.session_epoch if primary_sess else 0,

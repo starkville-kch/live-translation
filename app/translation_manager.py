@@ -79,6 +79,13 @@ class TranslationManager:
         return self._billed_seconds
 
     @property
+    def runtime_seconds(self) -> float:
+        if self._is_running and self._start_time is not None:
+            return max(0.0, time.monotonic() - self._start_time)
+        return 0.0
+
+
+    @property
     def primary_target(self) -> str:
         return self.active_targets[0] if self.active_targets else "en"
 
@@ -152,6 +159,7 @@ class TranslationManager:
                         try:
                             session._audio_queue.put_nowait(chunk)
                         except asyncio.QueueFull:
+                            session._dropped_audio_chunks += 1
                             # Discard oldest chunk under backpressure to avoid accumulating stale latency
                             try:
                                 session._audio_queue.get_nowait()
@@ -159,15 +167,17 @@ class TranslationManager:
                             except Exception:
                                 pass
                             server_log.warning(
-                                "[TranslationManager] Queue overflow for target '%s'; dropped oldest frame.",
+                                "[Gemini:%s] Audio queue full; dropped oldest PCM frame (%d total dropped)",
                                 target,
+                                session._dropped_audio_chunks,
                             )
                         except Exception as e:
                             server_log.warning(
-                                "[TranslationManager] Error fanning audio to target '%s': %s",
+                                "[Gemini:%s] Error fanning audio chunk: %s",
                                 target,
                                 e,
                             )
+
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -319,6 +329,8 @@ class TranslationManager:
     def state(self) -> dict:
         """Return the composite state of all active sessions and the audio pipeline."""
         session_states = {}
+        rt = round(self.runtime_seconds, 1)
+        bs = round(self.billed_seconds, 1)
         for target, s in self.sessions.items():
             st = s.state
             session_states[target] = {
@@ -328,7 +340,11 @@ class TranslationManager:
                 "latency_ms": st.last_latency_ms,
                 "last_update": st.last_update,
                 "epoch": s.session_epoch,
+                "dropped_audio_chunks": getattr(s, "dropped_audio_chunks", 0),
+                "runtime_seconds": rt,
+                "billed_seconds": bs,
             }
+
         ast = getattr(self.audio, "state", None)
         audio_status = "stopped"
         level_rms = 0.0
