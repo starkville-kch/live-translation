@@ -20,8 +20,8 @@
 
 setlocal
 set "CONDA_ROOT=D:\Program_Files\miniconda3"
-set "CONDA_ENV=skc_build"
-set "OUT_DIR=%~dp0.agent"
+set "CONDA_ENV=agent"
+if exist "%CONDA_ROOT%\envs\skc_build\python.exe" set "CONDA_ENV=skc_build"
 
 if not exist "%CONDA_ROOT%\Scripts\activate.bat" (
     echo [ERROR] Conda not found at %CONDA_ROOT%
@@ -29,36 +29,21 @@ if not exist "%CONDA_ROOT%\Scripts\activate.bat" (
     pause & exit /b 1
 )
 
-echo [1/4] Activating conda build environment '%CONDA_ENV%'...
+echo [1/2] Activating conda build environment '%CONDA_ENV%'...
 call "%CONDA_ROOT%\Scripts\activate.bat" "%CONDA_ROOT%\envs\%CONDA_ENV%"
 if errorlevel 1 (
-    echo [ERROR] Failed to activate '%CONDA_ENV%'. Run the one-time setup above.
+    echo [ERROR] Failed to activate '%CONDA_ENV%'.
     pause & exit /b 1
 )
 
 cd /d "%~dp0"
 
-echo [2/4] Building main service binary (SKC_translation.exe)...
-pyinstaller "SKC_translation.spec" --noconfirm ^
-    --workpath "%OUT_DIR%\build\translation" ^
-    --distpath "%OUT_DIR%\dist"
+echo [2/2] Running Multi-Threaded Parallel Build (SKC_translation.exe + SKC_setup.exe)...
+python build_parallel.py -j 4
 if errorlevel 1 (
-    echo [ERROR] SKC_translation build failed. See output above.
+    echo [ERROR] Build failed. See output above.
     pause & exit /b 1
 )
-
-echo [3/4] Building setup wizard binary (SKC_setup.exe)...
-pyinstaller "SKC_setup.spec" --noconfirm ^
-    --workpath "%OUT_DIR%\build\setup" ^
-    --distpath "%OUT_DIR%\dist"
-if errorlevel 1 (
-    echo [ERROR] SKC_setup build failed. See output above.
-    pause & exit /b 1
-)
-
-echo [4/4] Preparing package structure...
-if not exist "%OUT_DIR%\dist\branding" mkdir "%OUT_DIR%\dist\branding"
-if not exist "%OUT_DIR%\dist\config.yaml" copy "%~dp0config.yaml" "%OUT_DIR%\dist\config.yaml" >nul
 
 echo.
 echo ================================================================

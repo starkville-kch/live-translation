@@ -4,7 +4,7 @@ setup_gui.py — Live Translation Setup Wizard (GUI)
 Starkville Korean Church (PCA) — Live Translation System
 ---------------------------------------------------------
 Standalone Tkinter configuration wizard for setting up church identity,
-network hostname, and Google Gemini API key validation.
+local network hostname, Google Gemini API validation, and Cloudflare public access.
 
 Builds into `SKC_setup.exe` with PyInstaller.
 """
@@ -49,8 +49,8 @@ class SetupApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Live Translation Setup")
-        self.root.geometry("620x760")
-        self.root.minsize(580, 680)
+        self.root.geometry("1060x670")
+        self.root.minsize(980, 620)
         self.root.configure(bg=COLOR_BG)
 
         self.app_root = get_app_root()
@@ -75,6 +75,7 @@ class SetupApp:
 
         self._setup_styles()
         self._build_ui()
+        self._update_readiness_pills()
 
     def _setup_styles(self):
         style = ttk.Style()
@@ -86,21 +87,21 @@ class SetupApp:
             "Header.TLabel",
             background=COLOR_NAVY,
             foreground="#ffffff",
-            font=("Segoe UI", 16, "bold"),
-            padding=12,
+            font=("Segoe UI", 15, "bold"),
+            padding=(14, 10, 14, 2),
         )
         style.configure(
             "SubHeader.TLabel",
             background=COLOR_NAVY,
             foreground="#d9e2ec",
             font=("Segoe UI", 9),
-            padding=(12, 0, 12, 12),
+            padding=(14, 0, 14, 10),
         )
         style.configure(
             "SectionTitle.TLabel",
             background=COLOR_CARD_BG,
             foreground=COLOR_NAVY,
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 10, "bold"),
         )
         style.configure(
             "FieldLabel.TLabel",
@@ -112,19 +113,19 @@ class SetupApp:
             "Muted.TLabel",
             background=COLOR_CARD_BG,
             foreground=COLOR_TEXT_MUTED,
-            font=("Segoe UI", 9),
+            font=("Segoe UI", 8),
         )
         style.configure(
             "Action.TButton",
             font=("Segoe UI", 9, "bold"),
-            padding=6,
+            padding=4,
         )
         style.configure(
             "Primary.TButton",
             background=COLOR_NAVY,
             foreground="#ffffff",
-            font=("Segoe UI", 11, "bold"),
-            padding=8,
+            font=("Segoe UI", 10, "bold"),
+            padding=(12, 6),
         )
         style.map(
             "Primary.TButton",
@@ -132,81 +133,104 @@ class SetupApp:
         )
 
     def _build_ui(self):
-        # ── Header Banner ──────────────────────────────────────────────────────
-        hdr_frame = tk.Frame(self.root, bg=COLOR_NAVY)
-        hdr_frame.pack(fill="x", side="top")
-
-        lbl_title = ttk.Label(hdr_frame, text="Live Translation Setup", style="Header.TLabel")
-        lbl_title.pack(anchor="w")
-        lbl_subtitle = ttk.Label(
-            hdr_frame,
-            text="Configure church identity, local network address, and Google Gemini API credentials.",
+        # ── 1. Top Header Banner ──────────────────────────────────────────────
+        f_hdr = tk.Frame(self.root, bg=COLOR_NAVY)
+        f_hdr.pack(fill="x")
+        ttk.Label(f_hdr, text="Live Translation Setup", style="Header.TLabel").pack(anchor="w")
+        ttk.Label(
+            f_hdr,
+            text="Configure church identity, Google Gemini API credentials, local Wi-Fi address, and Cloudflare public access.",
             style="SubHeader.TLabel",
+        ).pack(anchor="w")
+
+        # ── 2. Fixed Bottom Action & Readiness Bar ────────────────────────────
+        bottom_frame = tk.Frame(self.root, bg="#eaedf1", bd=1, relief="solid", highlightbackground=COLOR_BORDER)
+        bottom_frame.pack(fill="x", side="bottom")
+
+        p_bottom = tk.Frame(bottom_frame, bg="#eaedf1", padx=16, pady=10)
+        p_bottom.pack(fill="x")
+
+        # Setup Readiness (Left side of footer)
+        f_readiness = tk.Frame(p_bottom, bg="#eaedf1")
+        f_readiness.pack(side="left", fill="y")
+        tk.Label(f_readiness, text="SETUP READINESS:", font=("Segoe UI", 9, "bold"), bg="#eaedf1", fg=COLOR_NAVY).pack(side="left", padx=(0, 8))
+
+        self.lbl_pill_local = tk.Label(f_readiness, text="🟢 Local Network", font=("Segoe UI", 8, "bold"), bg="#dcfce7", fg=COLOR_SUCCESS, padx=6, pady=2, bd=1, relief="solid")
+        self.lbl_pill_local.pack(side="left", padx=4)
+
+        self.lbl_pill_gemini = tk.Label(f_readiness, text="⚪ Gemini API", font=("Segoe UI", 8, "bold"), bg="#f1f5f9", fg=COLOR_TEXT_MUTED, padx=6, pady=2, bd=1, relief="solid")
+        self.lbl_pill_gemini.pack(side="left", padx=4)
+
+        self.lbl_pill_cloudflare = tk.Label(f_readiness, text="⚪ Public HTTPS", font=("Segoe UI", 8, "bold"), bg="#f1f5f9", fg=COLOR_TEXT_MUTED, padx=6, pady=2, bd=1, relief="solid")
+        self.lbl_pill_cloudflare.pack(side="left", padx=4)
+
+        # Action Buttons (Right side of footer)
+        f_actions = tk.Frame(p_bottom, bg="#eaedf1")
+        f_actions.pack(side="right")
+
+        btn_cancel = ttk.Button(f_actions, text="Cancel / Exit", command=self.root.destroy)
+        btn_cancel.pack(side="left", padx=6)
+
+        self.btn_save = ttk.Button(
+            f_actions,
+            text="💾 Save & Finish",
+            style="Primary.TButton",
+            command=self._save_and_finish,
         )
-        lbl_subtitle.pack(anchor="w")
+        self.btn_save.pack(side="left", padx=4)
 
-        # ── Scrollable Body ───────────────────────────────────────────────────
-        canvas = tk.Canvas(self.root, bg=COLOR_BG, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
-        self.scroll_frame = ttk.Frame(canvas)
+        # ── 3. Main 2-Column Content Area ─────────────────────────────────────
+        content = tk.Frame(self.root, bg=COLOR_BG, padx=14, pady=10)
+        content.pack(fill="both", expand=True)
 
-        self.scroll_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
-        )
+        content.grid_columnconfigure(0, weight=1, uniform="upper_col")
+        content.grid_columnconfigure(1, weight=1, uniform="upper_col")
+        content.grid_rowconfigure(0, weight=3)
+        content.grid_rowconfigure(1, weight=2)
 
-        canvas_window = canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
+        # ── CARD 1: Church & Local Network (Top Left) ─────────────────────────
+        card_church = tk.Frame(content, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
+        card_church.grid(row=0, column=0, padx=(0, 6), pady=(0, 8), sticky="nsew")
 
-        def _on_canvas_configure(event):
-            canvas.itemconfig(canvas_window, width=event.width)
+        p_church = tk.Frame(card_church, bg=COLOR_CARD_BG, padx=14, pady=12)
+        p_church.pack(fill="both", expand=True)
 
-        canvas.bind("<Configure>", _on_canvas_configure)
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side="top", fill="both", expand=True, padx=16, pady=12)
-        scrollbar.pack(side="right", fill="y")
-
-        # ── Section 1: Church Identity ────────────────────────────────────────
-        card_church = tk.Frame(self.scroll_frame, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
-        card_church.pack(fill="x", pady=(0, 12), padx=4)
-
-        p_church = tk.Frame(card_church, bg=COLOR_CARD_BG, padx=16, pady=14)
-        p_church.pack(fill="x")
-
-        ttk.Label(p_church, text="1. CHURCH IDENTITY", style="SectionTitle.TLabel").pack(anchor="w", pady=(0, 10))
+        ttk.Label(p_church, text="1. CHURCH & LOCAL NETWORK", style="SectionTitle.TLabel").pack(anchor="w", pady=(0, 8))
 
         # Church Name
         f_name = tk.Frame(p_church, bg=COLOR_CARD_BG)
-        f_name.pack(fill="x", pady=4)
-        ttk.Label(f_name, text="Church Name:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        f_name.pack(fill="x", pady=3)
+        ttk.Label(f_name, text="Church Name:", width=13, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.entry_church_name = ttk.Entry(f_name, font=("Segoe UI", 9))
         self.entry_church_name.insert(0, self.current_church.get("name", "Starkville Korean Church"))
         self.entry_church_name.pack(side="left", fill="x", expand=True)
 
         # Short Name
         f_sname = tk.Frame(p_church, bg=COLOR_CARD_BG)
-        f_sname.pack(fill="x", pady=4)
-        ttk.Label(f_sname, text="Short Name:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
-        self.entry_short_name = ttk.Entry(f_sname, font=("Segoe UI", 9), width=15)
+        f_sname.pack(fill="x", pady=3)
+        ttk.Label(f_sname, text="Short Name:", width=13, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        self.entry_short_name = ttk.Entry(f_sname, font=("Segoe UI", 9), width=12)
         self.entry_short_name.insert(0, self.current_church.get("short_name", "SKC"))
         self.entry_short_name.pack(side="left")
-        ttk.Label(f_sname, text="(used on compact mobile headers)", style="Muted.TLabel").pack(side="left", padx=8)
+        ttk.Label(f_sname, text="(compact mobile header)", style="Muted.TLabel").pack(side="left", padx=6)
 
-        # Local Hostname
+        # Local Hostname & Port
         f_host = tk.Frame(p_church, bg=COLOR_CARD_BG)
-        f_host.pack(fill="x", pady=4)
-        ttk.Label(f_host, text="Local URL:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        f_host.pack(fill="x", pady=3)
+        ttk.Label(f_host, text="Local URL:", width=13, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         ttk.Label(f_host, text="http://", style="Muted.TLabel").pack(side="left")
-        self.entry_hostname = ttk.Entry(f_host, font=("Segoe UI", 9), width=16)
+        self.entry_hostname = ttk.Entry(f_host, font=("Segoe UI", 9), width=12)
         self.entry_hostname.insert(0, self.current_network.get("hostname", "skc"))
         self.entry_hostname.pack(side="left", padx=2)
-        ttk.Label(f_host, text=".local", style="FieldLabel.TLabel").pack(side="left")
-        ttk.Label(f_host, text="(e.g. skc → http://skc.local)", style="Muted.TLabel").pack(side="left", padx=8)
+        port_num = self.current_network.get("port", 8080)
+        port_suffix = f".local:{port_num}" if port_num != 80 else ".local"
+        ttk.Label(f_host, text=port_suffix, style="FieldLabel.TLabel").pack(side="left")
+        ttk.Label(f_host, text=f"(e.g. skc → http://skc{port_suffix})", style="Muted.TLabel").pack(side="left", padx=6)
 
         # Church Logo
         f_logo = tk.Frame(p_church, bg=COLOR_CARD_BG)
-        f_logo.pack(fill="x", pady=4)
-        ttk.Label(f_logo, text="Church Logo:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        f_logo.pack(fill="x", pady=3)
+        ttk.Label(f_logo, text="Church Logo:", width=13, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.lbl_logo_path = ttk.Label(
             f_logo,
             text=self.current_church.get("logo", "branding/church-logo.png"),
@@ -216,197 +240,156 @@ class SetupApp:
         btn_logo = ttk.Button(f_logo, text="Choose Logo...", command=self._choose_logo)
         btn_logo.pack(side="right")
 
-        # ── Section 2: Google Gemini Setup Instructions ───────────────────────
-        card_google = tk.Frame(self.scroll_frame, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
-        card_google.pack(fill="x", pady=(0, 12), padx=4)
+        # ── CARD 2: Google Gemini API (Top Right) ─────────────────────────────
+        card_gemini = tk.Frame(content, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
+        card_gemini.grid(row=0, column=1, padx=(6, 0), pady=(0, 8), sticky="nsew")
 
-        p_google = tk.Frame(card_google, bg=COLOR_CARD_BG, padx=16, pady=14)
-        p_google.pack(fill="x")
+        p_gemini = tk.Frame(card_gemini, bg=COLOR_CARD_BG, padx=14, pady=12)
+        p_gemini.pack(fill="both", expand=True)
 
-        ttk.Label(p_google, text="2. GOOGLE GEMINI SETUP", style="SectionTitle.TLabel").pack(anchor="w", pady=(0, 6))
+        ttk.Label(p_gemini, text="2. GOOGLE GEMINI API", style="SectionTitle.TLabel").pack(anchor="w", pady=(0, 6))
 
-        # Step A: Create API Key
-        ttk.Label(
-            p_google,
-            text="Step A: Create an API key in Google AI Studio",
-            style="FieldLabel.TLabel",
-        ).pack(anchor="w", pady=(4, 2))
-        ttk.Label(
-            p_google,
-            text="• Create a new API key in Google AI Studio rather than reusing an old key.\n  (Older keys before the Auth key migration may stop working by Sept 2026).",
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", padx=8, pady=(0, 4))
+        # External Links Row (Compact)
+        f_links = tk.Frame(p_gemini, bg=COLOR_CARD_BG)
+        f_links.pack(fill="x", pady=(0, 6))
         btn_studio = ttk.Button(
-            p_google,
+            f_links,
             text="🌐 Open Google AI Studio",
             command=lambda: webbrowser.open("https://aistudio.google.com/app/apikey"),
         )
-        btn_studio.pack(anchor="w", padx=8, pady=(2, 8))
-
-        # Step B: Billing Setup
-        ttk.Label(
-            p_google,
-            text="Step B: Set up billing for Google Cloud / Gemini API",
-            style="FieldLabel.TLabel",
-        ).pack(anchor="w", pady=(4, 2))
-        ttk.Label(
-            p_google,
-            text="• Gemini Live translation requires a paid tier account.\n  Google may require a minimum $10 prepaid credit during initial billing setup.",
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", padx=8, pady=(0, 4))
+        btn_studio.pack(side="left", padx=(0, 6))
         btn_billing = ttk.Button(
-            p_google,
-            text="💳 Open Billing Setup Guide",
+            f_links,
+            text="💳 Billing Setup Guide",
             command=lambda: webbrowser.open("https://ai.google.dev/gemini-api/docs/billing"),
         )
-        btn_billing.pack(anchor="w", padx=8, pady=(2, 6))
+        btn_billing.pack(side="left")
 
-        # ── Section 3: API Key & Validation ───────────────────────────────────
-        card_key = tk.Frame(self.scroll_frame, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
-        card_key.pack(fill="x", pady=(0, 12), padx=4)
-
-        p_key = tk.Frame(card_key, bg=COLOR_CARD_BG, padx=16, pady=14)
-        p_key.pack(fill="x")
-
-        ttk.Label(p_key, text="3. API KEY CONFIGURATION & VALIDATION", style="SectionTitle.TLabel").pack(anchor="w", pady=(0, 8))
-
-        self.key_container = tk.Frame(p_key, bg=COLOR_CARD_BG)
-        self.key_container.pack(fill="x", pady=4)
+        # API Key container (Single Row: LABEL | FIELD | ACTION)
+        self.key_container = tk.Frame(p_gemini, bg=COLOR_CARD_BG)
+        self.key_container.pack(fill="x", pady=2)
 
         if self.existing_key:
             self._render_existing_key_view()
         else:
             self._render_new_key_view()
 
-        # Validation status box
-        self.val_box = tk.Frame(p_key, bg="#f8f9fa", bd=1, relief="solid", highlightbackground=COLOR_BORDER, padx=12, pady=10)
-        self.val_box.pack(fill="x", pady=(10, 4))
+        # Compact Validation Status Rows
+        self.val_box = tk.Frame(p_gemini, bg="#f8fafc", bd=1, relief="solid", highlightbackground=COLOR_BORDER, padx=8, pady=6)
+        self.val_box.pack(fill="x", pady=(6, 4))
 
+        f_val_k = tk.Frame(self.val_box, bg="#f8fafc")
+        f_val_k.pack(fill="x")
+        ttk.Label(f_val_k, text="API Key Status:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.lbl_val_key = tk.Label(
-            self.val_box,
-            text="• API Key: Not tested yet",
-            font=("Segoe UI", 9),
-            bg="#f8f9fa",
-            fg=COLOR_TEXT_MUTED,
+            f_val_k,
+            text="● Configured" if self.existing_key else "⚪ Key required",
+            font=("Segoe UI", 9, "bold"),
+            bg="#f8fafc",
+            fg=COLOR_SUCCESS if self.existing_key else COLOR_TEXT_MUTED,
             anchor="w",
         )
-        self.lbl_val_key.pack(fill="x")
+        self.lbl_val_key.pack(side="left")
 
+        f_val_m = tk.Frame(self.val_box, bg="#f8fafc")
+        f_val_m.pack(fill="x", pady=(2, 0))
+        ttk.Label(f_val_m, text="Model Target:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.lbl_val_model = tk.Label(
-            self.val_box,
-            text=f"• Model ({self.configured_model}): Not tested yet",
+            f_val_m,
+            text=f"● {self.configured_model}",
             font=("Segoe UI", 9),
-            bg="#f8f9fa",
-            fg=COLOR_TEXT_MUTED,
+            bg="#f8fafc",
+            fg=COLOR_NAVY,
             anchor="w",
         )
-        self.lbl_val_model.pack(fill="x", pady=(2, 0))
+        self.lbl_val_model.pack(side="left")
 
         # Test Connection button
         self.btn_test = ttk.Button(
-            p_key,
-            text="🔍 Test Connection & Model Availability",
+            p_gemini,
+            text="⚡ Test Connection & Model Availability",
             command=self._start_connection_test,
         )
-        self.btn_test.pack(pady=8)
+        self.btn_test.pack(fill="x", pady=(4, 0))
 
-        # ── Section 4: Cloudflare Named Tunnel (Public HTTPS) ────────────────
-        card_tunnel = tk.Frame(self.scroll_frame, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
-        card_tunnel.pack(fill="x", pady=(0, 12), padx=4)
+        # ── CARD 3: Public HTTPS / Cloudflare Named Tunnel (Bottom Full-Width) 
+        card_tunnel = tk.Frame(content, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
+        card_tunnel.grid(row=1, column=0, columnspan=2, pady=(0, 0), sticky="nsew")
 
-        p_tunnel = tk.Frame(card_tunnel, bg=COLOR_CARD_BG, padx=16, pady=14)
-        p_tunnel.pack(fill="x")
+        p_tunnel = tk.Frame(card_tunnel, bg=COLOR_CARD_BG, padx=14, pady=10)
+        p_tunnel.pack(fill="both", expand=True)
 
-        ttk.Label(p_tunnel, text="4. CLOUDFLARE NAMED TUNNEL (PUBLIC HTTPS)", style="SectionTitle.TLabel").pack(anchor="w", pady=(0, 8))
+        ttk.Label(p_tunnel, text="3. PUBLIC HTTPS / CLOUDFLARE NAMED TUNNEL", style="SectionTitle.TLabel").pack(anchor="w", pady=(0, 6))
 
-        # Public URL
+        # Row 1: Public URL
         f_puburl = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
-        f_puburl.pack(fill="x", pady=4)
-        ttk.Label(f_puburl, text="Public URL:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        f_puburl.pack(fill="x", pady=2)
+        ttk.Label(f_puburl, text="Public URL:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.entry_public_url = ttk.Entry(f_puburl, font=("Segoe UI", 9))
         self.entry_public_url.insert(0, self.current_network.get("public_url", "https://live.starkvillekoreanchurch.org"))
         self.entry_public_url.pack(side="left", fill="x", expand=True)
 
-        # Service Status
+        # Row 2: Service Status + Refresh
         f_svc = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
-        f_svc.pack(fill="x", pady=(8, 4))
-        ttk.Label(f_svc, text="Windows Service:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        f_svc.pack(fill="x", pady=3)
+        ttk.Label(f_svc, text="Windows Service:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.lbl_svc_status = tk.Label(f_svc, text="Checking...", font=("Segoe UI", 9, "bold"), bg=COLOR_CARD_BG, fg=COLOR_TEXT_MUTED)
         self.lbl_svc_status.pack(side="left", padx=4)
-        btn_refresh_svc = ttk.Button(f_svc, text="Refresh", width=8, command=self._refresh_service_status)
+        btn_refresh_svc = ttk.Button(f_svc, text="🔄 Refresh", width=10, command=self._refresh_service_status)
         btn_refresh_svc.pack(side="right")
 
-        # Tunnel Token (Optional Setup/Install)
+        # Row 3: Tunnel Token + Start / Install
         f_tok = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
-        f_tok.pack(fill="x", pady=(8, 4))
-        ttk.Label(f_tok, text="Tunnel Token:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        f_tok.pack(fill="x", pady=3)
+        ttk.Label(f_tok, text="Tunnel Token:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.entry_tunnel_token = ttk.Entry(f_tok, font=("Consolas", 9), show="•")
-        self.entry_tunnel_token.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.entry_tunnel_token.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        btn_install_svc = ttk.Button(f_tok, text="⚙️ Start / Install Service", command=self._start_or_install_service)
+        btn_install_svc.pack(side="right")
 
-        btn_install_svc = ttk.Button(p_tunnel, text="⚙️ Start / Install Cloudflared Service", command=self._start_or_install_service)
-        btn_install_svc.pack(anchor="w", padx=8, pady=(4, 2))
         ttk.Label(
             p_tunnel,
-            text="• Token is only needed once to install the Windows service. Runtime translation monitors the service automatically.",
+            text="• Token is only needed once to install or repair the Windows service. Runtime translation monitors the service automatically.",
             style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", padx=8, pady=(0, 2))
+        ).pack(anchor="w", pady=(2, 0))
 
         self._refresh_service_status()
-
-        # ── Bottom Action Bar ─────────────────────────────────────────────────
-        bottom_frame = tk.Frame(self.root, bg=COLOR_BG, pady=12)
-        bottom_frame.pack(fill="x", side="bottom", padx=20)
-
-        self.btn_save = ttk.Button(
-            bottom_frame,
-            text="💾 Save & Finish",
-            style="Primary.TButton",
-            command=self._save_and_finish,
-        )
-        self.btn_save.pack(side="right", padx=4)
-
-        btn_cancel = ttk.Button(bottom_frame, text="Cancel / Exit", command=self.root.destroy)
-        btn_cancel.pack(side="right", padx=4)
 
     def _render_existing_key_view(self):
         for w in self.key_container.winfo_children():
             w.destroy()
 
-        ttk.Label(self.key_container, text="Configured Key:", style="FieldLabel.TLabel").pack(anchor="w")
         f_row = tk.Frame(self.key_container, bg=COLOR_CARD_BG)
-        f_row.pack(fill="x", pady=4)
+        f_row.pack(fill="x", pady=2)
 
+        ttk.Label(f_row, text="API Key:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         masked = mask_api_key(self.existing_key)
         lbl_masked = tk.Label(
             f_row,
             text=masked,
-            font=("Consolas", 10, "bold"),
+            font=("Consolas", 9, "bold"),
             bg="#edf2f7",
             fg=COLOR_TEXT_MAIN,
             padx=8,
-            pady=4,
+            pady=2,
             relief="solid",
             bd=1,
         )
-        lbl_masked.pack(side="left", padx=(0, 8))
+        lbl_masked.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
         btn_replace = ttk.Button(f_row, text="Replace Key...", command=self._render_new_key_view)
-        btn_replace.pack(side="left")
+        btn_replace.pack(side="right")
 
     def _render_new_key_view(self):
         for w in self.key_container.winfo_children():
             w.destroy()
 
-        ttk.Label(self.key_container, text="Paste Google Gemini API Key:", style="FieldLabel.TLabel").pack(anchor="w")
-
         f_entry = tk.Frame(self.key_container, bg=COLOR_CARD_BG)
-        f_entry.pack(fill="x", pady=4)
+        f_entry.pack(fill="x", pady=2)
 
+        ttk.Label(f_entry, text="API Key:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.entry_key = ttk.Entry(f_entry, font=("Consolas", 9), show="•")
-        self.entry_key.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.entry_key.pack(side="left", fill="x", expand=True, padx=(0, 4))
 
         self.is_key_visible = False
 
@@ -415,7 +398,7 @@ class SetupApp:
             self.entry_key.configure(show="" if self.is_key_visible else "•")
             btn_show.configure(text="Hide" if self.is_key_visible else "Show")
 
-        btn_show = ttk.Button(f_entry, text="Show", width=6, command=_toggle_visibility)
+        btn_show = ttk.Button(f_entry, text="Show", width=5, command=_toggle_visibility)
         btn_show.pack(side="left", padx=2)
 
         def _paste_clipboard():
@@ -427,16 +410,17 @@ class SetupApp:
             except Exception:
                 pass
 
-        btn_paste = ttk.Button(f_entry, text="Paste", width=6, command=_paste_clipboard)
+        btn_paste = ttk.Button(f_entry, text="Paste", width=5, command=_paste_clipboard)
         btn_paste.pack(side="left", padx=2)
 
         if self.existing_key:
             btn_cancel_replace = ttk.Button(
-                self.key_container,
-                text="← Keep Existing Key",
+                f_entry,
+                text="Cancel",
+                width=6,
                 command=self._render_existing_key_view,
             )
-            btn_cancel_replace.pack(anchor="w", pady=(2, 0))
+            btn_cancel_replace.pack(side="left", padx=2)
 
     def _get_active_key(self) -> str:
         if hasattr(self, "entry_key") and self.entry_key.winfo_exists():
@@ -468,8 +452,8 @@ class SetupApp:
         self.testing = True
         self.validation_passed = False
         self.btn_test.configure(state="disabled")
-        self.lbl_val_key.configure(text="• API Key: Testing authentication...", fg=COLOR_TEXT_MUTED)
-        self.lbl_val_model.configure(text=f"• Model ({self.configured_model}): Querying available models...", fg=COLOR_TEXT_MUTED)
+        self.lbl_val_key.configure(text="● Testing authentication...", fg=COLOR_TEXT_MUTED)
+        self.lbl_val_model.configure(text=f"● Querying {self.configured_model}...", fg=COLOR_TEXT_MUTED)
 
         thread = threading.Thread(target=self._run_connection_test, args=(key,), daemon=True)
         thread.start()
@@ -495,25 +479,22 @@ class SetupApp:
             cfg_model = self.configured_model.strip()
             if cfg_model in available_models:
                 model_valid = True
-                model_note = f"✓ Configured model available: {cfg_model}"
+                model_note = f"● {cfg_model} available"
             else:
-                # Check if any live translate model is available as alternative
                 live_models = [m for m in available_models if "live" in m or "translate" in m]
                 if live_models:
-                    model_note = f"⚠️ {cfg_model} not in list, but found: {', '.join(live_models[:2])}"
+                    model_note = f"● Found alternative: {live_models[0]}"
                     model_valid = True
                 else:
-                    model_note = f"✗ Configured model '{cfg_model}' was not found in your project."
+                    model_note = f"✗ Model '{cfg_model}' not found in project"
                     model_valid = False
 
         except Exception as e:
             err_str = str(e)
-            # Defensive sanitation: NEVER show or leak raw key
             if key in err_str:
                 err_str = err_str.replace(key, "••••••••")
             error_msg = err_str
 
-        # Update GUI on main thread
         self.root.after(0, self._on_test_complete, key_valid, model_valid, error_msg, model_note)
 
     def _on_test_complete(self, key_valid: bool, model_valid: bool, error_msg: str, model_note: str):
@@ -521,15 +502,17 @@ class SetupApp:
         self.btn_test.configure(state="normal")
 
         if key_valid:
-            self.lbl_val_key.configure(text="✓ API key accepted and authenticated", fg=COLOR_SUCCESS)
+            self.lbl_val_key.configure(text="● Authenticated", fg=COLOR_SUCCESS)
             if model_valid:
-                self.lbl_val_model.configure(text=f"✓ {model_note}", fg=COLOR_SUCCESS)
+                self.lbl_val_model.configure(text=model_note, fg=COLOR_SUCCESS)
                 self.validation_passed = True
             else:
                 self.lbl_val_model.configure(text=model_note, fg=COLOR_ERROR)
         else:
-            self.lbl_val_key.configure(text=f"✗ API key authentication failed: {error_msg}", fg=COLOR_ERROR)
-            self.lbl_val_model.configure(text=f"• Model ({self.configured_model}): Could not test", fg=COLOR_TEXT_MUTED)
+            self.lbl_val_key.configure(text="✗ Auth Failed", fg=COLOR_ERROR)
+            self.lbl_val_model.configure(text=f"✗ {error_msg[:30]}", fg=COLOR_ERROR)
+
+        self._update_readiness_pills()
 
     def _refresh_service_status(self):
         state = self.cloudflared_service._query()
@@ -541,6 +524,33 @@ class SetupApp:
             self.lbl_svc_status.configure(text="⚪ NOT INSTALLED", fg=COLOR_TEXT_MUTED)
         else:
             self.lbl_svc_status.configure(text=f"• {state.upper()}", fg=COLOR_TEXT_MUTED)
+
+        self._update_readiness_pills()
+
+    def _update_readiness_pills(self):
+        # 1. Local Network readiness
+        if hasattr(self, "entry_hostname") and self.entry_hostname.get().strip():
+            self.lbl_pill_local.configure(text="🟢 Local Network", bg="#dcfce7", fg=COLOR_SUCCESS)
+        else:
+            self.lbl_pill_local.configure(text="⚪ Local Network", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
+
+        # 2. Gemini readiness
+        active_key = self._get_active_key()
+        if self.validation_passed:
+            self.lbl_pill_gemini.configure(text="🟢 Gemini API", bg="#dcfce7", fg=COLOR_SUCCESS)
+        elif active_key:
+            self.lbl_pill_gemini.configure(text="🟡 Gemini Configured", bg="#fef9c3", fg=COLOR_GOLD)
+        else:
+            self.lbl_pill_gemini.configure(text="⚪ Gemini API", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
+
+        # 3. Cloudflare readiness
+        state = self.cloudflared_service._query()
+        if state == "running":
+            self.lbl_pill_cloudflare.configure(text="🟢 Public HTTPS", bg="#dcfce7", fg=COLOR_SUCCESS)
+        elif state == "stopped":
+            self.lbl_pill_cloudflare.configure(text="🟡 Service Stopped", bg="#fef9c3", fg=COLOR_GOLD)
+        else:
+            self.lbl_pill_cloudflare.configure(text="⚪ Public HTTPS", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
 
     def _start_or_install_service(self):
         state = self.cloudflared_service._query()
@@ -646,11 +656,13 @@ class SetupApp:
                 return
 
         # 4. Confirmation and optional launch
+        port_num = self.current_network.get("port", 8080)
+        port_suffix = f":{port_num}" if port_num != 80 else ""
         resp = messagebox.askyesno(
             "Setup Complete",
             "Configuration saved successfully!\n\n"
             f"• Church: {church_name} ({short_name})\n"
-            f"• Local URL: http://{hostname}.local\n"
+            f"• Local URL: http://{hostname}.local{port_suffix}\n"
             f"• API Key: {mask_api_key(active_key)}\n\n"
             "Would you like to launch Live Translation now?",
         )
@@ -678,7 +690,6 @@ class SetupApp:
 
 def main():
     root = tk.Tk()
-    # Windows taskbar icon/styling helper if available
     try:
         from ctypes import windll
         windll.shcore.SetProcessDpiAwareness(1)

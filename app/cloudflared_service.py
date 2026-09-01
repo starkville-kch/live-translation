@@ -19,30 +19,65 @@ class CloudflaredService:
     def is_windows(self) -> bool:
         return sys.platform == "win32"
 
+    def _sc_exe(self) -> str:
+        import shutil
+        sc_path = shutil.which("sc.exe") or shutil.which("sc")
+        if sc_path:
+            return sc_path
+        import os
+        system32_sc = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "System32", "sc.exe")
+        if os.path.exists(system32_sc):
+            return system32_sc
+        return "sc.exe"
+
     def _query(self) -> str:
         if not self.is_windows:
             return "non-windows"
         try:
+            sc = self._sc_exe()
             result = subprocess.run(
-                ["sc", "query", self.name], capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=3,
+                [sc, "query", self.name], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=5,
             )
-            output = result.stdout.upper()
-            if "RUNNING" in output:
+            output = (result.stdout + " " + result.stderr).upper()
+            if "RUNNING" in output or "STATE              : 4" in output:
                 return "running"
-            if "STOPPED" in output or "START_PENDING" in output:
+            if "STOPPED" in output or "STATE              : 1" in output or "START_PENDING" in output:
                 return "stopped"
-            if "DOES NOT EXIST" in output or result.returncode:
+            if "DOES NOT EXIST" in output or "FAILED 1060" in output or "1060" in output:
+                return "missing"
+            if result.returncode == 0:
+                if "RUNNING" in output:
+                    return "running"
+                if "STOPPED" in output:
+                    return "stopped"
+        except Exception:
+            server_log.debug("Cloudflared service query via sc.exe failed", exc_info=True)
+
+        # Fallback to PowerShell Get-Service query if sc.exe produced unknown or threw
+        try:
+            ps_res = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", f"(Get-Service -Name '{self.name}' -ErrorAction SilentlyContinue).Status.ToString()"],
+                capture_output=True, text=True, timeout=5,
+            )
+            ps_out = ps_res.stdout.strip().lower()
+            if "running" in ps_out:
+                return "running"
+            if "stopped" in ps_out:
+                return "stopped"
+            if not ps_out:
                 return "missing"
         except Exception:
-            server_log.debug("Cloudflared service query failed", exc_info=True)
+            pass
+
         return "unknown"
 
     def _run(self, action: str) -> bool:
         try:
+            sc = self._sc_exe()
             result = subprocess.run(
-                ["sc", action, self.name], capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=3,
+                [sc, action, self.name], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=5,
             )
             server_log.debug("Cloudflared service command completed: %s rc=%s", action, result.returncode)
             return result.returncode == 0

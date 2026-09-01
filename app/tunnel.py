@@ -63,67 +63,42 @@ class CloudflareTunnelManager:
         return self._public_url if self.is_ready else None
 
     def _service_state(self) -> str:
-        if sys.platform != "win32":
-            return "unavailable"
-        try:
-            result = subprocess.run(
-                ["sc", "query", "cloudflared"], capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=3,
-            )
-            output = result.stdout.upper()
-            if "RUNNING" in output:
-                return "running"
-            if "STOPPED" in output or "START_PENDING" in output:
-                return "stopped"
-            if "FAILED" in output or "DOES NOT EXIST" in output or result.returncode:
-                return "missing"
-        except Exception:
-            server_log.debug("Cloudflared service query failed", exc_info=True)
-        return "unavailable"
+        return self._service._query()
 
     def _start_service(self) -> bool:
-        try:
-            subprocess.run(
-                ["sc", "start", "cloudflared"], capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=3,
-            )
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline:
-                if self._service_state() == "running":
-                    return True
-                time.sleep(0.5)
-        except Exception:
-            server_log.warning("Cloudflared service start failed", exc_info=True)
-        return False
+        return self._service.start() or self._service._query() == "running"
 
     def _public_check(self) -> bool:
+        # Probe using standard browser User-Agent so Cloudflare WAF bot management doesn't block with 403
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
         try:
-            with urllib.request.urlopen(self._public_url, timeout=15) as response:
-                # GET is intentional: /live is not a HEAD route. Discard the
-                # body after following redirects so this remains lightweight.
+            req = urllib.request.Request(self._public_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
                 response.read(1)
                 return 200 <= response.status < 400
         except urllib.error.HTTPError as exc:
-            if exc.code == 405:
-                server_log.info("Public attendee route reachable; GET health transition required")
+            if exc.code == 405 or (200 <= exc.code < 400):
                 return True
             server_log.debug("Public attendee link check returned HTTP %s", exc.code)
-            return False
         except Exception:
-            # Windows ships curl.exe; prefer its IPv4/TLS stack when Python's
-            # SSL provider cannot validate the Cloudflare edge certificate.
-            if sys.platform == "win32":
-                try:
-                    result = subprocess.run(
-                        ["curl.exe", "-4", "-L", "--max-time", "15", "-o", "NUL", "-s", "-w", "%{http_code}", self._public_url],
-                        capture_output=True, text=True, timeout=18,
-                    )
-                    code = int(result.stdout.strip() or "0")
-                    return 200 <= code < 400 or code == 405
-                except Exception:
-                    pass
-            server_log.debug("Public attendee link check failed", exc_info=True)
-            return False
+            pass
+
+        # Windows curl fallback with User-Agent
+        if sys.platform == "win32":
+            try:
+                result = subprocess.run(
+                    ["curl.exe", "-4", "-L", "-A", "Mozilla/5.0", "--max-time", "10", "-o", "NUL", "-s", "-w", "%{http_code}", self._public_url],
+                    capture_output=True, text=True, timeout=12,
+                )
+                code = int(result.stdout.strip() or "0")
+                return 200 <= code < 400 or code == 405
+            except Exception:
+                server_log.debug("Public attendee curl check failed", exc_info=True)
+
+        return False
 
     def _set_status(self, status: str, ready: bool = False) -> None:
         with self._lock:

@@ -63,6 +63,7 @@ def test_operator_html_structure_and_accessibility():
     assert 'id="stat-gemini-lat"' in html
     assert 'id="stat-local-rtt"' in html
     assert 'id="stat-public-rtt"' in html
+    assert 'id="stat-overall-delay"' in html
     assert 'id="stat-attendees"' in html
     assert 'id="stat-cost"' in html
 
