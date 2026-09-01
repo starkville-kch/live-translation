@@ -582,6 +582,20 @@ class PublicHostGuardMiddleware:
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(PublicHostGuardMiddleware)
 
+# ── Mount static assets ───────────────────────────────────────────────────────
+import sys
+from fastapi.staticfiles import StaticFiles
+
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    _static_dir = Path(sys._MEIPASS) / "app" / "static"
+else:
+    _static_dir = Path(__file__).parent / "static"
+    if not _static_dir.exists():
+        _static_dir = Path(__file__).parent.parent / "app" / "static"
+
+if _static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
 
 # ── SSE caption stream ────────────────────────────────────────────────────────
 async def _sse_generator(request: Request, q: asyncio.Queue) -> AsyncIterator[str]:
@@ -1257,23 +1271,24 @@ async def root_redirect():
 
 def _read_template(filename: str) -> str:
     import sys
+    from jinja2 import Environment, FileSystemLoader
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        base_dir = Path(sys._MEIPASS)
+        template_dir = Path(sys._MEIPASS) / "app" / "templates"
     else:
-        base_dir = Path(__file__).parent.parent
-
-    template_path = base_dir / "app" / "templates" / filename
-    if not template_path.exists():
-        template_path = Path(__file__).parent / "templates" / filename
+        template_dir = Path(__file__).parent / "templates"
+        if not template_dir.exists():
+            template_dir = Path(__file__).parent.parent / "app" / "templates"
 
     try:
-        return template_path.read_text(encoding="utf-8")
+        env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=False)
+        return env.get_template(filename).render()
     except Exception as e:
-        server_log.error("Failed to read template %s: %s", filename, str(e))
-        return f"Error: Template {filename} not found."
+        server_log.error("Failed to render template %s: %s", filename, str(e))
+        return f"Error: Template {filename} failed to render: {e}"
 
 
 # Cache templates in production
 import sys
 _ATTENDEE_HTML_CACHE = _read_template("attendee.html")
 _OPERATOR_HTML_CACHE = _read_template("operator.html")
+

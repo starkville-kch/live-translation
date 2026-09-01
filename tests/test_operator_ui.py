@@ -17,6 +17,14 @@ def test_operator_html_structure_and_accessibility():
     assert resp.status_code == 200
     html = resp.text
 
+    css_resp = client.get("/static/css/operator.css")
+    assert css_resp.status_code == 200
+    css = css_resp.text
+
+    js_resp = client.get("/static/js/operator.js")
+    assert js_resp.status_code == 200
+    js = js_resp.text
+
     # 1. Check fixed 3-element control bar IDs
     assert 'id="service-status-pill"' in html
     assert 'id="btn-primary-action"' in html
@@ -25,20 +33,20 @@ def test_operator_html_structure_and_accessibility():
     # 2. Check accessibility: aria-live, role=status, and prefers-reduced-motion CSS
     assert 'role="status"' in html
     assert 'aria-live="polite"' in html
-    assert "@media (prefers-reduced-motion: reduce)" in html
-    assert ".service-status-pill.status-paused" in html
-    assert "animation: none" in html
+    assert "@media (prefers-reduced-motion: reduce)" in css
+    assert ".service-status-pill.status-paused" in css
+    assert "animation: none" in css
 
     # 3. Check neutral disabled stop button styling
-    assert ".btn-action.btn-stop:disabled" in html
-    assert "var(--color-warm-100)" in html
+    assert ".btn-action.btn-stop:disabled" in css
+    assert "var(--color-warm-100)" in css
 
     # 4. Check pause subtitle string
-    assert "Resume 필요" in html
+    assert "Resume 필요" in js
 
     # 5. Check calm static running state (no pulse animation on green dot)
-    assert ".service-status-pill.status-running .status-dot" in html
-    assert "pulse-dot" not in html
+    assert ".service-status-pill.status-running .status-dot" in css
+    assert "pulse-dot" not in css
 
     # 6. Check Top Navigation Bar: ss-internet is removed, other status pills present
     assert 'id="ss-internet"' not in html
@@ -50,14 +58,15 @@ def test_operator_html_structure_and_accessibility():
     assert 'id="stat-session"' not in html
     assert '<span class="sg-label sg-wide tooltip">Gemini 세션' not in html
     assert 'id="stat-audio"' in html
-    assert "#stat-audio" in html
-    assert "text-overflow: ellipsis" in html
+    assert "#stat-audio" in css
+    assert "text-overflow: ellipsis" in css
 
     # 8. Check Inline Model Controls, Segmented Pill Drift Control, Playback button, and Dashboard Metrics
     assert 'id="btn-refresh-devices"' in html
     assert 'id="model-select"' in html
     assert 'id="stat-model-status"' in html
     assert 'id="btn-test-selected-model"' in html
+
     assert 'id="drift-manual"' in html
     assert 'id="drift-auto"' in html
     assert 'id="stat-gemini-lat"' in html
