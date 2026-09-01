@@ -2,18 +2,29 @@
 <div id="earphone-modal" class="hidden">
   <div class="modal-box">
     <div class="icon">🎧</div>
-    <h2>이어폰 사용 안내</h2>
-    <p>오디오 모니터링 기능은 소리가 스피커로 재생되지 않도록 주의해 주세요. 예배에 방해가 되지 않도록 <strong>유선 또는 블루투스 이어폰</strong>을 사용하시기 바랍니다.</p>
-    <button class="modal-confirm" id="modal-ok">이어폰 연결됨 (오디오 켜기)</button>
-    <button class="modal-skip" id="modal-skip">자막만 보기</button>
+    <h2 data-lang="ko">이어폰 사용 안내</h2>
+    <h2 data-lang="en">Use Earphones</h2>
+    <p data-lang="ko">오디오 모니터링 기능은 소리가 스피커로 재생되지 않도록 주의해 주세요. 예배에 방해가 되지 않도록 <strong>유선 또는 블루투스 이어폰</strong>을 사용하시기 바랍니다.</p>
+    <p data-lang="en">Audio monitoring will play through your computer. Please use <strong>wired or Bluetooth headphones</strong> to avoid feedback or disturbing the service.</p>
+    <button class="modal-confirm" id="modal-ok">
+      <span data-lang="ko">이어폰 연결됨 (오디오 켜기)</span>
+      <span data-lang="en">Earphones Connected — Enable Audio</span>
+    </button>
+    <button class="modal-skip" id="modal-skip">
+      <span data-lang="ko">자막만 보기</span>
+      <span data-lang="en">Captions Only</span>
+    </button>
   </div>
 </div>
 
 <!-- Input device + level meter -->
 <div class="card">
   <h2>
-    <span class="tooltip">입력 장치 설정 (Input Device)
-      <span class="tooltiptext">번역에 사용할 오디오 입력 장치를 선택합니다. USB 믹서 또는 마이크를 선택하세요. 아래 레벨 미터로 신호 수신 여부를 확인할 수 있습니다. (Select the audio input device for translation. Use the level meter below to confirm signal.)</span>
+    <span class="tooltip">
+      <span data-lang="ko">입력 장치 설정 (Input Device)</span>
+      <span data-lang="en">Audio Input Device</span>
+      <span class="tooltiptext" data-lang="ko">번역에 사용할 오디오 입력 장치를 선택합니다. USB 믹서 또는 마이크를 선택하세요. 아래 레벨 미터로 신호 수신 여부를 확인할 수 있습니다.</span>
+      <span class="tooltiptext" data-lang="en">Select the audio input device for translation (USB mixer or microphone). Confirm audio signal on the level meter below.</span>
     </span>
   </h2>
   <div class="device-row">
@@ -25,5 +36,8 @@
     </button>
   </div>
   <div class="meter-wrap"><div class="meter-bar" id="level-bar"></div></div>
-  <div class="meter-label" id="level-label">입력 레벨 (Input level)</div>
+  <div class="meter-label" id="level-label">
+    <span data-lang="ko">입력 레벨 (Input level)</span>
+    <span data-lang="en">Input Level</span>
+  </div>
 </div>

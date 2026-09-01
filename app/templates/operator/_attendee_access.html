@@ -1,8 +1,11 @@
 <!-- Attendee Access Card (Public QR, URL, and Status) -->
 <div class="card">
   <h2 class="card-toggle open" id="qr-toggle">
-    <span class="tooltip tooltip-left">접속 QR 코드 (Attendee Access)
-      <span class="tooltiptext">참석자들이 스마트폰으로 스캔하여 실시간 통역(/live)에 접속할 수 있는 공용 HTTPS QR 코드입니다. (Public HTTPS QR code for attendees to access live captions & audio on smartphones.)</span>
+    <span class="tooltip tooltip-left">
+      <span data-lang="ko">접속 QR 코드 (Attendee Access)</span>
+      <span data-lang="en">Attendee Access QR</span>
+      <span class="tooltiptext" data-lang="ko">참석자들이 스마트폰으로 스캔하여 실시간 통역(/live)에 접속할 수 있는 공용 HTTPS QR 코드입니다.</span>
+      <span class="tooltiptext" data-lang="en">Public HTTPS QR code for attendees to scan and view live captions & audio on mobile devices.</span>
     </span>
     <span class="chevron">▼</span>
   </h2>
@@ -23,13 +26,17 @@
         🌐 Open Attendee
       </a>
       <button id="btn-copy-public-link" class="secondary" type="button" onclick="copyPublicLink()" style="flex:1; padding:8px 6px; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:4px; border-radius:6px; background:#f8fafc; border:1px solid #cbd5e1; color:#334155;">
-        📋 Copy Link
+        <span data-lang="ko">📋 링크 복사</span>
+        <span data-lang="en">📋 Copy Link</span>
       </button>
     </div>
 
     <!-- Local Fallback Link -->
     <div style="padding:8px 10px; background:#f8fafc; border-radius:6px; border:1px solid var(--color-warm-200); font-size:11px;">
-      <div style="font-weight:700; color:var(--color-text-secondary); margin-bottom:2px;">🏛️ Local Wi-Fi Fallback:</div>
+      <div style="font-weight:700; color:var(--color-text-secondary); margin-bottom:2px;">
+        <span data-lang="ko">🏛️ 현장 Wi-Fi 백업:</span>
+        <span data-lang="en">🏛️ Local Wi-Fi Fallback:</span>
+      </div>
       <a id="qr-local-url" href="http://skc.local:8080/live" target="_blank" style="color:var(--color-gold-500); word-break:break-all; text-decoration:underline; font-weight:600;">
         http://skc.local:8080/live
       </a>

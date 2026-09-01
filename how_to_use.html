@@ -720,10 +720,10 @@
   <h3 data-lang="ko">4. 참석자 스마트폰이 자막 페이지에 접속되지 않는 경우</h3>
   <h3 data-lang="en">4. Attendees cannot load the caption page</h3>
   <p data-lang="ko">
-    모든 참석자의 스마트폰이 <strong>교회 내부 와이파이(Church WiFi)</strong>에 연결되어 있어야 합니다. 외부 통신사 데이터(LTE/5G) 상태에서는 내부 주소(<code>http://skc.local</code>)로 접속할 수 없습니다.
+    공용 HTTPS(QR 코드)를 이용하면 LTE/5G에서도 바로 접속할 수 있습니다. 로컬 주소(<code>http://skc.local:8080</code>) 접속 시에는 모든 참석자의 스마트폰이 <strong>교회 내부 와이파이(Church WiFi)</strong>에 연결되어 있어야 합니다.
   </p>
   <p data-lang="en">
-    Ensure attendee phones are connected to the <strong>Church WiFi network</strong>. Local network addresses (<code>http://skc.local</code>) are not reachable via cellular data (LTE/5G).
+    Attendees can connect from cellular data (LTE/5G) via Public HTTPS (QR code). For local network addresses (<code>http://skc.local:8080</code>), phones must be connected to the <strong>Church WiFi network</strong>.
   </p>
 
   <div class="warn">
@@ -737,11 +737,11 @@
   <h2 data-lang="en">Export Transcripts & Session Logs</h2>
   <p data-lang="ko">
     이전 예배의 통역 기록을 확인하려면 프로그램 폴더 안의 <code>logs/sessions/</code> 폴더를 확인하세요.
-    각 세션마다 예배를 중지한 시간에 맞춰 한국어 원문(<code>ko.txt</code>), 영어 번역(<code>en.txt</code>), 그리고 시간대별 대조본(<code>aligned.txt</code>)이 깔끔하게 저장됩니다.
+    각 세션마다 예배를 중지한 시간에 맞춰 원문 전사록(<code>ko.txt</code>), 번역 자막(<code>en.txt</code>), 그리고 시간대별 대조본(<code>aligned.txt</code>)이 깔끔하게 저장됩니다.
   </p>
   <p data-lang="en">
     To review sermon translation records, check the <code>logs/sessions/</code> directory.
-    Every completed session automatically saves Korean transcripts (<code>ko.txt</code>), English captions (<code>en.txt</code>), and aligned study files (<code>aligned.txt</code>).
+    Every completed session automatically saves source transcripts (<code>ko.txt</code>), translated captions (<code>en.txt</code>), and aligned study files (<code>aligned.txt</code>).
   </p>
 
 </div>
@@ -750,21 +750,25 @@
 
 <script>
   function setLang(lang) {
-    document.documentElement.setAttribute('lang', lang);
+    const selected = (lang === 'en') ? 'en' : 'ko';
+    document.documentElement.setAttribute('lang', selected);
+    localStorage.setItem('skc_ui_lang', selected);
 
     const btnKo = document.getElementById('btn-ko');
     const btnEn = document.getElementById('btn-en');
 
-    if (lang === 'ko') {
-      btnKo.classList.add('active');
-      btnEn.classList.remove('active');
+    if (selected === 'ko') {
+      if (btnKo) btnKo.classList.add('active');
+      if (btnEn) btnEn.classList.remove('active');
     } else {
-      btnEn.classList.add('active');
-      btnKo.classList.remove('active');
+      if (btnEn) btnEn.classList.add('active');
+      if (btnKo) btnKo.classList.remove('active');
     }
   }
 
-  setLang('ko');
+  const savedLang = localStorage.getItem('skc_ui_lang') || 'ko';
+  setLang(savedLang);
 </script>
 </body>
 </html>
+

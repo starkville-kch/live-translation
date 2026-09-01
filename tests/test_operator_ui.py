@@ -76,6 +76,16 @@ def test_operator_html_structure_and_accessibility():
     assert 'id="stat-attendees"' in html
     assert 'id="stat-cost"' in html
 
+    # 9. Check bilingual interface controls & styles
+    assert 'id="btn-ui-en"' in html
+    assert 'id="btn-ui-ko"' in html
+    assert '[data-lang]' in css
+    assert 'html[lang="ko"] [data-lang="ko"]' in css
+    assert 'html[lang="en"] [data-lang="en"]' in css
+    assert 'setOperatorUiLanguage' in js
+    assert 'skc_ui_lang' in js
+
+
 
 def test_api_devices_and_rescan():
     client = TestClient(app)

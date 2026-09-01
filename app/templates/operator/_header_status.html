@@ -9,45 +9,53 @@
     </div>
     <div id="status-strip" class="modern-status-strip">
       <div class="modern-badge status-blue" id="ss-audio">
-        <span class="dot"></span> 오디오
+        <span class="dot"></span>
+        <span data-lang="ko">오디오</span>
+        <span data-lang="en">Audio</span>
         <span class="ss-tip">
-          <strong>Audio (마이크 / 오디오 입력)</strong><br>
-          🟢 신호 정상 수신 중<br>
-          🟡 무음 또는 신호 없음 (마이크 음소거 확인)<br>
-          🔴 장치 연결 끊김 (USB 케이블 확인)<br>
-          🔵 서비스 대기 중
+          <strong data-lang="ko">Audio (마이크 / 오디오 입력)</strong>
+          <strong data-lang="en">Audio (Microphone Input)</strong><br>
+          <span data-lang="ko">🟢 신호 정상 수신 중<br>🟡 무음 또는 신호 없음 (마이크 음소거 확인)<br>🔴 장치 연결 끊김 (USB 케이블 확인)<br>🔵 서비스 대기 중</span>
+          <span data-lang="en">🟢 Receiving audio signal<br>🟡 Silence / No signal detected<br>🔴 Device disconnected<br>🔵 Standby</span>
         </span>
       </div>
       <div class="modern-badge status-blue" id="ss-gemini">
-        <span class="dot"></span> 제미나이 AI
+        <span class="dot"></span>
+        <span data-lang="ko">제미나이 AI</span>
+        <span data-lang="en">Gemini AI</span>
         <span class="ss-tip">
-          <strong>Gemini AI (통역 세션)</strong><br>
-          🟢 연결됨 — 실시간 통역 진행 중<br>
-          🟡 일시정지 / 재연결 대기 중<br>
-          🔴 연결 실패 (인터넷 확인 또는 재시작)<br>
-          🔵 서비스 대기 중
+          <strong data-lang="ko">Gemini AI (통역 세션)</strong>
+          <strong data-lang="en">Gemini AI (Live Session)</strong><br>
+          <span data-lang="ko">🟢 연결됨 — 실시간 통역 진행 중<br>🟡 일시정지 / 재연결 대기 중<br>🔴 연결 실패 (인터넷 확인 또는 재시작)<br>🔵 서비스 대기 중</span>
+          <span data-lang="en">🟢 Connected — Live translation active<br>🟡 Paused / Reconnecting…<br>🔴 Connection failure<br>🔵 Standby</span>
         </span>
       </div>
       <div class="modern-badge status-blue" id="ss-translation">
-        <span class="dot"></span> 실시간 자막
+        <span class="dot"></span>
+        <span data-lang="ko">실시간 자막</span>
+        <span data-lang="en">Captions</span>
         <span class="ss-tip">
-          <strong>Translation (자막 스트림)</strong><br>
-          🟢 송출 중 — 참석자 화면에 자막 표시 중<br>
-          🟡 일시정지 / 시작 준비 중<br>
-          🔴 송출 오류 (서비스 재시작 필요)<br>
-          🔵 서비스 대기 중
+          <strong data-lang="ko">Translation (자막 스트림)</strong>
+          <strong data-lang="en">Translation (Caption Stream)</strong><br>
+          <span data-lang="ko">🟢 송출 중 — 참석자 화면에 자막 표시 중<br>🟡 일시정지 / 시작 준비 중<br>🔴 송출 오류 (서비스 재시작 필요)<br>🔵 서비스 대기 중</span>
+          <span data-lang="en">🟢 Broadcasting captions to attendees<br>🟡 Paused / Ready<br>🔴 Broadcast error<br>🔵 Standby</span>
         </span>
       </div>
       <div class="modern-badge status-blue" id="ss-public">
-        <span class="dot"></span> 공용 HTTPS
+        <span class="dot"></span>
+        <span data-lang="ko">공용 HTTPS</span>
+        <span data-lang="en">Public HTTPS</span>
         <span class="ss-tip">
-          <strong>Public HTTPS (외부 접속 링크)</strong><br>
-          🟢 연결됨 — 외부 접속 정상 (QR 코드 사용 가능)<br>
-          🟡 연결 시도 중 / 확인 대기<br>
-          🔴 연결 불가 (로컬 Wi-Fi 번역은 정상 작동)<br>
-          🔵 서비스 비활성화
+          <strong data-lang="ko">Public HTTPS (외부 접속 링크)</strong>
+          <strong data-lang="en">Public HTTPS (Cloudflare Tunnel)</strong><br>
+          <span data-lang="ko">🟢 연결됨 — 외부 접속 정상 (QR 코드 사용 가능)<br>🟡 연결 시도 중 / 확인 대기<br>🔴 연결 불가 (로컬 Wi-Fi 번역은 정상 작동)<br>🔵 서비스 비활성화</span>
+          <span data-lang="en">🟢 Connected — Public QR ready<br>🟡 Connecting…<br>🔴 Offline (Local Wi-Fi still works)<br>🔵 Disabled</span>
         </span>
       </div>
+    </div>
+    <div class="header-lang-switch">
+      <button type="button" class="header-lang-btn" id="btn-ui-en" onclick="setOperatorUiLanguage('en')">English</button>
+      <button type="button" class="header-lang-btn" id="btn-ui-ko" onclick="setOperatorUiLanguage('ko')">한국어</button>
     </div>
   </div>
 </header>
