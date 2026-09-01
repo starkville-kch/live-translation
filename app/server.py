@@ -818,6 +818,7 @@ async def audio_stream(ws: WebSocket, lang: Optional[str] = None):
         clean_lang = lang.lower().strip()
         if not is_valid_language_code(clean_lang) or clean_lang not in manager.active_targets:
             server_log.debug("[AudioWS Reject] target=%s not active (code 1008)", clean_lang)
+            await ws.accept()
             await ws.close(code=1008)
             return
         target_broadcaster = manager.get_broadcaster(clean_lang)
@@ -826,6 +827,7 @@ async def audio_stream(ws: WebSocket, lang: Optional[str] = None):
 
     if not target_broadcaster or not manager.is_running:
         server_log.debug("[AudioWS Reject] target=%s broadcaster unavailable or service stopped (code 1008)", target_lang)
+        await ws.accept()
         await ws.close(code=1008)
         return
 

@@ -147,3 +147,71 @@ def test_audio_stream_lifecycle_and_target_switching():
 
         # After Spanish WS context exits, Spanish audio client must be cleaned up
         assert len(b_es._audio_clients) == 0
+
+
+def test_multi_tab_independent_audio_and_tab_close():
+    """
+    Multi-tab attendee test:
+    1. Tab 1 connects EN audio.
+    2. Tab 2 connects ZH audio.
+    3. Both receive audio on their independent queues.
+    4. Tab 2 closes without pressing stop -> ZH client queue cleaned up.
+    5. Tab 1 EN continues working without disruption.
+    6. A new Tab 3 opens ZH audio and connects cleanly.
+    """
+    with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
+         patch.object(AudioCapture, "start", MagicMock()), \
+         patch.object(AudioCapture, "stop", MagicMock()):
+        asyncio.run(manager.start(active_targets=["en", "zh"], expected_source_language="ko"))
+
+        b_en = manager.get_broadcaster("en")
+        b_zh = manager.get_broadcaster("zh")
+        assert b_en is not None
+        assert b_zh is not None
+
+        client = TestClient(app)
+
+        # 1. Tab 1 connects EN
+        with client.websocket_connect("/audio-stream?lang=en") as ws_en:
+            assert len(b_en._audio_clients) == 1
+
+            # 2. Tab 2 connects ZH
+            with client.websocket_connect("/audio-stream?lang=zh") as ws_zh:
+                assert len(b_zh._audio_clients) == 1
+
+                # 3. Push audio to both
+                b_en.on_audio_chunk(b"EN_CHUNK")
+                b_zh.on_audio_chunk(b"ZH_CHUNK")
+                assert ws_en.receive_bytes() == b"EN_CHUNK"
+                assert ws_zh.receive_bytes() == b"ZH_CHUNK"
+
+            # 4. Tab 2 closed -> ZH clients = 0
+            assert len(b_zh._audio_clients) == 0
+
+            # 5. Tab 1 EN still receives audio
+            b_en.on_audio_chunk(b"EN_CHUNK_2")
+            assert ws_en.receive_bytes() == b"EN_CHUNK_2"
+
+            # 6. Tab 3 connects ZH
+            with client.websocket_connect("/audio-stream?lang=zh") as ws_zh_new:
+                assert len(b_zh._audio_clients) == 1
+                b_zh.on_audio_chunk(b"ZH_CHUNK_2")
+                assert ws_zh_new.receive_bytes() == b"ZH_CHUNK_2"
+
+            assert len(b_zh._audio_clients) == 0
+
+        assert len(b_en._audio_clients) == 0
+
+
+def test_attendee_html_per_tab_state_and_lifecycle():
+    client = TestClient(app)
+    res = client.get("/live")
+    assert res.status_code == 200
+    html = res.text
+
+    assert 'updateAudioButton' in html
+    assert 'isAudioConnecting' in html
+    assert 'skc_earphone_consent' in html
+    assert 'pagehide' in html
+    assert 'beforeunload' in html
+

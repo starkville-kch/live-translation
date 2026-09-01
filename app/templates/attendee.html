@@ -521,9 +521,27 @@ function setStatus(state) {
 // ── Audio engine (Web Audio API, 24kHz PCM16 mono) ────────────────────────
 let audioCtx = null;
 let audioEnabled = false;
+let isAudioConnecting = false;
 let audioWs = null;
 let nextPlayAt = 0;
 const SAMPLE_RATE = 24000;
+
+function updateAudioButton() {
+  if (!audioBtn) return;
+  if (isAudioConnecting) {
+    audioBtn.disabled = true;
+    audioBtn.textContent = '⏳ Connecting…';
+    audioBtn.classList.remove('active');
+  } else if (audioWs && audioWs.readyState === WebSocket.OPEN) {
+    audioBtn.disabled = false;
+    audioBtn.textContent = '🔊 Audio On';
+    audioBtn.classList.add('active');
+  } else {
+    audioBtn.disabled = false;
+    audioBtn.textContent = '🔇 Audio Off';
+    audioBtn.classList.remove('active');
+  }
+}
 
 function ensureAudioCtx() {
   if (!audioCtx) {
@@ -570,8 +588,14 @@ function playPCM16(arrayBuffer) {
 }
 
 function connectAudio() {
-  disconnectAudio();
-  if (!audioEnabled || isPaused) return;
+  disconnectAudio(false);
+  if (!audioEnabled || isPaused) {
+    updateAudioButton();
+    return;
+  }
+
+  isAudioConnecting = true;
+  updateAudioButton();
 
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const langQuery = currentTargetLang ? `?lang=${encodeURIComponent(currentTargetLang)}` : '';
@@ -580,25 +604,34 @@ function connectAudio() {
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
     if (audioWs !== ws) return;
+    isAudioConnecting = false;
     console.log("Audio WebSocket connected for:", currentTargetLang || "default");
-    audioBtn.textContent = '🔊 Audio On';
-    audioBtn.classList.add('active');
+    updateAudioButton();
   };
   ws.onmessage = (e) => {
     if (audioWs !== ws) return;
     playPCM16(e.data);
   };
   ws.onerror = (err) => {
+    if (audioWs !== ws) return;
     console.warn("Audio WebSocket error:", err);
+    isAudioConnecting = false;
+    updateAudioButton();
   };
   ws.onclose = (ev) => {
-    if (audioWs === ws) {
-      audioWs = null;
-    }
+    if (audioWs !== ws) return;
+    audioWs = null;
+    isAudioConnecting = false;
+
     if (ev && (ev.code === 1008 || ev.code === 4003 || ev.code === 4403)) {
-      console.warn("Audio WebSocket closed by server policy (1008/inactive); will connect on active translation");
+      console.warn("Audio WebSocket closed by server policy (" + ev.code + "); resetting audio state");
+      audioEnabled = false;
+      updateAudioButton();
       return;
     }
+
+    updateAudioButton();
+
     if (audioEnabled && !isPaused && audioWs === null) {
       setTimeout(() => {
         if (audioEnabled && !isPaused && !audioWs) {
@@ -609,7 +642,11 @@ function connectAudio() {
   };
 }
 
-function disconnectAudio() {
+function disconnectAudio(resetAudioEnabled = true) {
+  if (resetAudioEnabled) {
+    audioEnabled = false;
+  }
+  isAudioConnecting = false;
   if (audioWs) {
     const ws = audioWs;
     audioWs = null;
@@ -621,6 +658,8 @@ function disconnectAudio() {
       ws.close();
     } catch (_) {}
   }
+  clearAudioQueue();
+  updateAudioButton();
 }
 
 ['click', 'touchstart'].forEach(evt => {
@@ -634,10 +673,11 @@ function disconnectAudio() {
 function enableAudio() {
   ensureAudioCtx();
   audioEnabled = true;
-  connectAudio();
-  audioBtn.textContent = '🔊 Audio On';
-  audioBtn.classList.add('active');
+  try {
+    localStorage.setItem('skc_earphone_consent', 'true');
+  } catch (_) {}
   modal.classList.add('hidden');
+  connectAudio();
 }
 
 document.getElementById('modal-ok').addEventListener('click', enableAudio);
@@ -646,13 +686,18 @@ document.getElementById('modal-skip').addEventListener('click', () => {
 });
 
 audioBtn.addEventListener('click', () => {
-  if (audioEnabled) {
-    audioEnabled = false;
-    disconnectAudio();
-    audioBtn.textContent = '🔇 Audio Off';
-    audioBtn.classList.remove('active');
+  if (audioEnabled || (audioWs && audioWs.readyState === WebSocket.OPEN)) {
+    disconnectAudio(true);
   } else {
-    modal.classList.remove('hidden');
+    let consent = false;
+    try {
+      consent = (localStorage.getItem('skc_earphone_consent') === 'true');
+    } catch (_) {}
+    if (consent) {
+      enableAudio();
+    } else {
+      modal.classList.remove('hidden');
+    }
   }
 });
 
@@ -902,6 +947,22 @@ function sendTelemetryTargetUpdate(lang) {
   }
   initTelemetry();
 })();
+
+// ── Clean page teardown on tab close / navigation ────────────────────────
+['pagehide', 'beforeunload'].forEach(evt => {
+  window.addEventListener(evt, () => {
+    disconnectAudio(true);
+    disconnectSSE();
+    if (_telemetryWs) {
+      try { _telemetryWs.close(); } catch(_) {}
+      _telemetryWs = null;
+    }
+    if (audioCtx) {
+      try { audioCtx.close(); } catch(_) {}
+      audioCtx = null;
+    }
+  });
+});
 </script>
 </body>
 </html>
