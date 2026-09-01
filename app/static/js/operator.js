@@ -1544,15 +1544,32 @@ function renderSelectedTargets() {
   const listEl = document.getElementById('lang-targets-config-list');
   if (!listEl) return;
   listEl.innerHTML = '';
+  const isEn = getOperatorUiLanguage() === 'en';
 
-  _supportedTargets.forEach(code => {
-    if (code === _expectedSource) return;
+  // Order: selected targets first in current order, followed by remaining supported targets
+  const availableSupported = _supportedTargets.filter(c => c !== _expectedSource);
+  const orderedCodes = [];
+  _selectedTargets.forEach(c => {
+    if (availableSupported.includes(c) && !orderedCodes.includes(c)) {
+      orderedCodes.push(c);
+    }
+  });
+  availableSupported.forEach(c => {
+    if (!orderedCodes.includes(c)) {
+      orderedCodes.push(c);
+    }
+  });
+
+  const primaryTarget = _selectedTargets[0] || orderedCodes[0];
+
+  orderedCodes.forEach(code => {
     const info = _catalogMap.get(code);
     const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
     const isChecked = _selectedTargets.includes(code);
+    const isPrimary = isChecked && (code === primaryTarget);
 
     const item = document.createElement('label');
-    item.className = 'lang-target-item';
+    item.className = `lang-target-item${isChecked ? ' checked' : ''}${isPrimary ? ' primary' : ''}`;
 
     const chk = document.createElement('input');
     chk.type = 'checkbox';
@@ -1561,13 +1578,19 @@ function renderSelectedTargets() {
     chk.dataset.code = code;
 
     chk.addEventListener('change', () => {
-      const checkedBoxes = listEl.querySelectorAll('input[type="checkbox"]:checked');
-      if (checkedBoxes.length === 0) {
-        chk.checked = true;
-        return;
+      if (chk.checked) {
+        if (!_selectedTargets.includes(code)) {
+          _selectedTargets.push(code);
+        }
+      } else {
+        if (_selectedTargets.length <= 1) {
+          chk.checked = true;
+          return;
+        }
+        _selectedTargets = _selectedTargets.filter(c => c !== code);
       }
-      _selectedTargets = Array.from(checkedBoxes).map(c => c.value);
       saveSelectedTargets();
+      renderSelectedTargets();
     });
 
     const labelSpan = document.createElement('span');
@@ -1576,11 +1599,33 @@ function renderSelectedTargets() {
 
     item.appendChild(chk);
     item.appendChild(labelSpan);
+
+    if (isPrimary) {
+      const primaryBadge = document.createElement('span');
+      primaryBadge.className = 'primary-target-badge';
+      primaryBadge.innerHTML = `<span data-lang="ko">★ 주 언어</span><span data-lang="en">★ Primary</span>`;
+      item.appendChild(primaryBadge);
+    } else if (isChecked) {
+      const btnMakePrimary = document.createElement('button');
+      btnMakePrimary.type = 'button';
+      btnMakePrimary.className = 'btn-make-primary';
+      btnMakePrimary.title = isEn ? 'Set as primary target language' : '기본 통역 언어로 설정';
+      btnMakePrimary.innerHTML = `<span data-lang="ko">주 언어로 설정</span><span data-lang="en">Make Primary</span>`;
+      btnMakePrimary.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        _selectedTargets = [code, ..._selectedTargets.filter(c => c !== code)];
+        saveSelectedTargets();
+        renderSelectedTargets();
+      });
+      item.appendChild(btnMakePrimary);
+    }
+
     listEl.appendChild(item);
   });
 
   updateLanguageCountAndHint();
-  updateMonitorTargetUI(_selectedTargets, 'en');
+  updateMonitorTargetUI(_selectedTargets, primaryTarget || 'en');
 }
 
 
@@ -1650,7 +1695,7 @@ function updateLanguageTargets(st) {
   if (isLocked) {
     if (badgeEl) {
       badgeEl.className = 'lang-panel-badge locked';
-      badgeEl.innerHTML = isEn ? '<span>🔒 Session active</span>' : '<span>🔒 통역 실행 중 (설정 잠김)</span>';
+      badgeEl.innerHTML = isEn ? '<span>🔒 Session active</span>' : '<span>🔒 세션 진행 중</span>';
     }
     if (configList) configList.style.display = 'none';
     if (activeList) activeList.style.display = 'flex';
@@ -1675,7 +1720,6 @@ function updateLanguageTargets(st) {
       countBadge.textContent = `${activeTargets.length} active`;
     }
 
-
     if (activeList) {
       activeList.innerHTML = '';
       activeTargets.forEach(tgt => {
@@ -1683,33 +1727,41 @@ function updateLanguageTargets(st) {
         const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : tgt.toUpperCase();
         const sess = sessionsMap[tgt] || {};
         const status = sess.status || (isRunning ? 'connected' : 'connecting');
-        const latencyMs = (sess.latency_ms !== null && sess.latency_ms !== undefined) ? `${Math.round(sess.latency_ms)} ms` : ((tgt === translation?.primary_target && st.telemetry?.gemini_latency_ms) ? `${Math.round(st.telemetry.gemini_latency_ms)} ms` : '—');
+        const latencyMs = (sess.latency_ms !== null && sess.latency_ms !== undefined)
+          ? `${Math.round(sess.latency_ms)} ms`
+          : ((tgt === translation?.primary_target && st.telemetry?.gemini_latency_ms) ? `${Math.round(st.telemetry.gemini_latency_ms)} ms` : '—');
 
-        const listeners = listenersByTarget[tgt] !== undefined ? listenersByTarget[tgt] : (tgt === translation?.primary_target ? (st.attendees || 0) : 0);
+        const listeners = listenersByTarget[tgt] !== undefined
+          ? listenersByTarget[tgt]
+          : (tgt === translation?.primary_target ? (st.attendees || 0) : 0);
 
         let statusClass = 'live';
-        let statusText = isEn ? '● Live' : '● 송출 중';
+        let statusLabel = isEn ? 'Live' : '송출 중';
         if (status === 'reconnecting') {
           statusClass = 'warn';
-          statusText = isEn ? '⚠ Reconnecting' : '⚠ 재연결 중';
+          statusLabel = isEn ? 'Reconnecting' : '재연결 중';
         } else if (status === 'connecting') {
           statusClass = 'warn';
-          statusText = isEn ? '○ Connecting' : '○ 연결 중';
+          statusLabel = isEn ? 'Connecting' : '연결 중';
         } else if (status === 'failed') {
           statusClass = 'err';
-          statusText = isEn ? '✕ Error' : '✕ 오류';
+          statusLabel = isEn ? 'Error' : '오류';
         }
+
+        const isPrimary = (tgt === primaryTarget);
 
         const card = document.createElement('div');
         card.className = 'lang-session-card';
         card.innerHTML = `
           <div class="lang-session-header">
-            <span class="lang-session-name">${displayName}</span>
-            <span class="lang-session-status ${statusClass}">${statusText}</span>
+            <div class="lang-session-title">
+              <span class="status-dot-mini ${statusClass}"></span>
+              <span class="lang-session-name">${displayName}</span>
+            </div>
+            ${isPrimary ? `<span class="primary-target-badge" style="font-size: 10px; padding: 1px 5px;"><span data-lang="ko">주 언어</span><span data-lang="en">Primary</span></span>` : ''}
           </div>
-          <div class="lang-session-meta">
-            <span>Gemini: ${latencyMs}</span>
-            <span>${listeners} ${isEn ? (listeners === 1 ? 'listener' : 'listeners') : '명'}</span>
+          <div class="lang-session-sub">
+            ${statusLabel} · ${latencyMs} · ${listeners} ${isEn ? (listeners === 1 ? 'listener' : 'listeners') : '명'}
           </div>
         `;
         activeList.appendChild(card);

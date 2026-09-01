@@ -1256,13 +1256,47 @@ header {
   flex: 1;
 }
 
+.primary-target-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-gold-600);
+  background: rgba(184, 148, 69, 0.12);
+  border: 1px solid rgba(184, 148, 69, 0.3);
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.btn-make-primary {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px dashed var(--color-warm-300);
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  display: none;
+}
+.lang-target-item:hover .btn-make-primary {
+  display: inline-block;
+}
+.btn-make-primary:hover {
+  color: var(--color-gold-600);
+  border-color: var(--color-gold-500);
+  background: rgba(184, 148, 69, 0.08);
+}
+
 .lang-targets-active-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 .lang-session-card {
-  background: #f8fafc;
+  background: #ffffff;
   border: 1px solid var(--color-warm-200);
   border-radius: 6px;
   padding: 8px 12px;
@@ -1275,42 +1309,35 @@ header {
   align-items: center;
   justify-content: space-between;
 }
+.lang-session-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.status-dot-mini {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-dot-mini.live {
+  background: #10b981;
+}
+.status-dot-mini.warn {
+  background: #f59e0b;
+}
+.status-dot-mini.err {
+  background: #ef4444;
+}
 .lang-session-name {
   font-size: 13px;
   font-weight: 700;
   color: var(--color-navy-900);
 }
-.lang-session-status {
+.lang-session-sub {
   font-size: 11px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 99px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.lang-session-status.live {
-  background: rgba(59, 110, 79, 0.15);
-  color: #2e6945;
-}
-.lang-session-status.warn {
-  background: rgba(201, 165, 85, 0.2);
-  color: #946c1e;
-}
-.lang-session-status.err {
-  background: rgba(163, 59, 59, 0.15);
-  color: #a33b3b;
-}
-.lang-session-status.ready {
-  background: var(--color-warm-100);
   color: var(--color-text-muted);
-}
-.lang-session-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--color-text-secondary);
+  padding-left: 16px;
 }
 
 .lang-hint-text {

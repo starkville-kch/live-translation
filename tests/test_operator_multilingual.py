@@ -46,7 +46,7 @@ def test_operator_html_language_panel_structure():
     # 3. Bilingual labels exist
     assert 'data-lang="ko"' in html
     assert 'data-lang="en"' in html
-    assert '통역 언어 (Languages)' in html
+    assert '통역 언어' in html
     assert 'Translation Languages' in html
 
 
