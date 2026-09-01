@@ -65,21 +65,23 @@
 
 ## 3. 사용자 및 관리자 화면 구성
 
-### 1. 관리자 제어 콘솔 (`/`)
-참석자용 QR 코드 생성, 오디오 입력 기기 설정 및 제미나이 번역 엔진의 시작/일시정지/종료 제어 등을 담당하는 중앙 관리 화면입니다.
+### 1. 관리자 제어 콘솔 (`/admin`)
+참석자용 공용 HTTPS QR 코드 생성, 오디오 입력 기기 설정, 다국어 UI 토글(`[ English | 한국어 ]`), 및 제미나이 번역 엔진의 시작/일시정지/종료 제어 등을 담당하는 중앙 관리 화면입니다.
 
 ![Operator Console](app/operator_screen.png)
 
 * **주요 요소 설명**:
-  * **오디오 장치 설정 (Audio Device Index)**: 현재 Windows PC에 연결된 오디오 입력 장치 번호를 입력하고 저장합니다.
+  * **언어 선택기 (`[ English | 한국어 ]`)**: 상단 헤더에서 운영자 인터페이스 언어를 영어 또는 한국어로 실시간 전환합니다.
+  * **오디오 장치 설정 (Audio Device Index)**: 현재 Windows PC에 연결된 오디오 입력 장치를 드롭다운에서 선택하고 레벨 미터로 입력 감도를 확인합니다.
   * **제어 스위치 (Start / Pause / Stop)**:
     * `Start`를 눌러 AI 번역 세션을 열고, 예배 도중 잠시 멈출 때는 `Pause`를, 예배 종료 시엔 `Stop`을 눌러 자막 텍스트 저장을 수행합니다.
-  * **레벨 미터 & 상태 표시 (Level Meter & Status Logs)**: 마이크 입력 감도를 측정하는 실시간 데시벨(dB) 게이지와 Gemini API 통신 상태를 실시간 콘솔 로그로 모니터링합니다.
-  * **음성 통역 모니터 (Audio Monitor)**: 관리자가 헤드폰이나 이어폰을 착용하고 실제 참석자들에게 송출되는 실시간 영어 번역 음성 스트림을 서버 PC에서 실시간으로 모니터링하고 볼륨을 제어할 수 있는 채널입니다.
-  * **QR 코드 & 스트림 URL (QR Share Panel)**: 예배당 참석자들이 스마트폰으로 즉시 자막 주소에 접속할 수 있도록 QR 코드를 화면에 크게 송출합니다.
+  * **상태 모니터 & 텔레메트리 (Status & Telemetry)**: 제미나이 AI 처리 지연(Latency), 현장 Wi-Fi 및 공용 HTTPS 접속자 수, RTT 네트워크 품질을 실시간 모니터링합니다.
+  * **음성 통역 모니터 (Audio Monitor)**: 관리자가 헤드폰이나 이어폰을 착용하고 실제 참석자들에게 송출되는 실시간 영어 번역 음성 스트림을 서버 PC에서 실시간으로 모니터링하고 볼륨을 제어합니다.
+  * **공용 HTTPS QR 코드 & 링크 (Attendee Access)**: Cloudflare Tunnel 기반 공용 보안 QR 코드를 제공하여 LTE/5G 모바일 환경에서도 즉시 접속할 수 있습니다.
 
 ### 2. 참석자 자막 및 오디오 수신 페이지 (`/live`)
-예배당 내 영어권 참석자들이 스마트폰 브라우저를 통해 실시간 번역 자막을 읽고 음성을 청취하는 페이지입니다.
+예배당 내 참석자들이 스마트폰 브라우저를 통해 실시간 번역 자막을 읽고 원문을 대조하며 음성을 청취하는 페이지입니다.
+
 
 ![Attendee Caption Page](app/user_screen.png)
 
@@ -210,21 +212,23 @@ All detailed guides for running, maintaining, and editing the system are managed
 
 ## 3. User and Operator Interfaces
 
-### 1. Operator Control Console (`/`)
-This page acts as the central control room for volunteers to generate attendee QR codes, bind local audio devices, and start/mute/stop the Gemini Live session.
+### 1. Operator Control Console (`/admin`)
+This page acts as the central control room for volunteers to generate attendee Public HTTPS QR codes, select audio input devices, switch UI language (`[ English | 한국어 ]`), and start/mute/stop the Gemini Live session.
 
 ![Operator Console](app/operator_screen.png)
 
 * **Element Explanations**:
-  * **Audio Device Index**: Enter and save the audio input device number currently connected to the Windows PC.
+  * **Language Switcher (`[ English | 한국어 ]`)**: Toggle console display between English and Korean in real time.
+  * **Audio Device Index**: Select the active USB mixer or microphone connected to the Windows PC and verify input on the live level meter.
   * **Control Switches (Start / Pause / Stop)**:
-    * Press `Start` to open the AI translation session. Press `Pause` during brief breaks, and `Stop` at the end of the service to save the caption transcript.
-  * **Level Meter & Status Logs**: A real-time decibel (dB) gauge monitoring microphone input sensitivity, alongside live console logs showing Gemini API communication status.
-  * **Audio Monitor**: Allows the operator to listen to the real-time translated voice via headphones to audit output quality and control the monitor volume.
-  * **QR Share Panel**: Displays a large QR code so sanctuary attendees can instantly access the caption URL on their smartphones.
+    * Press `Start` to open the AI translation session. Press `Pause` during brief breaks, and `Stop` at the end of the service to save transcripts.
+  * **Status & Telemetry**: Real-time display of Gemini AI turn-onset latency, local Wi-Fi / public HTTPS listener counts, and network RTT.
+  * **Audio Monitor**: Allows the operator to listen to the real-time translated voice via headphones and adjust volume.
+  * **Public HTTPS QR & Link**: Displays a Cloudflare Tunnel QR code allowing mobile attendees to connect over cellular data (LTE/5G).
 
 ### 2. Attendee Caption Page (`/live`)
-This layout serves real-time English text captions and live translation audio directly to attendees' mobile web browsers.
+This layout serves real-time English text captions and live translation audio directly to attendees' mobile web browsers, with tap-to-reveal original transcript support.
+
 
 ![Attendee Caption Page](app/user_screen.png)
 
