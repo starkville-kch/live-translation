@@ -605,18 +605,26 @@ async def _sse_generator(request: Request, q: asyncio.Queue) -> AsyncIterator[st
                 break
             try:
                 event = await asyncio.wait_for(q.get(), timeout=20.0)
-                payload = {"kind": event.kind, "text": event.text}
+                payload = {
+                    "kind": event.kind,
+                    "text": event.target or event.text,
+                    "target": event.target,
+                    "source": event.source,
+                    "source_lang": event.source_lang,
+                    "target_lang": event.target_lang,
+                }
                 if event.kind == "commit":
                     runtime = _runtime_seconds()
                     m, s = divmod(int(runtime), 60)
                     payload["time_str"] = f"{m:02d}:{s:02d}"
-                    if event.ko:
-                        payload["ko"] = event.ko
+                    if event.source or event.ko:
+                        payload["ko"] = event.source or event.ko
                 yield f"data: {json.dumps(payload)}\n\n"
             except asyncio.TimeoutError:
                 yield ": keepalive\n\n"
     finally:
         broadcaster.remove_client(q)
+
 
 
 @app.get("/stream")

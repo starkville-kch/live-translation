@@ -56,16 +56,57 @@ _BOUNDARY_LOOKBACK = 60  # search the last N chars for a natural split point
 @dataclass
 class CaptionEvent:
     kind: str  # "update" | "commit" | "source" | "unavailable" | "ping" | "paused" | "resumed"
-    text: str = ""
-    ko: str = ""  # matched Korean source text, populated on commit events only
+    source: str = ""
+    target: str = ""
+    source_lang: str = "ko"
+    target_lang: str = "en"
+
+    def __init__(
+        self,
+        kind: str,
+        text: str = "",
+        ko: str = "",
+        source: str = "",
+        target: str = "",
+        source_lang: str = "ko",
+        target_lang: str = "en",
+    ):
+        self.kind = kind
+        self.target = target or text
+        self.source = source or ko
+        self.source_lang = source_lang
+        self.target_lang = target_lang
+
+    @property
+    def text(self) -> str:
+        return self.target
+
+    @text.setter
+    def text(self, val: str) -> None:
+        self.target = val
+
+    @property
+    def ko(self) -> str:
+        return self.source
+
+    @ko.setter
+    def ko(self, val: str) -> None:
+        self.source = val
 
 
 class CaptionBroadcaster:
-    def __init__(self, glossary=None):  # glossary: GlossaryCorrector | None
+    def __init__(
+        self,
+        glossary=None,  # glossary: GlossaryCorrector | None
+        source_lang: str = "ko",
+        target_lang: str = "en",
+    ):
         self._clients: list[asyncio.Queue] = []       # SSE caption subscribers
         self._audio_clients: list[asyncio.Queue] = [] # WebSocket audio subscribers
         self._current_line = ""
-        self._current_ko = ""   # Korean source accumulated for this turn (for glossary)
+        self._current_source = ""   # Source accumulated for this turn (for glossary / transcript)
+        self.source_lang = source_lang
+        self.target_lang = target_lang
         self._last_token_at: float = 0.0
         self._commit_task: asyncio.Task | None = None
         self._unavailable = False
@@ -74,6 +115,16 @@ class CaptionBroadcaster:
         self._rtt_samples_local: list[tuple[float, float]] = []   # (timestamp, rtt_ms)
         self._rtt_samples_public: list[tuple[float, float]] = []  # (timestamp, rtt_ms)
         self._active_clients: dict[str, tuple[str, float]] = {}   # client_id -> (route, timestamp)
+
+    @property
+    def _current_ko(self) -> str:
+        """Backward compatibility alias for tests and legacy callers."""
+        return self._current_source
+
+    @_current_ko.setter
+    def _current_ko(self, val: str) -> None:
+        self._current_source = val
+
 
     def record_rtt(self, hostname: str, rtt_ms: float, client_id: str = "") -> None:
         if not isinstance(rtt_ms, (int, float)) or rtt_ms <= 0 or rtt_ms > 10000:
@@ -149,7 +200,7 @@ class CaptionBroadcaster:
 
     def reset(self) -> None:
         self._current_line = ""
-        self._current_ko = ""
+        self._current_source = ""
         self._caption_count = 0
         if self._commit_task and not self._commit_task.done():
             self._commit_task.cancel()
@@ -174,9 +225,15 @@ class CaptionBroadcaster:
                                 {"count": len(self._clients)})
 
     def on_source_delta(self, delta: str) -> None:
-        """Korean source text delta — pushed to all SSE clients (attendee page ignores it)."""
-        self._current_ko += delta
-        self._push(CaptionEvent(kind="source", text=delta))
+        """Source text delta — pushed to all SSE clients."""
+        self._current_source += delta
+        self._push(CaptionEvent(
+            kind="source",
+            source=delta,
+            target="",
+            source_lang=self.source_lang,
+            target_lang=self.target_lang,
+        ))
 
     def on_caption_delta(self, delta: str) -> None:
         self._unavailable = False
@@ -191,20 +248,38 @@ class CaptionBroadcaster:
             cut = self._find_split(self._current_line)
             to_commit = self._current_line[:cut].rstrip()
             remainder = self._current_line[cut:].lstrip()
-            if self._glossary and self._current_ko:
-                to_commit = self._glossary.correct(self._current_ko, to_commit)
+            if self._glossary and self._current_source and self.source_lang == "ko" and self.target_lang == "en":
+                to_commit = self._glossary.correct(self._current_source, to_commit)
             if self._commit_task and not self._commit_task.done():
                 self._commit_task.cancel()
-            self._push(CaptionEvent(kind="commit", text=to_commit, ko=self._current_ko))
+            self._push(CaptionEvent(
+                kind="commit",
+                target=to_commit,
+                source=self._current_source,
+                source_lang=self.source_lang,
+                target_lang=self.target_lang,
+            ))
             self._current_line = remainder
-            self._current_ko = ""  # reset KO buffer after commit
+            self._current_source = ""  # reset source buffer after commit
             if remainder:
-                self._push(CaptionEvent(kind="update", text=remainder))
+                self._push(CaptionEvent(
+                    kind="update",
+                    target=remainder,
+                    source="",
+                    source_lang=self.source_lang,
+                    target_lang=self.target_lang,
+                ))
                 loop = asyncio.get_event_loop()
                 self._commit_task = loop.create_task(self._schedule_commit())
             return
 
-        self._push(CaptionEvent(kind="update", text=self._current_line))
+        self._push(CaptionEvent(
+            kind="update",
+            target=self._current_line,
+            source="",
+            source_lang=self.source_lang,
+            target_lang=self.target_lang,
+        ))
 
         # Restart the silence commit timer on every new token
         if self._commit_task and not self._commit_task.done():
@@ -240,13 +315,20 @@ class CaptionBroadcaster:
             await asyncio.sleep(PAUSE_THRESHOLD_S)
             if self._current_line:
                 text = self._current_line
-                if self._glossary and self._current_ko:
-                    text = self._glossary.correct(self._current_ko, text)
-                self._push(CaptionEvent(kind="commit", text=text, ko=self._current_ko))
+                if self._glossary and self._current_source and self.source_lang == "ko" and self.target_lang == "en":
+                    text = self._glossary.correct(self._current_source, text)
+                self._push(CaptionEvent(
+                    kind="commit",
+                    target=text,
+                    source=self._current_source,
+                    source_lang=self.source_lang,
+                    target_lang=self.target_lang,
+                ))
                 self._current_line = ""
-                self._current_ko = ""
+                self._current_source = ""
         except asyncio.CancelledError:
             pass
+
 
     def add_audio_client(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=200)

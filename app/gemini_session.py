@@ -69,8 +69,18 @@ class SessionState:
 
 class TranscriptEntry(NamedTuple):
     timestamp: float   # time.monotonic() of turn start
-    korean: str
-    english: str
+    source: str
+    target: str
+    source_lang: str = "ko"
+    target_lang: str = "en"
+
+    @property
+    def korean(self) -> str:
+        return self.source
+
+    @property
+    def english(self) -> str:
+        return self.target
 
 
 def evaluate_drift_score(
@@ -78,23 +88,27 @@ def evaluate_drift_score(
     input_text: str,
     output_lang: str | None,
     output_text: str,
+    expected_source: str = "ko",
+    target_language: str = "en",
 ) -> int:
-    """Evaluate language drift score for a completed turn in bilingual Korean/English church service.
+    """Evaluate language drift score for a completed turn.
 
     Returns:
-        0: within expected Korean/English envelope.
+        0: within expected source/target envelope.
         1: weak drift (unexpected input language code or unexpected script).
-        2: strong drift (output language not English / malformed).
+        2: strong drift (output language does not match target language).
     """
     score = 0
+    clean_src = (expected_source or "ko").strip().lower()
+    clean_tgt = (target_language or "en").strip().lower()
 
     # 1. Primary input check via Gemini's language_code
     if input_lang:
         in_clean = input_lang.strip().lower()
-        if not (in_clean.startswith("ko") or in_clean.startswith("en")):
+        if not (in_clean.startswith(clean_src) or in_clean.startswith(clean_tgt)):
             score += 1
-    elif input_text:
-        # Fallback script heuristic if language_code is missing:
+    elif input_text and clean_src == "ko":
+        # Fallback script heuristic if language_code is missing for Korean source:
         # Flag Japanese Hiragana (0x3040-0x309F) / Katakana (0x30A0-0x30FF) or Thai (0x0E00-0x0E7F)
         for ch in input_text:
             code = ord(ch)
@@ -102,13 +116,13 @@ def evaluate_drift_score(
                 score += 1
                 break
 
-    # 2. Target output check (must always be English)
+    # 2. Target output check (must match target language)
     if output_lang:
         out_clean = output_lang.strip().lower()
-        if not out_clean.startswith("en"):
+        if not out_clean.startswith(clean_tgt):
             score += 2
-    elif output_text:
-        # If output text contains substantial Hangul/Japanese instead of English
+    elif output_text and clean_tgt == "en":
+        # If English output text contains substantial Hangul/Japanese instead of English
         for ch in output_text:
             code = ord(ch)
             if (0xAC00 <= code <= 0xD7A3) or (0x3040 <= code <= 0x30FF):
@@ -126,7 +140,12 @@ class GeminiSession:
         on_source_transcript: Callable[[str], None] | None = None,
         on_audio_chunk: Callable[[bytes], None] | None = None,
         glossary=None,  # GlossaryCorrector | None
+        target_language_code: str = "en",
+        expected_source_language: str = "ko",
     ):
+        self.target_language_code: str = (target_language_code or "en").lower().strip()
+        self.expected_source_language: str = (expected_source_language or "ko").lower().strip()
+        self.tag: str = f"Gemini:{self.target_language_code}"
         self._on_caption = on_caption
         self._on_state = on_state_change
         self._on_source = on_source_transcript
@@ -141,8 +160,8 @@ class GeminiSession:
         self._task: asyncio.Task | None = None
         self._client: genai.Client | None = None
         self._transcript: list[TranscriptEntry] = []
-        self._current_ko: str = ""
-        self._current_en: str = ""
+        self._current_source: str = ""
+        self._current_target: str = ""
         self._turn_in_lang: str | None = None
         self._turn_out_lang: str | None = None
         self._turn_start: float | None = None
@@ -153,6 +172,24 @@ class GeminiSession:
         self._drift_history: collections.deque = collections.deque(maxlen=3)
         self._consecutive_clean_turns: int = 0
         self._last_watchdog_reset_at: float = 0.0
+
+    @property
+    def _current_ko(self) -> str:
+        """Backward compatibility alias for tests."""
+        return self._current_source
+
+    @_current_ko.setter
+    def _current_ko(self, val: str) -> None:
+        self._current_source = val
+
+    @property
+    def _current_en(self) -> str:
+        """Backward compatibility alias for tests."""
+        return self._current_target
+
+    @_current_en.setter
+    def _current_en(self, val: str) -> None:
+        self._current_target = val
 
     def _get_client(self) -> genai.Client:
         if self._client is None:
@@ -188,8 +225,8 @@ class GeminiSession:
 
     def reset_transcript(self) -> None:
         self._transcript.clear()
-        self._current_ko = ""
-        self._current_en = ""
+        self._current_source = ""
+        self._current_target = ""
         self._turn_in_lang = None
         self._turn_out_lang = None
         self._turn_start = None
@@ -202,26 +239,38 @@ class GeminiSession:
         self._commit_current_turn()
 
     def _commit_current_turn(self) -> None:
-        if self._current_ko.strip() or self._current_en.strip():
-            ko = self._current_ko.strip()
-            en = self._current_en.strip()
-            if self._glossary and ko:
-                en = self._glossary.correct(ko, en)
+        if self._current_source.strip() or self._current_target.strip():
+            src = self._current_source.strip()
+            tgt = self._current_target.strip()
+            if self._glossary and src and self.expected_source_language == "ko" and self.target_language_code == "en":
+                tgt = self._glossary.correct(src, tgt)
             self._transcript.append(TranscriptEntry(
                 timestamp=self._turn_start or time.monotonic(),
-                korean=ko,
-                english=en,
+                source=src,
+                target=tgt,
+                source_lang=self.expected_source_language,
+                target_lang=self.target_language_code,
             ))
             session_log.info(
-                "[Turn committed] KO (%s): %s | EN (%s): %s",
+                "[%s] [Turn committed] %s (%s): %s | %s (%s): %s",
+                self.tag,
+                self.expected_source_language.upper(),
                 self._turn_in_lang or "auto",
-                ko,
-                self._turn_out_lang or "en",
-                en,
+                src,
+                self.target_language_code.upper(),
+                self._turn_out_lang or self.target_language_code,
+                tgt,
             )
 
             # Score completed turn for language drift
-            turn_score = evaluate_drift_score(self._turn_in_lang, ko, self._turn_out_lang, en)
+            turn_score = evaluate_drift_score(
+                self._turn_in_lang,
+                src,
+                self._turn_out_lang,
+                tgt,
+                expected_source=self.expected_source_language,
+                target_language=self.target_language_code,
+            )
             self._drift_history.append(turn_score)
 
             if turn_score == 0:
@@ -231,8 +280,8 @@ class GeminiSession:
             else:
                 self._consecutive_clean_turns = 0
                 session_log.warning(
-                    "[Drift] Completed turn flagged: in_lang=%s, out_lang=%s, score=+%d",
-                    self._turn_in_lang, self._turn_out_lang, turn_score
+                    "[%s] [Drift] Completed turn flagged: in_lang=%s, out_lang=%s, score=+%d",
+                    self.tag, self._turn_in_lang, self._turn_out_lang, turn_score
                 )
 
             total_drift = sum(self._drift_history)
@@ -241,22 +290,22 @@ class GeminiSession:
                 if self._auto_drift_correction:
                     if (now - self._last_watchdog_reset_at) >= 15.0:
                         self._last_watchdog_reset_at = now
-                        server_log.warning("Auto drift recovery: score=%d >= 3. Resetting session.", total_drift)
-                        operator_events.add("warning", f"Auto drift recovery triggered (score {total_drift})")
+                        server_log.warning("[%s] Auto drift recovery: score=%d >= 3. Resetting session.", self.tag, total_drift)
+                        operator_events.add("warning", f"Auto drift recovery triggered [{self.target_language_code}] (score {total_drift})")
                         asyncio.create_task(self.reset_clean(reason="Language drift watchdog"))
                 else:
                     session_log.info(
-                        "[Drift] Score=%d >= 3 (auto_drift_correction is OFF; operator manual Pause->Resume available)",
-                        total_drift
+                        "[%s] [Drift] Score=%d >= 3 (auto_drift_correction is OFF; operator manual Pause->Resume available)",
+                        self.tag, total_drift
                     )
                     self._emit(last_event="⚠ 비정상 언어 감지 (수동 복구: Pause -> Resume)")
                     operator_events.add(
                         "warning",
-                        f"Language drift detected (score {total_drift}) — manual Pause -> Resume available"
+                        f"Language drift detected [{self.target_language_code}] (score {total_drift}) — manual Pause -> Resume available"
                     )
 
-        self._current_ko = ""
-        self._current_en = ""
+        self._current_source = ""
+        self._current_target = ""
         self._turn_in_lang = None
         self._turn_out_lang = None
         self._turn_start = None
@@ -266,14 +315,15 @@ class GeminiSession:
         try:
             while not self._stop_event.is_set() and epoch == self._session_epoch:
                 await asyncio.sleep(0.5)
-                if self._turn_start is not None and (self._current_ko or self._current_en):
+                if self._turn_start is not None and (self._current_source or self._current_target):
                     silence_duration = time.monotonic() - self._last_token_at
                     if silence_duration >= 1.5:  # matches PAUSE_THRESHOLD_S
                         self._commit_current_turn()
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            session_log.error("Error in auto-commit loop: %s", e)
+            session_log.error("[%s] Error in auto-commit loop: %s", self.tag, e)
+
 
     def _emit(self, **kwargs):
         for k, v in kwargs.items():
@@ -508,7 +558,7 @@ class GeminiSession:
             return types.LiveConnectConfig(
                 response_modalities=["AUDIO"],
                 translation_config=types.TranslationConfig(
-                    target_language_code="en",
+                    target_language_code=self.target_language_code,
                     echo_target_language=True,
                 ),
                 speech_config=types.SpeechConfig(
@@ -562,7 +612,8 @@ class GeminiSession:
         is_resuming = self._resumption_handle is not None
 
         server_log.info(
-            "Session connect starting: model=%s resumption_handle_present=%s epoch=%d",
+            "[%s] Session connect starting: model=%s resumption_handle_present=%s epoch=%d",
+            self.tag,
             model,
             is_resuming,
             epoch,
@@ -579,8 +630,8 @@ class GeminiSession:
                     last_event="Connected to Gemini",
                     reconnect_count=0,
                 )
-                server_log.info("Gemini Live session connected successfully on model: %s (epoch %d)", model, epoch)
-                operator_events.add("gemini", f"Live translation active ({model})")
+                server_log.info("[%s] Gemini Live session connected successfully on model: %s (epoch %d)", self.tag, model, epoch)
+                operator_events.add("gemini", f"Live translation active [{self.target_language_code}] ({model})")
 
                 async with asyncio.TaskGroup() as tg:
                     tg.create_task(self._send_loop(session, epoch))
@@ -600,7 +651,8 @@ class GeminiSession:
                 return
             log_fn = server_log.info if "GoAway" in str(e) else server_log.error
             log_fn(
-                "SESSION_FAILURE: model=%s type=%s message=%s (epoch=%d)",
+                "[%s] SESSION_FAILURE: model=%s type=%s message=%s (epoch=%d)",
+                self.tag,
                 model,
                 type(e).__name__,
                 str(e),
@@ -615,7 +667,7 @@ class GeminiSession:
                     chunk = await asyncio.wait_for(self._audio_queue.get(), timeout=1.0)
                     if epoch != self._session_epoch:
                         break
-                    if self._turn_start is None and not self._current_ko:
+                    if self._turn_start is None and not self._current_source:
                         self._first_audio_in_turn_sent_at = time.monotonic()
                     await session.send_realtime_input(
                         audio=types.Blob(
@@ -637,12 +689,12 @@ class GeminiSession:
                     update = response.session_resumption_update
                     if hasattr(update, "handle") and update.handle:
                         self._resumption_handle = update.handle
-                        session_log.debug("Resumption handle updated (epoch %d)", epoch)
+                        session_log.debug("[%s] Resumption handle updated (epoch %d)", self.tag, epoch)
 
                 if hasattr(response, "go_away") and response.go_away:
-                    server_log.info("GoAway received — initiating graceful reconnect")
+                    server_log.info("[%s] GoAway received — initiating graceful reconnect", self.tag)
                     self._emit(last_event="GoAway: reconnecting")
-                    operator_events.add("network", "GoAway — reconnecting")
+                    operator_events.add("network", f"GoAway [{self.target_language_code}] — reconnecting")
                     raise RuntimeError("GoAway")
 
                 sc = getattr(response, "server_content", None)
@@ -665,24 +717,30 @@ class GeminiSession:
                         in_lang = getattr(it, "language_code", None) or getattr(it, "languageCode", None)
                         if in_lang:
                             self._turn_in_lang = in_lang
-                        self._current_ko += in_text
+                        self._current_source += in_text
                         self._last_token_at = time.monotonic()
-                        session_log.info("[KO (%s)] %s", in_lang or self._turn_in_lang or "auto", in_text)
+                        session_log.info(
+                            "[%s] [%s (%s)] %s",
+                            self.tag,
+                            self.expected_source_language.upper(),
+                            in_lang or self._turn_in_lang or "auto",
+                            in_text,
+                        )
                         if self._on_source and epoch == self._session_epoch:
                             self._on_source(in_text)
 
-                # Incremental English translated text
-                en_text = response.text or ""
+                # Incremental target translated text
+                target_text = response.text or ""
                 if sc and epoch == self._session_epoch:
                     ot = getattr(sc, "output_transcription", None)
                     if ot:
                         out_lang = getattr(ot, "language_code", None) or getattr(ot, "languageCode", None)
                         if out_lang:
                             self._turn_out_lang = out_lang
-                        if getattr(ot, "text", None) and not en_text:
-                            en_text = ot.text
+                        if getattr(ot, "text", None) and not target_text:
+                            target_text = ot.text
 
-                if en_text and epoch == self._session_epoch:
+                if target_text and epoch == self._session_epoch:
                     if not self._has_verified_output:
                         self._has_verified_output = True
                         model_resolver.record_verified_success(model)
@@ -692,11 +750,17 @@ class GeminiSession:
                         if self._first_audio_in_turn_sent_at is not None:
                             latency_ms = (self._turn_start - self._first_audio_in_turn_sent_at) * 1000
                             self._emit(last_latency_ms=latency_ms)
-                    self._current_en += en_text
+                    self._current_target += target_text
                     self._last_token_at = time.monotonic()
                     if self._on_caption and epoch == self._session_epoch:
-                        self._on_caption(en_text)
-                    session_log.debug("[EN delta (%s)] %s", self._turn_out_lang or "en", en_text)
+                        self._on_caption(target_text)
+                    session_log.debug(
+                        "[%s] [%s delta (%s)] %s",
+                        self.tag,
+                        self.target_language_code.upper(),
+                        self._turn_out_lang or self.target_language_code,
+                        target_text,
+                    )
 
                 # Completed turn boundary from server
                 if sc and getattr(sc, "turn_complete", False) and epoch == self._session_epoch:
@@ -707,3 +771,4 @@ class GeminiSession:
                 return
             if not self._stop_event.is_set() and epoch == self._session_epoch:
                 raise
+
