@@ -462,8 +462,9 @@ function switchLanguage(newLang, updateUrl = true) {
   }
 
   clearCurrentTranslationView();
+  disconnectAudio();
   connect();
-  if (audioEnabled) {
+  if (audioEnabled && !isPaused) {
     connectAudio();
   }
 }
@@ -603,22 +604,6 @@ function disconnectAudio() {
       ws.onmessage = null;
       ws.close();
     } catch (_) {}
-  }
-}
-
-function switchLanguage(newLang, reconnect = true) {
-  if (!newLang || newLang === currentTargetLang) return;
-  currentTargetLang = newLang;
-  if (langSelect) langSelect.value = newLang;
-  lines.innerHTML = '';
-  current.textContent = '';
-  clearAudioQueue();
-  disconnectAudio();
-  if (reconnect) {
-    connect();
-    if (audioEnabled && !isPaused) {
-      connectAudio();
-    }
   }
 }
 
