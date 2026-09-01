@@ -111,7 +111,14 @@ class TranslationManager:
             s.clear_drift_state()
 
     def _create_session_for_target(self, target: str, source: str) -> GeminiSession:
+        if target not in self.broadcasters:
+            self.broadcasters[target] = CaptionBroadcaster(
+                glossary=self._glossary if (source == "ko" and target == "en") else None,
+                source_lang=source,
+                target_lang=target,
+            )
         broadcaster = self.broadcasters[target]
+
 
         def _caption_cb(text: str) -> None:
             broadcaster.on_caption_delta(text)

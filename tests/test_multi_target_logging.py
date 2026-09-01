@@ -144,3 +144,8 @@ def test_glossary_isolation_across_languages():
     # en -> uk session does NOT get glossary
     sess_en_uk = mgr._create_session_for_target("uk", "en")
     assert sess_en_uk._glossary is None
+
+    # en -> zh session does NOT get glossary
+    sess_en_zh = mgr._create_session_for_target("zh", "en")
+    assert sess_en_zh._glossary is None
+
