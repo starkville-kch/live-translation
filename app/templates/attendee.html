@@ -47,53 +47,96 @@
   .church-header {
     background: var(--color-navy-800);
     color: var(--color-text-inverse);
-    padding: 12px 20px;
+    padding: 10px 16px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 3px solid var(--color-gold-300);
     flex-shrink: 0;
+    gap: 10px;
   }
   .header-content {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    min-width: 0;
   }
   .church-logo {
     width: 22px;
     height: auto;
+    flex-shrink: 0;
   }
   .church-titles {
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
   .kr-title {
     font-family: 'Noto Serif KR', serif;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
     letter-spacing: 0.02em;
     line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .en-title {
-    font-family: 'Source Serif 4', Georgia, serif;
-    font-size: 10px;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    opacity: 0.8;
-    line-height: 1.2;
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
   }
+  .lang-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .lang-wrap.hidden { display: none !important; }
+  .lang-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--color-text-inverse);
+    border: 1px solid rgba(212, 184, 114, 0.4);
+    border-radius: 6px;
+    padding: 4px 24px 4px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23d4b872' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    transition: all 0.2s ease;
+    max-width: 150px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .lang-select:focus {
+    outline: none;
+    border-color: var(--color-gold-400);
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+  .lang-select option {
+    background: var(--color-navy-800);
+    color: var(--color-text-inverse);
+  }
+
   .status-pill {
     font-family: 'Noto Sans KR', sans-serif;
     font-size: 11px;
     font-weight: 700;
-    padding: 4px 10px;
+    padding: 4px 8px;
     border-radius: 99px;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     background: rgba(255,255,255,0.1);
     color: var(--color-text-muted);
     transition: all 0.3s ease;
+    white-space: nowrap;
   }
   .status-pill.ok {
     background: rgba(59, 110, 79, 0.2);
@@ -107,6 +150,17 @@
     background: rgba(163, 59, 59, 0.2);
     color: #fca5a5;
   }
+
+  .lang-notice {
+    background: rgba(201, 165, 85, 0.15);
+    color: #8c6819;
+    border-bottom: 1px solid var(--color-gold-300);
+    padding: 6px 16px;
+    font-size: 12px;
+    text-align: center;
+    font-weight: 500;
+  }
+  .lang-notice.hidden { display: none !important; }
 
   /* Control Bar */
   #controls {
@@ -321,10 +375,20 @@
       <span class="kr-title" style="font-family: 'Source Serif 4', Georgia, serif;">Starkville Korean Church (PCA)</span>
     </div>
   </div>
-  <div class="header-status">
-    <span id="status-pill" class="status-pill warn">● Connecting</span>
+  <div class="header-right">
+    <div id="language-selector-wrap" class="lang-wrap hidden">
+      <select id="target-lang-select" class="lang-select" aria-label="Select translation language">
+      </select>
+    </div>
+    <div class="header-status">
+      <span id="status-pill" class="status-pill warn">● Connecting</span>
+    </div>
   </div>
 </header>
+
+<div id="lang-notice" class="lang-notice hidden" role="alert">
+  <span id="lang-notice-text"></span>
+</div>
 
 <div id="controls">
   <div class="control-group">
@@ -355,6 +419,48 @@ const pill = document.getElementById('status-pill');
 const fontRange = document.getElementById('font-range');
 const audioBtn = document.getElementById('audio-btn');
 const modal = document.getElementById('earphone-modal');
+const langWrap = document.getElementById('language-selector-wrap');
+const langSelect = document.getElementById('target-lang-select');
+const langNotice = document.getElementById('lang-notice');
+const langNoticeText = document.getElementById('lang-notice-text');
+
+let currentTargetLang = '';
+let activeLanguages = [];
+
+function showNotice(msg) {
+  if (!msg) {
+    langNotice.classList.add('hidden');
+    langNoticeText.textContent = '';
+  } else {
+    langNoticeText.textContent = msg;
+    langNotice.classList.remove('hidden');
+  }
+}
+
+function clearCurrentTranslationView() {
+  historyInner.innerHTML = '';
+  current.textContent = '';
+  clearAudioQueue();
+}
+
+function switchLanguage(newLang, updateUrl = true) {
+  if (!newLang || newLang === currentTargetLang) return;
+  currentTargetLang = newLang;
+
+  if (langSelect) langSelect.value = currentTargetLang;
+
+  if (updateUrl) {
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.set('lang', currentTargetLang);
+    window.history.replaceState({}, '', newUrl.toString());
+  }
+
+  clearCurrentTranslationView();
+  connect();
+  if (audioEnabled) {
+    connectAudio();
+  }
+}
 
 // ── Font size ──────────────────────────────────────────────────────────────
 const fontSizeLabel = document.getElementById('font-size-label');
@@ -403,7 +509,6 @@ function ensureAudioCtx() {
       try {
         audioCtx = new AudioContextClass({ sampleRate: SAMPLE_RATE });
       } catch (e) {
-        // Fallback for iOS Safari / devices that do not support custom constructor sampleRate
         audioCtx = new AudioContextClass();
       }
       nextPlayAt = audioCtx.currentTime;
@@ -413,7 +518,6 @@ function ensureAudioCtx() {
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
-    // Unlock iOS Audio: play a 1-sample silent buffer on user gesture
     try {
       const silentBuf = audioCtx.createBuffer(1, 1, 22050);
       const src = audioCtx.createBufferSource();
@@ -448,10 +552,11 @@ function connectAudio() {
     audioWs = null;
   }
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream');
+  const langQuery = currentTargetLang ? `?lang=${encodeURIComponent(currentTargetLang)}` : '';
+  audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream' + langQuery);
   audioWs.binaryType = 'arraybuffer';
   audioWs.onopen = () => {
-    console.log("Audio WebSocket connected");
+    console.log("Audio WebSocket connected for:", currentTargetLang || "default");
     audioBtn.textContent = '🔊 Audio On';
     audioBtn.classList.add('active');
   };
@@ -462,7 +567,7 @@ function connectAudio() {
   audioWs.onclose = () => {
     audioWs = null;
     if (audioEnabled) {
-      setTimeout(connectAudio, 2000); // reconnect if still wanted
+      setTimeout(connectAudio, 2000);
     }
   };
 }
@@ -474,7 +579,6 @@ function disconnectAudio() {
   }
 }
 
-// Auto-resume audio context on user touch if suspended
 ['click', 'touchstart'].forEach(evt => {
   document.addEventListener(evt, () => {
     if (audioEnabled && audioCtx && audioCtx.state === 'suspended') {
@@ -483,7 +587,6 @@ function disconnectAudio() {
   }, { passive: true });
 });
 
-// ── Earphone modal ─────────────────────────────────────────────────────────
 function enableAudio() {
   ensureAudioCtx();
   audioEnabled = true;
@@ -515,17 +618,22 @@ function clearAudioQueue() {
   }
 }
 
-// ── SSE caption stream (captions only — audio is on WS /audio-stream) ─────
+// ── SSE caption stream ────────────────────────────────────────────────────
 let es;
 function connect() {
-  es = new EventSource('/stream');
+  if (es) {
+    try { es.close(); } catch(_) {}
+    es = null;
+  }
+  const streamUrl = currentTargetLang ? `/stream?lang=${encodeURIComponent(currentTargetLang)}` : '/stream';
+  es = new EventSource(streamUrl);
   es.onopen = () => { setStatus('ok'); current.textContent = ''; };
   es.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.kind === 'update') {
-      current.textContent = msg.text;
+      current.textContent = msg.target || msg.text || '';
     } else if (msg.kind === 'commit') {
-      const text = msg.text.trim();
+      const text = (msg.target || msg.text || '').trim();
       const sourceText = (msg.source || msg.ko || '').trim();
       if (text) {
         let para = historyInner.lastElementChild;
@@ -541,7 +649,6 @@ function connect() {
           while (historyInner.children.length > 12) historyInner.removeChild(historyInner.firstChild);
         }
         const srcDiv = para.querySelector('.line-source') || para.querySelector('.line-ko');
-        // Insert translated text as a text node before the source div
         const existing = [...para.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
         if (existing) {
           existing.textContent += ' ' + text;
@@ -572,6 +679,7 @@ function connect() {
     setTimeout(connect, 3000);
   };
 }
+
 function loadChurchInfo() {
   fetch('/api/status')
     .then(r => r.json())
@@ -583,8 +691,76 @@ function loadChurchInfo() {
     })
     .catch(() => {});
 }
+
+async function initLanguageSelection() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const requestedLang = (urlParams.get('lang') || '').toLowerCase().trim();
+
+  try {
+    const res = await fetch('/api/languages');
+    if (!res.ok) throw new Error('Failed to load languages');
+    const data = await res.json();
+    const activeTargets = data.active_targets || ['en'];
+    const available = data.available || [];
+    const availMap = new Map(available.map(l => [l.code, l]));
+
+    activeLanguages = activeTargets.map(code => {
+      const info = availMap.get(code);
+      return {
+        code,
+        name: info ? info.name : code,
+        native_name: info ? info.native_name : code,
+        display: info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase()
+      };
+    });
+
+    langSelect.innerHTML = '';
+    activeLanguages.forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l.code;
+      opt.textContent = l.display;
+      langSelect.appendChild(opt);
+    });
+
+    let initialTarget = activeTargets[0] || 'en';
+    if (requestedLang) {
+      if (activeTargets.includes(requestedLang)) {
+        initialTarget = requestedLang;
+        showNotice(null);
+      } else if (availMap.has(requestedLang)) {
+        const requestedInfo = availMap.get(requestedLang);
+        showNotice(`${requestedInfo.name} translation is not active for this session.`);
+      } else {
+        showNotice('The requested language is not available.');
+      }
+    } else {
+      showNotice(null);
+    }
+
+    currentTargetLang = initialTarget;
+    langSelect.value = currentTargetLang;
+
+    if (activeTargets.length > 1) {
+      langWrap.classList.remove('hidden');
+    } else {
+      langWrap.classList.add('hidden');
+    }
+
+    langSelect.addEventListener('change', (e) => {
+      showNotice(null);
+      switchLanguage(e.target.value, true);
+    });
+
+  } catch (e) {
+    console.warn('Language init fallback:', e);
+    currentTargetLang = requestedLang || 'en';
+  }
+
+  connect();
+}
+
 loadChurchInfo();
-connect();
+initLanguageSelection();
 
 // ── Telemetry ping/pong ───────────────────────────────────────────────────
 (function setupTelemetry() {
@@ -622,7 +798,8 @@ connect();
                 type: 'latency_report',
                 client_id: clientId,
                 hostname: window.location.hostname,
-                rtt_ms: Math.round(rtt)
+                rtt_ms: Math.round(rtt),
+                target_lang: currentTargetLang || 'en'
               }));
             }
           }
@@ -640,3 +817,4 @@ connect();
 </script>
 </body>
 </html>
+

@@ -720,8 +720,18 @@ async def telemetry_stream(ws: WebSocket):
                 hostname = str(data.get("hostname", ""))
                 rtt_ms = float(data.get("rtt_ms", 0))
                 client_id = str(data.get("client_id", ""))
+                target_lang = str(data.get("target_lang", ""))
                 if rtt_ms > 0:
-                    broadcaster.record_rtt(hostname, rtt_ms, client_id=client_id)
+                    manager.primary_broadcaster.record_rtt(
+                        hostname, rtt_ms, client_id=client_id, target_lang=target_lang
+                    )
+                    if target_lang:
+                        b = manager.get_broadcaster(target_lang)
+                        if b and b != manager.primary_broadcaster:
+                            b.record_rtt(
+                                hostname, rtt_ms, client_id=client_id, target_lang=target_lang
+                            )
+
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     except Exception:

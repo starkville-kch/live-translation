@@ -126,12 +126,12 @@ class CaptionBroadcaster:
         self._current_source = val
 
 
-    def record_rtt(self, hostname: str, rtt_ms: float, client_id: str = "") -> None:
+    def record_rtt(self, hostname: str, rtt_ms: float, client_id: str = "", target_lang: str = "") -> None:
         if not isinstance(rtt_ms, (int, float)) or rtt_ms <= 0 or rtt_ms > 10000:
             return
 
         now = time.monotonic()
-        h = (str(hostname) if hostname else "").lower().strip()
+        h = (hostname or "").lower().strip()
         is_local = (
             not h
             or h.endswith(".local")
@@ -148,9 +148,10 @@ class CaptionBroadcaster:
         )
         route = "local" if is_local else "public"
         clean_cid = str(client_id)[:64] if client_id else ""
+        clean_lang = str(target_lang).lower().strip() if target_lang else self.target_lang
 
         if clean_cid:
-            self._active_clients[clean_cid] = (route, now)
+            self._active_clients[clean_cid] = (route, now, clean_lang)
 
         # Prune active clients older than 30s
         self._active_clients = {cid: val for cid, val in self._active_clients.items() if now - val[1] <= 30.0}
@@ -168,8 +169,13 @@ class CaptionBroadcaster:
         now = time.monotonic()
         self._active_clients = {cid: val for cid, val in self._active_clients.items() if now - val[1] <= 30.0}
 
-        local_clients = sum(1 for cid, (route, ts) in self._active_clients.items() if route == "local")
-        public_clients = sum(1 for cid, (route, ts) in self._active_clients.items() if route == "public")
+        local_clients = sum(1 for cid, val in self._active_clients.items() if val[0] == "local")
+        public_clients = sum(1 for cid, val in self._active_clients.items() if val[0] == "public")
+
+        by_target = {}
+        for cid, val in self._active_clients.items():
+            t_lang = val[2] if len(val) >= 3 else self.target_lang
+            by_target[t_lang] = by_target.get(t_lang, 0) + 1
 
         local_valid = [s[1] for s in self._rtt_samples_local if now - s[0] <= 60.0]
         public_valid = [s[1] for s in self._rtt_samples_public if now - s[0] <= 60.0]
@@ -186,6 +192,7 @@ class CaptionBroadcaster:
             "public_samples": len(public_valid),
             "public_listeners": public_clients,
             "total_listeners": local_clients + public_clients,
+            "listeners_by_target": by_target,
         }
 
     @property
