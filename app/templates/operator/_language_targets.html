@@ -1,0 +1,68 @@
+<!-- Translation Languages Configuration Card -->
+<div class="card" id="card-languages">
+  <h2>
+    <span class="tooltip tooltip-left">
+      <span data-lang="ko">통역 언어 (Languages)</span>
+      <span data-lang="en">Translation Languages</span>
+      <span class="tooltiptext" data-lang="ko">예배 통역 원문 언어와 다국어 통역 대상 언어를 설정합니다. 서비스 시작 후에는 대상 언어 설정이 잠깁니다.</span>
+      <span class="tooltiptext" data-lang="en">Configure source and multi-target translation languages. Locked once translation starts.</span>
+    </span>
+    <span id="lang-panel-badge" class="lang-panel-badge ready">
+      <span data-lang="ko">대기 (Ready)</span>
+      <span data-lang="en">Ready</span>
+    </span>
+  </h2>
+
+  <div class="card-body">
+    <!-- Source Language Display -->
+    <div class="lang-section">
+      <div class="lang-section-title">
+        <span data-lang="ko">원문 언어 (Source)</span>
+        <span data-lang="en">Source Language</span>
+      </div>
+      <div class="lang-source-box">
+        <span id="lang-source-name" class="lang-source-text">한국어 (Korean)</span>
+        <span class="lang-fixed-badge" data-lang="ko">고정</span>
+        <span class="lang-fixed-badge" data-lang="en">Fixed</span>
+      </div>
+    </div>
+
+    <!-- Today's Targets Selection / Active Telemetry -->
+    <div class="lang-section" style="margin-top: 12px;">
+      <div class="lang-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>
+          <span data-lang="ko">오늘의 통역 대상 (Targets)</span>
+          <span data-lang="en">Today's Targets</span>
+        </span>
+        <span id="lang-target-count-badge" class="lang-count-badge">1 active</span>
+      </div>
+
+      <!-- Stopped mode: Checkbox list of supported targets -->
+      <div id="lang-targets-config-list" class="lang-targets-list">
+        <!-- Populated dynamically: checkboxes for supported_targets -->
+      </div>
+
+      <!-- Running/Paused mode: Per-target live session telemetry cards -->
+      <div id="lang-targets-active-list" class="lang-targets-active-list" style="display: none;">
+        <!-- Populated dynamically: session cards with status, latency, listener count -->
+      </div>
+
+      <div id="lang-targets-hint" class="lang-hint-text">
+        <span data-lang="ko">1개 통역 세션이 시작됩니다.</span>
+        <span data-lang="en">1 translation session will start.</span>
+      </div>
+    </div>
+
+    <!-- Manage Languages Button -->
+    <div style="margin-top: 12px; border-top: 1px solid var(--color-warm-200); padding-top: 10px;">
+      <button type="button" id="btn-open-manage-langs" class="secondary" style="width: 100%; padding: 6px 10px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 6px;">
+        <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span data-lang="ko">언어 목록 관리 (Manage Languages)</span>
+        <span data-lang="en">Manage Languages</span>
+      </button>
+    </div>
+  </div>
+</div>

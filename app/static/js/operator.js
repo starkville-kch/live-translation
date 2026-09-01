@@ -1041,8 +1041,10 @@ function startStatusPoll() {
     _serviceRunning = Boolean(st.service_running);
     _paused = Boolean(st.paused);
     updateControlBar(st);
+    updateLanguageTargets(st);
   }, 1000);
 }
+
 
 // ============================================================
 // AUDIO ENGINE & PLAYBACK
@@ -1265,11 +1267,334 @@ function connectSSE() {
 }
 
 // ============================================================
+// TRANSLATION LANGUAGES (PHASE 6)
+// ============================================================
+let _languagesCatalog = [];
+let _catalogMap = new Map();
+let _supportedTargets = ['en', 'uk', 'zh'];
+let _selectedTargets = ['en'];
+let _expectedSource = 'ko';
+
+async function loadLanguageConfiguration() {
+  try {
+    const res = await fetch('/api/languages');
+    if (!res.ok) return;
+    const data = await res.json();
+    _expectedSource = data.expected_source || 'ko';
+    _languagesCatalog = data.available || [];
+    _catalogMap = new Map(_languagesCatalog.map(l => [l.code, l]));
+    _supportedTargets = data.supported_targets || ['en'];
+    _selectedTargets = data.selected_targets || ['en'];
+
+    // Update Source Language display
+    const srcEl = document.getElementById('lang-source-name');
+    if (srcEl) {
+      const srcInfo = _catalogMap.get(_expectedSource);
+      srcEl.textContent = srcInfo ? srcInfo.display_name : _expectedSource.toUpperCase();
+    }
+
+    renderSelectedTargets();
+  } catch (e) {
+    console.error('Failed to load language configuration:', e);
+  }
+}
+
+function renderSelectedTargets() {
+  const listEl = document.getElementById('lang-targets-config-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  _supportedTargets.forEach(code => {
+    const info = _catalogMap.get(code);
+    const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
+    const isChecked = _selectedTargets.includes(code);
+
+    const item = document.createElement('label');
+    item.className = 'lang-target-item';
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = code;
+    chk.checked = isChecked;
+    chk.dataset.code = code;
+
+    chk.addEventListener('change', () => {
+      const checkedBoxes = listEl.querySelectorAll('input[type="checkbox"]:checked');
+      if (checkedBoxes.length === 0) {
+        chk.checked = true;
+        return;
+      }
+      _selectedTargets = Array.from(checkedBoxes).map(c => c.value);
+      saveSelectedTargets();
+    });
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'lang-target-label';
+    labelSpan.textContent = displayName;
+
+    item.appendChild(chk);
+    item.appendChild(labelSpan);
+    listEl.appendChild(item);
+  });
+
+  updateLanguageCountAndHint();
+}
+
+function updateLanguageCountAndHint() {
+  const count = _selectedTargets.length;
+  const countBadge = document.getElementById('lang-target-count-badge');
+  const hintEl = document.getElementById('lang-targets-hint');
+  const isEn = getOperatorUiLanguage() === 'en';
+
+  if (countBadge) {
+    countBadge.textContent = `${count} ${count === 1 ? 'target' : 'targets'}`;
+  }
+
+  if (hintEl) {
+    hintEl.innerHTML = isEn
+      ? `<span>${count} translation ${count === 1 ? 'session' : 'sessions'} will start.</span>`
+      : `<span>${count}개 통역 세션이 시작됩니다.</span>`;
+  }
+}
+
+async function saveSelectedTargets() {
+  try {
+    const res = await fetch('/api/translation/targets', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets: _selectedTargets })
+    });
+    if (res.status === 409) {
+      console.warn('Cannot update targets while translation is running/paused');
+      return;
+    }
+    const data = await res.json();
+    if (data.ok && data.translation) {
+      _selectedTargets = data.translation.default_active_targets || _selectedTargets;
+      _supportedTargets = data.translation.supported_targets || _supportedTargets;
+      updateLanguageCountAndHint();
+    }
+  } catch (e) {
+    console.error('Failed to save translation targets:', e);
+  }
+}
+
+function updateLanguageTargets(st) {
+  const isRunning = Boolean(st && st.service_running);
+  const isPaused = Boolean(st && st.paused);
+  const isLocked = isRunning || isPaused;
+  const isEn = getOperatorUiLanguage() === 'en';
+
+  const badgeEl = document.getElementById('lang-panel-badge');
+  const configList = document.getElementById('lang-targets-config-list');
+  const activeList = document.getElementById('lang-targets-active-list');
+  const btnManage = document.getElementById('btn-open-manage-langs');
+  const hintEl = document.getElementById('lang-targets-hint');
+  const countBadge = document.getElementById('lang-target-count-badge');
+
+  if (isLocked) {
+    if (badgeEl) {
+      badgeEl.className = 'lang-panel-badge locked';
+      badgeEl.innerHTML = isEn ? '<span>🔒 Session active</span>' : '<span>🔒 통역 실행 중 (설정 잠김)</span>';
+    }
+    if (configList) configList.style.display = 'none';
+    if (activeList) activeList.style.display = 'flex';
+    if (btnManage) btnManage.disabled = true;
+
+    if (hintEl) {
+      hintEl.innerHTML = isEn
+        ? '<span>Stop translation to change target languages.</span>'
+        : '<span>통역 대상을 변경하려면 서비스를 종료하세요.</span>';
+    }
+
+    const translation = st && st.translation ? st.translation : null;
+    const activeTargets = translation ? (translation.active_targets || []) : _selectedTargets;
+    const sessionsMap = translation ? (translation.sessions || {}) : {};
+    const telemetryStats = st && st.telemetry ? st.telemetry : {};
+    const listenersByTarget = telemetryStats.listeners_by_target || {};
+
+    if (countBadge) {
+      countBadge.textContent = `${activeTargets.length} active`;
+    }
+
+    if (activeList) {
+      activeList.innerHTML = '';
+      activeTargets.forEach(tgt => {
+        const info = _catalogMap.get(tgt);
+        const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : tgt.toUpperCase();
+        const sess = sessionsMap[tgt] || {};
+        const status = sess.status || (isRunning ? 'connected' : 'connecting');
+        const latencyMs = (sess.latency_ms !== null && sess.latency_ms !== undefined) ? `${sess.latency_ms} ms` : ((tgt === translation?.primary_target && st.telemetry?.gemini_latency_ms) ? `${st.telemetry.gemini_latency_ms} ms` : '—');
+        const listeners = listenersByTarget[tgt] !== undefined ? listenersByTarget[tgt] : (tgt === translation?.primary_target ? (st.attendees || 0) : 0);
+
+        let statusClass = 'live';
+        let statusText = isEn ? '● Live' : '● 송출 중';
+        if (status === 'reconnecting') {
+          statusClass = 'warn';
+          statusText = isEn ? '⚠ Reconnecting' : '⚠ 재연결 중';
+        } else if (status === 'connecting') {
+          statusClass = 'warn';
+          statusText = isEn ? '○ Connecting' : '○ 연결 중';
+        } else if (status === 'failed') {
+          statusClass = 'err';
+          statusText = isEn ? '✕ Error' : '✕ 오류';
+        }
+
+        const card = document.createElement('div');
+        card.className = 'lang-session-card';
+        card.innerHTML = `
+          <div class="lang-session-header">
+            <span class="lang-session-name">${displayName}</span>
+            <span class="lang-session-status ${statusClass}">${statusText}</span>
+          </div>
+          <div class="lang-session-meta">
+            <span>Gemini: ${latencyMs}</span>
+            <span>${listeners} ${isEn ? (listeners === 1 ? 'listener' : 'listeners') : '명'}</span>
+          </div>
+        `;
+        activeList.appendChild(card);
+      });
+    }
+
+  } else {
+    // Stopped state
+    if (badgeEl) {
+      badgeEl.className = 'lang-panel-badge ready';
+      badgeEl.innerHTML = isEn ? '<span>Ready</span>' : '<span>대기 (Ready)</span>';
+    }
+    if (configList) configList.style.display = 'flex';
+    if (activeList) activeList.style.display = 'none';
+    if (btnManage) btnManage.disabled = false;
+
+    updateLanguageCountAndHint();
+  }
+}
+
+// ── Manage Languages Modal Logic ─────────────────────────────
+const manageModal = document.getElementById('manage-langs-modal');
+const btnOpenManage = document.getElementById('btn-open-manage-langs');
+const btnCloseManage = document.getElementById('btn-close-manage-langs');
+const btnCancelManage = document.getElementById('btn-cancel-manage-langs');
+const btnSaveManage = document.getElementById('btn-save-manage-langs');
+const searchManageInput = document.getElementById('manage-langs-search');
+const catalogListEl = document.getElementById('manage-langs-catalog-list');
+
+let _modalSelectedSupported = new Set();
+
+function openManageLanguagesModal() {
+  if (!manageModal) return;
+  _modalSelectedSupported = new Set(_supportedTargets);
+  if (searchManageInput) searchManageInput.value = '';
+  renderCatalogModalList('');
+  manageModal.classList.remove('hidden');
+}
+
+function closeManageLanguagesModal() {
+  if (!manageModal) return;
+  manageModal.classList.add('hidden');
+}
+
+function renderCatalogModalList(searchQuery) {
+  if (!catalogListEl) return;
+  catalogListEl.innerHTML = '';
+  const q = (searchQuery || '').toLowerCase().trim();
+
+  const filtered = _languagesCatalog.filter(l => {
+    if (l.code === _expectedSource) return false;
+    if (!q) return true;
+    return l.name.toLowerCase().includes(q) ||
+           l.native_name.toLowerCase().includes(q) ||
+           l.code.toLowerCase().includes(q);
+  });
+
+  filtered.forEach(l => {
+    const item = document.createElement('label');
+    item.className = 'catalog-item';
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = l.code;
+    chk.checked = _modalSelectedSupported.has(l.code);
+
+    chk.addEventListener('change', () => {
+      if (chk.checked) {
+        _modalSelectedSupported.add(l.code);
+      } else {
+        if (_modalSelectedSupported.size <= 1) {
+          chk.checked = true;
+          return;
+        }
+        _modalSelectedSupported.delete(l.code);
+      }
+    });
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'catalog-item-name';
+    nameSpan.textContent = l.native_name === l.name ? l.name : `${l.native_name} (${l.name})`;
+
+    const codeSpan = document.createElement('span');
+    codeSpan.className = 'catalog-item-code';
+    codeSpan.textContent = `[${l.code}]`;
+
+    item.appendChild(chk);
+    item.appendChild(nameSpan);
+    item.appendChild(codeSpan);
+    catalogListEl.appendChild(item);
+  });
+}
+
+if (btnOpenManage) btnOpenManage.addEventListener('click', openManageLanguagesModal);
+if (btnCloseManage) btnCloseManage.addEventListener('click', closeManageLanguagesModal);
+if (btnCancelManage) btnCancelManage.addEventListener('click', closeManageLanguagesModal);
+
+if (searchManageInput) {
+  searchManageInput.addEventListener('input', (e) => {
+    renderCatalogModalList(e.target.value);
+  });
+}
+
+if (btnSaveManage) {
+  btnSaveManage.addEventListener('click', async () => {
+    const newSupported = Array.from(_modalSelectedSupported);
+    if (newSupported.length === 0) return;
+
+    let newSelected = _selectedTargets.filter(t => newSupported.includes(t));
+    if (newSelected.length === 0) {
+      newSelected = [newSupported[0]];
+    }
+
+    try {
+      const res = await fetch('/api/translation/targets', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supported_targets: newSupported,
+          targets: newSelected
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.translation) {
+          _supportedTargets = data.translation.supported_targets;
+          _selectedTargets = data.translation.default_active_targets;
+          renderSelectedTargets();
+          closeManageLanguagesModal();
+        }
+      }
+    } catch (e) {
+      console.error('Failed to save supported languages:', e);
+    }
+  });
+}
+
+// ============================================================
 // INITIALIZATION
 // ============================================================
 setOperatorUiLanguage(_currentUiLang);
 checkAuth();
 loadDevices();
+loadLanguageConfiguration();
 startStatusPoll();
 startEventPoll();
+
 

@@ -1,0 +1,35 @@
+<!-- Manage Translation Languages Modal -->
+<div id="manage-langs-modal" class="modal-overlay hidden" role="dialog" aria-labelledby="manage-langs-title" aria-modal="true">
+  <div class="modal-card" style="max-width: 520px; width: 90%; max-height: 85vh; display: flex; flex-direction: column;">
+    <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-warm-200); padding-bottom: 12px;">
+      <h2 id="manage-langs-title" style="font-size: 16px; font-weight: 700; color: var(--color-navy-900); margin: 0;">
+        <span data-lang="ko">통역 언어 관리 (Manage Languages)</span>
+        <span data-lang="en">Manage Translation Languages</span>
+      </h2>
+      <button type="button" class="modal-close-btn" id="btn-close-manage-langs" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body" style="padding: 14px 0; overflow-y: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0;">
+      <!-- Search Input -->
+      <div style="margin-bottom: 12px; position: relative;">
+        <input type="text" id="manage-langs-search" placeholder="Search language (e.g. Ukrainian, 한국어, es, zh)..." style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-warm-200); border-radius: 6px; font-size: 13px;">
+      </div>
+
+      <!-- Catalog Checkbox List -->
+      <div id="manage-langs-catalog-list" class="catalog-list" style="overflow-y: auto; flex: 1; max-height: 380px; border: 1px solid var(--color-warm-200); border-radius: 6px; padding: 8px;">
+        <!-- Populated dynamically with 70+ languages from catalog -->
+      </div>
+    </div>
+
+    <div class="modal-footer" style="border-top: 1px solid var(--color-warm-200); padding-top: 12px; display: flex; justify-content: flex-end; gap: 8px;">
+      <button type="button" id="btn-cancel-manage-langs" class="secondary" style="padding: 6px 14px; font-size: 13px; font-weight: 600; border-radius: 6px;">
+        <span data-lang="ko">취소 (Cancel)</span>
+        <span data-lang="en">Cancel</span>
+      </button>
+      <button type="button" id="btn-save-manage-langs" class="primary" style="padding: 6px 18px; font-size: 13px; font-weight: 700; border-radius: 6px;">
+        <span data-lang="ko">저장 (Save)</span>
+        <span data-lang="en">Save</span>
+      </button>
+    </div>
+  </div>
+</div>

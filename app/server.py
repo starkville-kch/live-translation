@@ -826,11 +826,20 @@ def _check_auth(request: Request) -> Response | None:
 
 
 @app.post("/api/start")
-async def start_service(request: Request = None, body: dict = {}, from_auto_restart: bool = False):
+async def start_service(request: Request = None, body: dict = None, from_auto_restart: bool = False):
     if not from_auto_restart:
         if auth_err := _check_auth(request):
             return auth_err
+    if body is None:
+        if request is not None:
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+        else:
+            body = {}
     global _state, _paused, _service_start_time, _billed_seconds, _pause_start
+
     global _auto_restart_task, _auto_restart_attempt, _auto_restart_reason
     if not from_auto_restart:
         if _auto_restart_task and not _auto_restart_task.done():
