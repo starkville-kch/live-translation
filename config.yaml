@@ -24,3 +24,11 @@ network:
   hostname: skc
   port: 8080
   public_url: https://live.starkvillekoreanchurch.org
+translation:
+  default_active_targets:
+  - en
+  expected_source_language: ko
+  supported_targets:
+  - en
+  - uk
+  - zh

@@ -80,6 +80,11 @@ DEFAULT_CONFIG = {
         "short_name": "SKC",
         "logo": "branding/church-logo.png",
     },
+    "translation": {
+        "expected_source_language": "ko",
+        "supported_targets": ["en", "uk", "zh"],
+        "default_active_targets": ["en"],
+    },
     "audio": {
         "auto_stop_timeout_min": 10,
         "channels": 1,
@@ -107,6 +112,7 @@ DEFAULT_CONFIG = {
         "public_url": "https://live.starkvillekoreanchurch.org",
     },
 }
+
 
 
 def _atomic_yaml_write(path: Path, data: dict) -> None:
@@ -327,3 +333,94 @@ def update_gemini_api_key(new_key: str, env_path: Path | None = None) -> None:
 
     # Also update in-memory os.environ
     os.environ["GEMINI_API_KEY"] = clean_key
+
+
+def translation_cfg() -> dict:
+    """Return the translation configuration with backward-compatibility defaults."""
+    raw = _cfg.get("translation")
+    if not isinstance(raw, dict):
+        return {
+            "expected_source_language": "ko",
+            "supported_targets": ["en", "uk", "zh"],
+            "default_active_targets": ["en"],
+        }
+    src = str(raw.get("expected_source_language", "ko")).lower().strip() or "ko"
+    supported = [str(t).lower().strip() for t in raw.get("supported_targets", ["en", "uk", "zh"]) if str(t).strip()]
+    if not supported:
+        supported = ["en"]
+    active = [str(t).lower().strip() for t in raw.get("default_active_targets", ["en"]) if str(t).strip()]
+    if not active:
+        active = [supported[0]]
+    # Ensure active is a subset of supported
+    active = [t for t in active if t in supported] or [supported[0]]
+    return {
+        "expected_source_language": src,
+        "supported_targets": list(dict.fromkeys(supported)),
+        "default_active_targets": list(dict.fromkeys(active)),
+    }
+
+
+def validate_translation_settings(
+    expected_source_language: str,
+    supported_targets: list[str],
+    default_active_targets: list[str],
+) -> None:
+    """Validate translation language configuration against the catalog."""
+    from app.languages import is_valid_language_code
+
+    src = (expected_source_language or "").lower().strip()
+    if not src or not is_valid_language_code(src):
+        raise ValueError(f"Invalid expected source language code: {expected_source_language}")
+
+    if not supported_targets:
+        raise ValueError("At least one supported target language must be specified.")
+
+    clean_supported = []
+    for t in supported_targets:
+        code = str(t).lower().strip()
+        if not code or not is_valid_language_code(code):
+            raise ValueError(f"Invalid supported target language code: {t}")
+        if code in clean_supported:
+            raise ValueError(f"Duplicate supported target language code: {code}")
+        if code == src:
+            raise ValueError(f"Source language '{src}' cannot be in supported translation targets.")
+        clean_supported.append(code)
+
+    if not default_active_targets:
+        raise ValueError("At least one default active target language must be specified.")
+
+    clean_active = []
+    for t in default_active_targets:
+        code = str(t).lower().strip()
+        if code not in clean_supported:
+            raise ValueError(f"Default active target '{code}' is not in supported targets list {clean_supported}.")
+        if code in clean_active:
+            raise ValueError(f"Duplicate default active target code: {code}")
+        clean_active.append(code)
+
+
+def save_translation_settings(
+    expected_source_language: str,
+    supported_targets: list[str],
+    default_active_targets: list[str],
+    config_path: Path | None = None,
+) -> dict:
+    """Validate and atomically persist translation settings back to config.yaml."""
+    validate_translation_settings(expected_source_language, supported_targets, default_active_targets)
+
+    target_path = _ensure_config_file(config_path)
+    with open(target_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+
+    data["translation"] = {
+        "expected_source_language": expected_source_language.lower().strip(),
+        "supported_targets": [t.lower().strip() for t in supported_targets],
+        "default_active_targets": [t.lower().strip() for t in default_active_targets],
+    }
+
+    _atomic_yaml_write(target_path, data)
+
+    global _cfg
+    _cfg = _load(target_path)
+    return translation_cfg()
+

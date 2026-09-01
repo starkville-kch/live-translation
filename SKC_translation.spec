@@ -26,13 +26,15 @@ datas += collect_data_files("google.auth")
 datas += collect_data_files("grpc")
 datas += collect_data_files("certifi")
 datas += collect_data_files("sse_starlette")
-# Bundle glossary config, PCA logo asset, HTML templates, and static assets
+# Bundle glossary config, PCA logo asset, HTML templates, static assets, and language catalog
 datas += [("config/glossary.yaml", "config")]
 datas += [("app/pca-logo-white-small.webp", "app")]
 datas += [("app/templates", "app/templates")]
 datas += [("app/static", "app/static")]
+datas += [("app/data", "app/data")]
 datas += [("CHANGELOG.md", ".")]
 datas += [("how_to_use.html", ".")]
+
 
 # ── Hidden imports PyInstaller's static analysis misses ──────────────────────
 hiddenimports = []
