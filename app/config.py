@@ -369,8 +369,8 @@ def translation_cfg() -> dict:
     active = [str(t).lower().strip() for t in raw.get("default_active_targets", ["en"]) if str(t).strip()]
     if not active:
         active = [supported[0]]
-    # Ensure active is a subset of supported
-    active = [t for t in active if t in supported] or [supported[0]]
+    # Ensure active is a subset of supported and does not contain the source language
+    active = [t for t in active if t in supported and t != src] or [t for t in supported if t != src][:1] or ["en"]
     return {
         "expected_source_language": src,
         "supported_targets": list(dict.fromkeys(supported)),
@@ -400,8 +400,6 @@ def validate_translation_settings(
             raise ValueError(f"Invalid supported target language code: {t}")
         if code in clean_supported:
             raise ValueError(f"Duplicate supported target language code: {code}")
-        if code == src:
-            raise ValueError(f"Source language '{src}' cannot be in supported translation targets.")
         clean_supported.append(code)
 
     if not default_active_targets:
@@ -410,6 +408,8 @@ def validate_translation_settings(
     clean_active = []
     for t in default_active_targets:
         code = str(t).lower().strip()
+        if code == src:
+            raise ValueError(f"Source language '{src}' cannot be in default active targets.")
         if code not in clean_supported:
             raise ValueError(f"Default active target '{code}' is not in supported targets list {clean_supported}.")
         if code in clean_active:

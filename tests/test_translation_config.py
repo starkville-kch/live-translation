@@ -43,9 +43,13 @@ def test_translation_config_validation():
     with pytest.raises(ValueError, match="Duplicate supported target language code"):
         validate_translation_settings("ko", ["en", "en"], ["en"])
 
-    # Source cannot be target
-    with pytest.raises(ValueError, match="cannot be in supported translation targets"):
-        validate_translation_settings("ko", ["ko", "en"], ["en"])
+    # Source CAN be in supported_targets (reusable shortlist)
+    validate_translation_settings("ko", ["ko", "en"], ["en"])
+    validate_translation_settings("en", ["en", "ko", "es"], ["ko", "es"])
+
+    # But source CANNOT be in default_active_targets
+    with pytest.raises(ValueError, match="cannot be in default active targets"):
+        validate_translation_settings("ko", ["ko", "en"], ["ko", "en"])
 
     # Active target not in supported list
     with pytest.raises(ValueError, match="is not in supported targets list"):

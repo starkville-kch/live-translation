@@ -117,3 +117,65 @@ def test_primary_ordering_persists_after_restart(tmp_path):
     reloaded_targets = reloaded_cfg["translation"]["default_active_targets"]
     assert reloaded_targets == ["zh", "en"]
     assert reloaded_targets[0] == "zh"
+
+
+def test_spoken_language_switch_lifecycle(tmp_path, client):
+    """
+    Changing spoken ko -> en:
+    - removes 'en' from today's active targets
+    - 'en' remains in supported_targets
+    - switching spoken back en -> ko makes 'en' selectable again
+    """
+    import yaml
+    test_config = tmp_path / "config.yaml"
+    test_config.write_text(
+        "translation:\n"
+        "  expected_source_language: ko\n"
+        "  supported_targets: [en, ko, zh, es]\n"
+        "  default_active_targets: [en, zh]\n",
+        encoding="utf-8",
+    )
+
+    with patch("app.config._CONFIG_PATH", test_config), \
+         patch("app.config._cfg", yaml.safe_load(test_config.read_text(encoding="utf-8"))):
+
+        # Initial state: spoken=ko, supported=[en, ko, zh, es], active=[en, zh]
+        cfg1 = translation_cfg()
+        assert cfg1["expected_source_language"] == "ko"
+        assert cfg1["supported_targets"] == ["en", "ko", "zh", "es"]
+        assert cfg1["default_active_targets"] == ["en", "zh"]
+
+        # 1. Switch spoken to 'en' via API
+        # Active targets must not contain 'en', so operator sets targets to ['ko', 'zh']
+        res = client.post(
+            "/api/translation/targets",
+            json={
+                "expected_source_language": "en",
+                "supported_targets": ["en", "ko", "zh", "es"],
+                "targets": ["ko", "zh"],
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()["translation"]
+        assert data["expected_source_language"] == "en"
+        # ✓ en remains in supported_targets
+        assert "en" in data["supported_targets"]
+        # ✓ en is not in today's active targets
+        assert "en" not in data["default_active_targets"]
+        assert data["default_active_targets"] == ["ko", "zh"]
+
+        # 2. Switch spoken back from 'en' -> 'ko'
+        # 'en' is immediately available in supported_targets and can be selected again
+        res2 = client.post(
+            "/api/translation/targets",
+            json={
+                "expected_source_language": "ko",
+                "supported_targets": ["en", "ko", "zh", "es"],
+                "targets": ["en", "zh"],
+            },
+        )
+        assert res2.status_code == 200
+        data2 = res2.json()["translation"]
+        assert data2["expected_source_language"] == "ko"
+        assert "en" in data2["supported_targets"]
+        assert data2["default_active_targets"] == ["en", "zh"]

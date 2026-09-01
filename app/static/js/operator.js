@@ -1600,25 +1600,23 @@ async function loadLanguageConfiguration() {
         const newSrcInfo = _catalogMap.get(_expectedSource);
         const newSrcName = newSrcInfo ? newSrcInfo.name : _expectedSource.toUpperCase();
         const hadInSelected = _selectedTargets.includes(_expectedSource);
-        const hadInSupported = _supportedTargets.includes(_expectedSource);
 
-        // Ensure new source language is not in targets
-        _supportedTargets = _supportedTargets.filter(t => t !== _expectedSource);
-        if (_supportedTargets.length === 0) {
-          const fallbackTarget = _expectedSource === 'en' ? 'uk' : 'en';
-          _supportedTargets = [fallbackTarget];
-        }
+        // DO NOT mutate _supportedTargets!
+        // Only remove new source language from today's active selected targets:
         _selectedTargets = _selectedTargets.filter(t => t !== _expectedSource);
         if (_selectedTargets.length === 0) {
-          _selectedTargets = [_supportedTargets[0]];
+          const remainingSupported = _supportedTargets.filter(t => t !== _expectedSource);
+          if (remainingSupported.length > 0) {
+            _selectedTargets = [remainingSupported[0]];
+          }
         }
         saveSelectedTargets();
         renderSelectedTargets();
 
-        if (hadInSelected || hadInSupported) {
+        if (hadInSelected) {
           showLanguageNotice(
-            `원문 언어가 ${newSrcInfo ? newSrcInfo.native_name : newSrcName}(으)로 변경되었습니다. 통역 대상에서 제외되었습니다.`,
-            `Source changed to ${newSrcName}. It was removed from target languages.`
+            `원문 언어가 ${newSrcInfo ? newSrcInfo.native_name : newSrcName}(으)로 변경되었습니다. 오늘의 통역 대상에서 제외되었습니다.`,
+            `Source changed to ${newSrcName}. It was removed from today's target languages.`
           );
         }
       };
@@ -1922,7 +1920,6 @@ function renderCatalogModalList(searchQuery) {
   const q = (searchQuery || '').toLowerCase().trim();
 
   const filtered = _languagesCatalog.filter(l => {
-    if (l.code === _expectedSource) return false;
     if (!q) return true;
     return l.name.toLowerCase().includes(q) ||
            l.native_name.toLowerCase().includes(q) ||
@@ -1981,12 +1978,13 @@ if (btnSaveManage) {
     if (newSupported.length === 0) return;
 
     const newlyAdded = newSupported.filter(code => !_supportedTargets.includes(code));
-    let newSelected = _selectedTargets.filter(t => newSupported.includes(t));
+    let newSelected = _selectedTargets.filter(t => newSupported.includes(t) && t !== _expectedSource);
     newlyAdded.forEach(code => {
-      if (!newSelected.includes(code)) newSelected.push(code);
+      if (code !== _expectedSource && !newSelected.includes(code)) newSelected.push(code);
     });
     if (newSelected.length === 0) {
-      newSelected = [newSupported[0]];
+      const avail = newSupported.filter(t => t !== _expectedSource);
+      if (avail.length > 0) newSelected = [avail[0]];
     }
 
     try {
