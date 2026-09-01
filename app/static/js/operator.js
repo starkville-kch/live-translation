@@ -1360,12 +1360,18 @@ function connectAudio() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const target = _monitorTarget || 'en';
   const url = proto + '//' + location.host + '/audio-stream?lang=' + encodeURIComponent(target);
-  audioWs = new WebSocket(url);
-  audioWs.binaryType = 'arraybuffer';
-  audioWs.onmessage = (e) => playPCM16(e.data);
-  audioWs.onerror = () => {};
-  audioWs.onclose = (ev) => {
-    audioWs = null;
+  const ws = new WebSocket(url);
+  audioWs = ws;
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = (e) => {
+    if (audioWs !== ws) return;
+    playPCM16(e.data);
+  };
+  ws.onerror = () => {};
+  ws.onclose = (ev) => {
+    if (audioWs === ws) {
+      audioWs = null;
+    }
     // Do NOT retry if connection was rejected (e.g. 1008 policy/inactive)
     if (ev && (ev.code === 1008 || ev.code === 4003 || ev.code === 4403)) {
       console.warn('[Audio] WebSocket rejected by server:', ev.code, ev.reason);
@@ -1373,9 +1379,9 @@ function connectAudio() {
       return;
     }
     const currentActive = window._lastStatusSnapshot?.translation?.active_targets || _selectedTargets || [];
-    if (audioEnabled && _serviceRunning && !_paused && currentActive.includes(_monitorTarget)) {
+    if (audioEnabled && _serviceRunning && !_paused && currentActive.includes(_monitorTarget) && audioWs === null) {
       setTimeout(() => {
-        if (audioEnabled && _serviceRunning && !_paused) {
+        if (audioEnabled && _serviceRunning && !_paused && !audioWs) {
           connectAudio();
         }
       }, 2000);
@@ -1385,8 +1391,15 @@ function connectAudio() {
 
 function disconnectAudio() {
   if (audioWs) {
-    try { audioWs.close(); } catch(_) {}
+    const ws = audioWs;
     audioWs = null;
+    try {
+      ws.onopen = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
+      ws.close();
+    } catch (_) {}
   }
 }
 

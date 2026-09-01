@@ -553,41 +553,56 @@ function playPCM16(arrayBuffer) {
 }
 
 function connectAudio() {
-  if (audioWs) {
-    try { audioWs.close(); } catch(_) {}
-    audioWs = null;
-  }
+  disconnectAudio();
   if (!audioEnabled || isPaused) return;
 
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const langQuery = currentTargetLang ? `?lang=${encodeURIComponent(currentTargetLang)}` : '';
-  audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream' + langQuery);
-  audioWs.binaryType = 'arraybuffer';
-  audioWs.onopen = () => {
+  const ws = new WebSocket(proto + '//' + location.host + '/audio-stream' + langQuery);
+  audioWs = ws;
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    if (audioWs !== ws) return;
     console.log("Audio WebSocket connected for:", currentTargetLang || "default");
     audioBtn.textContent = '🔊 Audio On';
     audioBtn.classList.add('active');
   };
-  audioWs.onmessage = (e) => playPCM16(e.data);
-  audioWs.onerror = (err) => {
+  ws.onmessage = (e) => {
+    if (audioWs !== ws) return;
+    playPCM16(e.data);
+  };
+  ws.onerror = (err) => {
     console.warn("Audio WebSocket error:", err);
   };
-  audioWs.onclose = (ev) => {
-    audioWs = null;
+  ws.onclose = (ev) => {
+    if (audioWs === ws) {
+      audioWs = null;
+    }
     if (ev && (ev.code === 1008 || ev.code === 4003 || ev.code === 4403)) {
-      console.warn("Audio WebSocket closed by server policy (1008/inactive); suppressing reconnect");
+      console.warn("Audio WebSocket closed by server policy (1008/inactive); will connect on active translation");
       return;
     }
-    if (audioEnabled && !isPaused) {
-      setTimeout(connectAudio, 2000);
+    if (audioEnabled && !isPaused && audioWs === null) {
+      setTimeout(() => {
+        if (audioEnabled && !isPaused && !audioWs) {
+          connectAudio();
+        }
+      }, 2000);
     }
   };
 }
 
 function disconnectAudio() {
   if (audioWs) {
-    try { audioWs.close(); } catch(_) {}
+    const ws = audioWs;
     audioWs = null;
+    try {
+      ws.onopen = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
+      ws.close();
+    } catch (_) {}
   }
 }
 
@@ -598,6 +613,7 @@ function switchLanguage(newLang, reconnect = true) {
   lines.innerHTML = '';
   current.textContent = '';
   clearAudioQueue();
+  disconnectAudio();
   if (reconnect) {
     connect();
     if (audioEnabled && !isPaused) {
@@ -662,7 +678,13 @@ function connect() {
 
     if (msg.kind === 'update') {
       current.textContent = msg.target || msg.text || '';
+      if (audioEnabled && !audioWs && !isPaused) {
+        connectAudio();
+      }
     } else if (msg.kind === 'commit') {
+      if (audioEnabled && !audioWs && !isPaused) {
+        connectAudio();
+      }
       const text = (msg.target || msg.text || '').trim();
       const sourceText = (msg.source || msg.ko || '').trim();
       if (text) {
