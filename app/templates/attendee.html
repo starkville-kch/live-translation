@@ -663,16 +663,31 @@ function clearAudioQueue() {
 }
 
 // ── SSE caption stream ────────────────────────────────────────────────────
-let es;
-function connect() {
+let es = null;
+
+function disconnectSSE() {
   if (es) {
-    try { es.close(); } catch(_) {}
+    const old = es;
     es = null;
+    old.onopen = null;
+    old.onmessage = null;
+    old.onerror = null;
+    try { old.close(); } catch(_) {}
   }
+}
+
+function connect() {
+  disconnectSSE();
   const streamUrl = currentTargetLang ? `/stream?lang=${encodeURIComponent(currentTargetLang)}` : '/stream';
-  es = new EventSource(streamUrl);
-  es.onopen = () => { setStatus('ok'); current.textContent = ''; };
-  es.onmessage = (e) => {
+  const source = new EventSource(streamUrl);
+  es = source;
+  source.onopen = () => {
+    if (es !== source) return;
+    setStatus('ok');
+    current.textContent = '';
+  };
+  source.onmessage = (e) => {
+    if (es !== source) return;
     let msg;
     try { msg = JSON.parse(e.data); } catch(_) { return; }
     if (msg.kind === 'ping') return;
@@ -731,10 +746,11 @@ function connect() {
       setStatus('err');
     }
   };
-  es.onerror = () => {
+  source.onerror = () => {
+    if (es !== source) return;
     setStatus('warn');
     current.textContent = 'Reconnecting…';
-    es.close();
+    disconnectSSE();
     setTimeout(connect, 3000);
   };
 }
