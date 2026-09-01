@@ -322,7 +322,9 @@ class TranslationManager:
                 await asyncio.gather(*stop_coros, return_exceptions=True)
 
             self.sessions.clear()
+            self.auto_drift_correction = bool(gemini_cfg().get("auto_drift_correction", False))
             server_log.info("[TranslationManager] All target sessions and AudioCapture stopped.")
+
 
 
     async def reset_clean(self, reason: str = "Clean reset") -> None:

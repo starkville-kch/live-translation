@@ -37,11 +37,15 @@ const modal             = document.getElementById('earphone-modal');
 const btnAudio          = document.getElementById('btn-audio');
 const volSlider         = document.getElementById('vol-slider');
 const volLabel          = document.getElementById('vol-label');
-const volWrapper        = document.getElementById('volume-wrapper');
+const volWrapper            = document.getElementById('volume-wrapper');
+const monitorTargetSection  = document.getElementById('monitor-target-section');
+const monitorTargetSelect   = document.getElementById('monitor-target-select');
+let _selectedMonitorLang    = 'en';
 const selDevice         = document.getElementById('device-select');
 const btnRefreshDevices = document.getElementById('btn-refresh-devices');
 const radioDriftManual  = document.getElementById('drift-manual');
 const radioDriftAuto    = document.getElementById('drift-auto');
+
 
 const SESSION_COLOR = { connected:'ok', reconnecting:'warn', failed:'err', connecting:'warn', stopped:'' };
 const AUDIO_COLOR   = { connected:'ok', no_signal:'warn', disconnected:'err', stopped:'' };
@@ -295,11 +299,13 @@ function updateDriftUI(enabled) {
 if (radioDriftManual) {
   radioDriftManual.addEventListener('change', () => {
     if (radioDriftManual.checked) {
+      autoDriftCorrectionEnabled = false;
+      updateDriftUI(false);
       fetch('/api/drift-correction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ auto_drift_correction: false })
-      }).then(() => updateDriftUI(false)).catch(() => {});
+      }).catch(() => {});
     }
   });
 }
@@ -310,11 +316,13 @@ if (radioDriftAuto) {
       return;
     }
     if (radioDriftAuto.checked) {
+      autoDriftCorrectionEnabled = true;
+      updateDriftUI(true);
       fetch('/api/drift-correction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ auto_drift_correction: true })
-      }).then(() => updateDriftUI(true)).catch(() => {});
+      }).catch(() => {});
     }
   });
 }
@@ -352,7 +360,9 @@ function setOperatorUiLanguage(lang) {
     updateControlBar({ state: _serviceRunning ? (_paused ? 'paused' : 'running') : 'stopped' });
   }
   updateDriftUI(autoDriftCorrectionEnabled);
+  renderAudioButton();
 }
+
 
 function updateControlBar(st) {
   if (!serviceStatusPill) return;
@@ -441,6 +451,9 @@ function updateControlBar(st) {
     }
 
     document.title = ORIGINAL_TITLE;
+    if (_serviceRunning && audioEnabled) {
+      disableAudio();
+    }
     _serviceRunning = false;
     _paused = false;
   }
@@ -478,6 +491,9 @@ function updateControlBar(st) {
     }
 
     document.title = isEn ? `⏸ [${timeStr}] Paused — ${ORIGINAL_TITLE}` : `⏸ [${timeStr}] 일시정지 — ${ORIGINAL_TITLE}`;
+    if (!_paused && audioEnabled) {
+      disableAudio();
+    }
     _serviceRunning = true;
     _paused = true;
   }
@@ -1137,19 +1153,121 @@ function playPCM16(arrayBuffer) {
   nextPlayAt += buf.duration;
 }
 
-function connectAudio() {
-  if (audioWs) {
-    try { audioWs.close(); } catch(_) {}
-    audioWs = null;
+function getTargetLanguageName(code, uiLang) {
+  const c = (code || 'en').toLowerCase().trim();
+  const KO_NAMES = {
+    en: '영어',
+    uk: '우크라이나어',
+    zh: '중국어',
+    es: '스페인어',
+    ko: '한국어',
+    vi: '베트남어',
+    ja: '일본어',
+    ru: '러시아어',
+    fr: '프랑스어',
+    de: '독일어'
+  };
+  if (uiLang === 'ko' && KO_NAMES[c]) {
+    return KO_NAMES[c];
   }
+  const info = _catalogMap ? _catalogMap.get(c) : null;
+  if (info) return info.name;
+  return c.toUpperCase();
+}
+
+function renderAudioButton() {
+  if (!btnAudio) return;
+  const targetCode = _selectedMonitorLang || 'en';
+  const nameKo = getTargetLanguageName(targetCode, 'ko');
+  const nameEn = getTargetLanguageName(targetCode, 'en');
+
+  if (audioEnabled) {
+    btnAudio.className = 'btn-playback on';
+    btnAudio.title = `${nameEn} monitoring active — click to mute`;
+    btnAudio.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+      </svg>
+      <span class="text">
+        <span data-lang="ko">🔊 ${nameKo} 모니터링 중 — 정지</span>
+        <span data-lang="en">🔊 Monitoring ${nameEn} — Stop</span>
+      </span>
+    `;
+    if (volWrapper) volWrapper.style.display = 'flex';
+  } else {
+    btnAudio.className = 'btn-playback off';
+    btnAudio.title = 'Click to spot-check live translation audio';
+    btnAudio.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+        <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+      </svg>
+      <span class="text">
+        <span data-lang="ko">🎧 듣기</span>
+        <span data-lang="en">🎧 Listen</span>
+      </span>
+    `;
+    if (volWrapper) volWrapper.style.display = 'none';
+  }
+}
+
+function updateMonitorTargetUI(targets, primaryTarget) {
+  if (!monitorTargetSection || !monitorTargetSelect) return;
+  const list = Array.isArray(targets) && targets.length > 0 ? targets : (primaryTarget ? [primaryTarget] : ['en']);
+
+  if (list.length <= 1) {
+    monitorTargetSection.style.display = 'none';
+    _selectedMonitorLang = list[0] || primaryTarget || 'en';
+  } else {
+    monitorTargetSection.style.display = 'block';
+
+    const currentOptions = Array.from(monitorTargetSelect.options).map(o => o.value);
+    const isSame = currentOptions.length === list.length && currentOptions.every((val, i) => val === list[i]);
+
+    if (!isSame) {
+      const prevSelected = _selectedMonitorLang;
+      monitorTargetSelect.innerHTML = '';
+      list.forEach(code => {
+        const info = _catalogMap.get(code);
+        const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
+        const opt = document.createElement('option');
+        opt.value = code;
+        opt.textContent = displayName;
+        monitorTargetSelect.appendChild(opt);
+      });
+
+      if (list.includes(prevSelected)) {
+        _selectedMonitorLang = prevSelected;
+      } else {
+        _selectedMonitorLang = list[0];
+      }
+      monitorTargetSelect.value = _selectedMonitorLang;
+    }
+  }
+
+  renderAudioButton();
+}
+
+function connectAudio() {
+  disconnectAudio();
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream');
+  const target = _selectedMonitorLang || 'en';
+  const url = proto + '//' + location.host + '/audio-stream?lang=' + encodeURIComponent(target);
+  audioWs = new WebSocket(url);
   audioWs.binaryType = 'arraybuffer';
   audioWs.onmessage = (e) => playPCM16(e.data);
   audioWs.onerror = () => {};
   audioWs.onclose = () => {
     audioWs = null;
-    if (audioEnabled) setTimeout(connectAudio, 2000);
+    // Reconnect to same selected target if still enabled and running — never silently fall back
+    if (audioEnabled && _serviceRunning && !_paused) {
+      setTimeout(() => {
+        if (audioEnabled && _serviceRunning && !_paused) {
+          connectAudio();
+        }
+      }, 2000);
+    }
   };
 }
 
@@ -1164,20 +1282,17 @@ function enableAudio() {
   ensureAudioCtx();
   audioEnabled = true;
   connectAudio();
-  if (btnAudio) {
-    btnAudio.classList.remove('off');
-    btnAudio.classList.add('on');
-    btnAudio.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-      </svg>
-      <span class="text">Playback Enabled</span>
-    `;
-  }
+  renderAudioButton();
   if (volWrapper) volWrapper.style.display = 'flex';
   if (modal) modal.classList.add('hidden');
   updateVolLabel();
+}
+
+function disableAudio() {
+  audioEnabled = false;
+  disconnectAudio();
+  renderAudioButton();
+  if (volWrapper) volWrapper.style.display = 'none';
 }
 
 function updateVolLabel() {
@@ -1187,32 +1302,47 @@ function updateVolLabel() {
 }
 
 const modalOk = document.getElementById('modal-ok');
-if (modalOk) modalOk.addEventListener('click', enableAudio);
+if (modalOk) {
+  modalOk.addEventListener('click', () => {
+    try { sessionStorage.setItem('skc_earphone_accepted', 'true'); } catch(_) {}
+    enableAudio();
+  });
+}
 
 const modalSkip = document.getElementById('modal-skip');
-if (modalSkip) modalSkip.addEventListener('click', () => {
-  if (modal) modal.classList.add('hidden');
-});
+if (modalSkip) {
+  modalSkip.addEventListener('click', () => {
+    if (modal) modal.classList.add('hidden');
+  });
+}
 
 if (btnAudio) {
   btnAudio.addEventListener('click', () => {
     if (audioEnabled) {
-      audioEnabled = false;
-      disconnectAudio();
-      btnAudio.classList.remove('on');
-      btnAudio.classList.add('off');
-      btnAudio.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-          <line x1="23" y1="9" x2="17" y2="15"/>
-          <line x1="17" y1="9" x2="23" y2="15"/>
-        </svg>
-        <span class="text">Playback Muted</span>
-      `;
-      if (volWrapper) volWrapper.style.display = 'none';
+      disableAudio();
     } else {
-      if (modal) modal.classList.remove('hidden');
+      let accepted = false;
+      try { accepted = (sessionStorage.getItem('skc_earphone_accepted') === 'true'); } catch(_) {}
+      if (accepted) {
+        enableAudio();
+      } else {
+        if (modal) modal.classList.remove('hidden');
+      }
     }
+  });
+}
+
+if (monitorTargetSelect) {
+  monitorTargetSelect.addEventListener('change', () => {
+    const newTarget = monitorTargetSelect.value;
+    if (newTarget === _selectedMonitorLang) return;
+
+    if (audioEnabled) {
+      // Auto-mute first rather than suddenly playing another language
+      disableAudio();
+    }
+    _selectedMonitorLang = newTarget;
+    renderAudioButton();
   });
 }
 
@@ -1222,6 +1352,7 @@ if (volSlider) {
     updateVolLabel();
   });
 }
+
 
 // ============================================================
 // PREVIEW & SSE STREAM
@@ -1440,7 +1571,9 @@ function renderSelectedTargets() {
   });
 
   updateLanguageCountAndHint();
+  updateMonitorTargetUI(_selectedTargets, 'en');
 }
+
 
 function updateLanguageCountAndHint() {
   const count = _selectedTargets.length;
@@ -1522,13 +1655,17 @@ function updateLanguageTargets(st) {
 
     const translation = st && st.translation ? st.translation : null;
     const activeTargets = translation ? (translation.active_targets || []) : _selectedTargets;
+    const primaryTarget = translation ? (translation.primary_target || 'en') : 'en';
     const sessionsMap = translation ? (translation.sessions || {}) : {};
     const telemetryStats = st && st.telemetry ? st.telemetry : {};
     const listenersByTarget = telemetryStats.listeners_by_target || {};
 
+    updateMonitorTargetUI(activeTargets, primaryTarget);
+
     if (countBadge) {
       countBadge.textContent = `${activeTargets.length} active`;
     }
+
 
     if (activeList) {
       activeList.innerHTML = '';
@@ -1581,8 +1718,10 @@ function updateLanguageTargets(st) {
     if (btnManage) btnManage.disabled = false;
 
     updateLanguageCountAndHint();
+    updateMonitorTargetUI(_selectedTargets, (st && st.translation && st.translation.primary_target) || 'en');
   }
 }
+
 
 // ── Manage Languages Modal Logic ─────────────────────────────
 const manageModal = document.getElementById('manage-langs-modal');
