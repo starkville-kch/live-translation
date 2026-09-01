@@ -800,16 +800,32 @@ async def caption_stream(request: Request, lang: Optional[str] = None):
 # ── Binary WebSocket audio stream ─────────────────────────────────────────────
 @app.websocket("/audio-stream")
 async def audio_stream(ws: WebSocket, lang: Optional[str] = None):
+    client_host = ws.client.host if ws.client else "unknown"
+    req_headers = dict(ws.headers)
+    target_lang = (lang or "").lower().strip() or manager.primary_target or "en"
+
+    service_state = "RUNNING" if manager.is_running else "STOPPED"
+    server_log.debug(
+        "[AudioWS Request] target=%s host=%s user-agent=%s service_state=%s active_targets=%s",
+        target_lang,
+        client_host,
+        req_headers.get("user-agent", "unknown"),
+        service_state,
+        manager.active_targets,
+    )
+
     if lang:
         clean_lang = lang.lower().strip()
         if not is_valid_language_code(clean_lang) or clean_lang not in manager.active_targets:
+            server_log.debug("[AudioWS Reject] target=%s not active (code 1008)", clean_lang)
             await ws.close(code=1008)
             return
         target_broadcaster = manager.get_broadcaster(clean_lang)
     else:
         target_broadcaster = manager.primary_broadcaster
 
-    if not target_broadcaster:
+    if not target_broadcaster or not manager.is_running:
+        server_log.debug("[AudioWS Reject] target=%s broadcaster unavailable or service stopped (code 1008)", target_lang)
         await ws.close(code=1008)
         return
 
@@ -819,16 +835,21 @@ async def audio_stream(ws: WebSocket, lang: Optional[str] = None):
         while True:
             try:
                 pcm = await asyncio.wait_for(q.get(), timeout=10.0)
+                if ws.client_state.name != "CONNECTED":
+                    break
                 await ws.send_bytes(pcm)
             except asyncio.TimeoutError:
                 # Keepalive: send empty bytes frame during silence to prevent disconnect
+                if ws.client_state.name != "CONNECTED":
+                    break
                 await ws.send_bytes(b"")
-    except (WebSocketDisconnect, asyncio.CancelledError):
+    except (WebSocketDisconnect, asyncio.CancelledError, ConnectionResetError, BrokenPipeError, OSError):
         pass
     except Exception as e:
-        server_log.debug("WebSocket audio client disconnected: %s", e)
+        server_log.debug("WebSocket audio client disconnected with exception: %s", e)
     finally:
         target_broadcaster.remove_audio_client(q)
+        server_log.debug("[Audio:%s] Removed disconnected audio client (%s)", target_lang, client_host)
 
 
 

@@ -557,6 +557,8 @@ function connectAudio() {
     try { audioWs.close(); } catch(_) {}
     audioWs = null;
   }
+  if (!audioEnabled || isPaused) return;
+
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const langQuery = currentTargetLang ? `?lang=${encodeURIComponent(currentTargetLang)}` : '';
   audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream' + langQuery);
@@ -570,9 +572,13 @@ function connectAudio() {
   audioWs.onerror = (err) => {
     console.warn("Audio WebSocket error:", err);
   };
-  audioWs.onclose = () => {
+  audioWs.onclose = (ev) => {
     audioWs = null;
-    if (audioEnabled) {
+    if (ev && (ev.code === 1008 || ev.code === 4003 || ev.code === 4403)) {
+      console.warn("Audio WebSocket closed by server policy (1008/inactive); suppressing reconnect");
+      return;
+    }
+    if (audioEnabled && !isPaused) {
       setTimeout(connectAudio, 2000);
     }
   };
@@ -585,12 +591,27 @@ function disconnectAudio() {
   }
 }
 
+function switchLanguage(newLang, reconnect = true) {
+  if (!newLang || newLang === currentTargetLang) return;
+  currentTargetLang = newLang;
+  if (langSelect) langSelect.value = newLang;
+  lines.innerHTML = '';
+  current.textContent = '';
+  clearAudioQueue();
+  if (reconnect) {
+    connect();
+    if (audioEnabled && !isPaused) {
+      connectAudio();
+    }
+  }
+}
+
 ['click', 'touchstart'].forEach(evt => {
   document.addEventListener(evt, () => {
     if (audioEnabled && audioCtx && audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
-  }, { passive: true });
+  }, { once: true });
 });
 
 function enableAudio() {
@@ -635,7 +656,10 @@ function connect() {
   es = new EventSource(streamUrl);
   es.onopen = () => { setStatus('ok'); current.textContent = ''; };
   es.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
+    let msg;
+    try { msg = JSON.parse(e.data); } catch(_) { return; }
+    if (msg.kind === 'ping') return;
+
     if (msg.kind === 'update') {
       current.textContent = msg.target || msg.text || '';
     } else if (msg.kind === 'commit') {
@@ -658,11 +682,17 @@ function connect() {
       current.textContent = '';
 
     } else if (msg.kind === 'paused') {
+      isPaused = true;
       current.textContent = '— Paused —';
       clearAudioQueue();
+      disconnectAudio();
     } else if (msg.kind === 'resumed' || msg.kind === 'reset_clean') {
+      isPaused = false;
       current.textContent = '';
       clearAudioQueue();
+      if (audioEnabled && !audioWs) {
+        connectAudio();
+      }
     } else if (msg.kind === 'unavailable') {
       current.textContent = 'Translation unavailable';
       setStatus('err');
