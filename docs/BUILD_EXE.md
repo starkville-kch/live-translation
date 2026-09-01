@@ -273,3 +273,29 @@ pyinstaller
 ```
 
 Python 버전: **3.11** (PyAudio 바이너리 접미사 `cp311`과 일치해야 함).
+
+---
+
+## 12. 병렬 멀티스레드 빌드 러너 (`build_parallel.py`) — Release v3.0.0
+
+### 배경 및 필요성
+`SKC_translation.exe` (메인 서버)와 `SKC_setup.exe` (2열 설정 마법사) 두 개의 실행 파일을 순차 빌드할 경우 빌드 시간이 2배로 소요됩니다.
+
+### 구현 및 사용법
+`build_parallel.py`는 CPU 멀티코어를 활용하여 두 `.spec` 파일을 병렬 프로세스로 동시 컴파일합니다.
+
+```bat
+# 기본 실행 (시스템 CPU 코어 기반 자동 병렬 실행)
+python build_parallel.py
+
+# 워커 수 지정 (예: 4코어)
+python build_parallel.py -j 4
+
+# 일괄 원클릭 실행 스크립트
+build_exe.bat
+```
+
+### 주요 기능
+1. **실시간 마일스톤 스트리밍**: `[Translation]` 및 `[Setup]` 프리픽스와 경과 시간을 실시간으로 콘솔에 출력.
+2. **정확한 실제 경과 시간 (Wall-Clock Time) 측정**: 순차 연산 시간의 단순 합산이 아닌 실제 작업 완료까지 걸린 현실 시간을 측정하여 속도 향상(Speedup Factor)을 보고.
+3. **독립 격리 빌드**: 각 빌드가 충돌 없이 별도 작업 디렉토리를 사용하도록 보장.

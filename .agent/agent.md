@@ -14,7 +14,7 @@ After any major piece of work, update this file and the relevant docs.
 ---
 
 ## Project Summary
-Real-time Korean→English captioning appliance for church services. Audio from USB mixer → Gemini Live API (`gemini-3.5-live-translate-preview`) → English captions over SSE + translated audio over binary WebSocket → attendee phones. Single session per 60–90 min service. Standard port: **80** (accessible via `http://skc.local` and `http://skc.local/admin` without port numbers, configurable in `config.yaml`).
+Real-time Korean→English captioning appliance for church services. Audio from USB mixer → Gemini Live API (`gemini-3.5-live-translate-preview`) → English captions over SSE + translated audio over binary WebSocket → attendee phones. Single session per 60–90 min service. Standard port: **8080** (accessible via `http://skc.local:8080` / `http://skc.local:8080/admin` on LAN, or `https://live.starkvillekoreanchurch.org` via Cloudflare Named Tunnel).
 
 ---
 
@@ -97,6 +97,12 @@ These are the non-obvious decisions that can't be derived by reading the code. D
   - Purged obsolete Python/Conda commands and manual `config.yaml` edits.
   - Aligned all URLs to port-concealed standard (`http://skc.local/admin`, `http://skc.local`).
   - Added clear FAQ for language drift recovery via Pause/Resume or `⚡ Auto` mode.
+- **Port 8080 Standardization**: Standardized port `8080` across `config.yaml`, `app/config.py`, `app/tunnel.py`, `check_skc_live.bat`, and Cloudflare Tunnel (`http://localhost:8080`) to permanently avoid port 80 collisions with IIS, Docker, or campus network workstations.
+- **PublicHostGuard Security Boundary (`app/server.py`)**: All incoming requests arriving via public tunnel domain are strictly default-denied: `/admin`, `/api/devices`, `/api/start`, and other mutating/privileged routes return 404. Public root `/` automatically rewrites to `/live`.
+- **Operator Authentication (`app/operator_auth.py`)**: Privileged operations require HMAC-SHA256 signed session cookies (`SameSite=Strict`, `HttpOnly`).
+- **Telemetry Latency Decomposition (`/ws/telemetry`, `app/templates/operator.html`)**: Decomposed telemetry into Gemini Processing Latency (AI turn-onset), Local/Public WebSocket RTT, and Public End-to-End Latency (~1.1s) displayed cleanly in operator console with collapsible detailed diagnostics.
+- **Parallel Multi-Process PyInstaller Builder (`build_parallel.py`)**: Concurrently builds `SKC_translation.spec` and `SKC_setup.spec` across available CPU cores, outputting live milestone logs and wall-clock execution time.
+- **Cloudflare WAF Bot Protection User-Agent (`app/tunnel.py`)**: Probe HTTP requests use a standard browser User-Agent (`Mozilla/5.0...`) to prevent Cloudflare WAF bot management 403 Forbidden false alarms.
 - **Repository Testing Conventions**:
   - Run Python tests exclusively from the repository root using `python -m pytest tests/...`.
   - Never execute test files directly (`python tests/test_file.py`).
@@ -120,5 +126,5 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 | `CHANGELOG.md` | 릴리즈 버전 히스토리 (Version history) | 버전별 변경점 확인 시 |
 | `.agent/https_implementation_plan.md` | `main`과 `develop` 브랜치 간 HTTPS / Cloudflare Tunnel / Public Host Guard 보안 통합 계획 | Phase 23 HTTPS/보안 포팅 작업 시 |
 | `.agent/SKC Live Translation — Multilingual - Multi-Target Implementation Plan.md` | 다국어/다중 타겟 통역 시스템(One-codebase, Source/Target language matrix, Per-target GeminiSession) 상세 설계 및 구현 계획 | Phase 24 다국어/동시 통역 기능 개발 시 |
-| `tests/` | 모델 리졸버, 설정, 오염 방지, UI 접근성 등 45개 자동화 테스트 스위트 | 테스트 실행 및 코드 검증 시 |
+| `tests/` | 모델 리졸버, 설정, 오염 방지, UI 접근성 등 59개 자동화 테스트 스위트 | 테스트 실행 및 코드 검증 시 |
 

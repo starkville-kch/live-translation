@@ -80,11 +80,16 @@ async def lifespan(app: FastAPI):
 | `GET /live` | HTTP | `HTMLResponse` | 참석자 자막 페이지 (`app/templates/attendee.html`에서 서빙) |
 | `GET /stream` | SSE | `EventSourceResponse` | 자막 이벤트 스트림 |
 | `WS /audio-stream` | WebSocket | binary frames | 24kHz PCM16 오디오 |
-| `GET /api/status` | HTTP | JSON | 시스템 상태 스냅샷 (`pause_duration_s` 포함) |
-| `POST /api/start` | HTTP | JSON | 번역 파이프라인 시작 |
-| `POST /api/stop` | HTTP | JSON | 파이프라인 정지 + 로그 저장 |
-| `POST /api/pause` | HTTP | JSON | 마이크 및 과금 일시정지 + 오디오 큐 비우기 |
-| `POST /api/resume` | HTTP | JSON | 신규 Gemini 컨텍스트로 일시정지 해제 |
+| `WS /ws/telemetry` | WebSocket | JSON frames | 참석자 레이턴시 (RTT) 및 접속자 실시간 텔레메트리 |
+| `GET /api/status` | HTTP | JSON | 시스템 상태 스냅샷 (`pause_duration_s`, 지연 통계 포함) |
+| `POST /api/reconnect-public` | HTTP | JSON | Cloudflare 퍼블릭 링크 즉시 재연결 검사 |
+| `GET /api/auth/status` | HTTP | JSON | 운영자 인증 활성화 및 로그인 상태 |
+| `POST /api/auth/login` | HTTP | JSON | 운영자 비밀번호 검증 및 HMAC-SHA256 세션 쿠키 발급 |
+| `POST /api/auth/logout` | HTTP | JSON | 세션 쿠키 무효화 및 로그아웃 |
+| `POST /api/start` | HTTP | JSON | 번역 파이프라인 시작 (인증 필요) |
+| `POST /api/stop` | HTTP | JSON | 파이프라인 정지 + 로그 저장 (인증 필요) |
+| `POST /api/pause` | HTTP | JSON | 마이크 및 과금 일시정지 + 오디오 큐 비우기 (인증 필요) |
+| `POST /api/resume` | HTTP | JSON | 신규 Gemini 컨텍스트로 일시정지 해제 (인증 필요) |
 | `GET /api/models` | HTTP | JSON | 발견된 모델 목록 및 검증 상태 |
 | `POST /api/models/select` | HTTP | JSON | 선호 모델(Preferred Model) 설정 |
 | `POST /api/models/test` | HTTP | JSON | 실시간 호환성 핸드셰이크 테스트 |
@@ -92,6 +97,9 @@ async def lifespan(app: FastAPI):
 | `POST /api/config/auto-drift-correction` | HTTP | JSON | 자동 언어 이탈 복구 런타임 토글 |
 | `POST /api/config/auto-stop` | HTTP | JSON | 자동 종료 타임아웃(분) 설정 |
 | `GET /api/events?since=N` | HTTP | JSON | 운영자 이벤트 증분 폴링 |
+
+### PublicHostGuard 미들웨어 & 보안 경계
+`app/server.py`의 `PublicHostGuardMiddleware`는 공인 Cloudflare 터널 호스트네임으로 유입되는 모든 요청에 대해 기본 거부(Default-Deny) 보안 경계를 적용합니다. `/admin`, `/api/start`, `/api/devices` 등 운영자 및 제어 엔드포인트는 404를 반환하고, 오직 참석자 엔드포인트(`/live`, `/stream`, `/audio-stream`, `/ws/telemetry`, 정적 에셋)만 허용합니다. 루트(`/`) 요청은 자동으로 `/live`로 리다이렉트됩니다.
 
 ### 외부 HTML 템플릿 서빙
 HTML 파일은 `app/templates/operator.html` 및 `app/templates/attendee.html`로 분리 관리됩니다. 동적 템플릿 로더를 통해 개발 환경에서는 서버 재시작 없이 실시간 수정(Hot-Reload)을 지원하며, PyInstaller 단일 실행 파일 배포 시에는 캐시된 에셋을 고속 서빙합니다.

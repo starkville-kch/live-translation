@@ -116,6 +116,8 @@ Windows PC (본 애플리케이션)
 | `SKC_start.bat` | 원클릭 서버 실행 스크립트 (conda 환경 활성화) |
 | `SKC_translation.spec` | PyInstaller 빌드 스펙 — 단일 exe 생성 |
 | `build_exe.bat` | 원클릭 exe 빌드 스크립트 |
+| `build_parallel.py` | 멀티스레드 병렬 exe 빌드 러너 |
+| `setup_gui.py` | 2열 데스크톱 설정 마법사 GUI (`SKC_setup.exe`) |
 | `app/config.py` | 설정 로더 + `save_audio_device()`, `save_gemini_model()`, `admin_cfg()` |
 | `app/events.py` | `OperatorEventLog` — 스레드 안전 링 버퍼(50개), 7개 카테고리, `since(last_id)` API |
 | `app/logger.py` | 회전 파일 + 콘솔 로거 |
@@ -178,7 +180,8 @@ Windows PC (본 애플리케이션)
 | 20 | Gemini Live 실시간 번역 모델 선택 엔진 (`app/model_resolver.py`), 직접 `preferred_model` 설정, LKG 폴백, 검증 세션 저장 및 상태 카드 UI 연동 | ✅ 완료 |
 | 21 | 오염 방지 및 무결 세션 리셋 아키텍처: 일시정지 시 오디오 프레임 즉시 폐기, Pause → Resume 컨텍스트 완전 분리 및 재개 토큰 초기화, 세션 세대(Epoch) 격리, 완료 턴 기반 롤링 언어 이탈 감시 및 오디오 버퍼 플러시 | ✅ 완료 |
 | 22 | 운영자 콘솔 컨트롤 바 분리 및 일시정지 알림: 3열 고정 레이아웃, `role="status"` 및 `aria-live="polite"` 접근성 상태 배지, 일시정지 경과 타이머, 3분 경과 주황색 강조 알림, `prefers-reduced-motion` 지원 및 비활성 중립 회색 종료 버튼 | ✅ 완료 |
-| V0–V22 | 검증 프로토콜 및 자동화 테스트 스위트 (44개 테스트) | ✅ 전체 통과 |
+| 23 | HTTPS 공인 접속 및 보안 강화 (Release v3.0.0): Cloudflare Named Tunnel 백그라운드 매니저, PublicHostGuard 미들웨어, 운영자 HMAC-SHA256 세션 인증, 네트워크/AI 지연 분리 텔레메트리, 2열 데스크톱 설정 마법사 (1060x670), 병렬 멀티스레드 빌더 (`build_parallel.py`) 및 포트 8080 표준화 | ✅ 완료 |
+| V0–V23 | 검증 프로토콜 및 자동화 테스트 스위트 (59개 테스트) | ✅ 전체 통과 |
 
 ---
 
@@ -202,7 +205,8 @@ network:
   host: 0.0.0.0   # 모든 인터페이스 수신 (로컬 + WiFi 참석자)
   hostname: skc.live
   port: 8080
-  # public_url: "http://192.168.1.x:8080"  # override if auto-detect picks wrong interface
+  public_url: "https://live.starkvillekoreanchurch.org"
+  enable_tunnel: true
 
 logging:
   log_dir: logs
@@ -214,26 +218,16 @@ logging:
 
 ## 8. 향후 확장 계획 (Future Phases)
 
-### Phase 23 — `develop` HTTPS / Cloudflare / 관리자 보안 통합 및 `main` 승격 (Pre-Multilingual Integration)
-- **상세 아키텍처 및 구현 계획**: [`.agent/https_implementation_plan.md`](file:///d:/Desktop/church/live_translation/SKC_live_translation_B/.agent/https_implementation_plan.md) 참조.
-- **배경 및 원칙**:
-  - `main`과 `develop` 브랜치가 크게 분기되었으므로 단순 `git merge develop`을 피하고, `develop`의 검증된 HTTPS/보안 파이프라인을 `main` 코드베이스로 **선택적 포팅(Selective Porting)**.
-  - HTTPS / 공인 접속 / 관리자 보안 기능은 상용 필수 인프라이므로, 검증 완료 후 `main`에 머지하여 **새로운 공식 `main`**으로 확립.
-- **가장 단순한 Git 브랜치 워크플로우**:
-  1. `main`에서 통합 브랜치 생성: `git switch main && git switch -c feature/pre-multilingual-https-security`
-  2. HTTPS, PublicHostGuard, Telemetry, Admin Password 구현 및 테스트.
-  3. 완료 후 `main`에 머지: `git switch main && git merge --ff-only feature/pre-multilingual-https-security`
-  4. `develop` 브랜치를 새로운 `main`으로 즉시 덮어쓰기:
-     - `git switch develop && git reset --hard main`
-     - `git push --force-with-lease origin develop`
-  5. 새로운 `develop`에서 Phase 24 다국어 기능 브랜치 생성 후 작업 시작.
-- **핵심 구현 목표**:
-  1. **Cloudflare Named Tunnel & HTTPS 지원**: SSL/HTTPS 암호화 스트리밍 및 공인 도메인 연결.
-  2. **Public-Host Guard Middleware**: 공개 호스트 유입 시 `/admin` 및 API 제어 라우트 차단, 오직 참석자 라우트만 허용.
-  3. **관리자 비밀번호 보호**: `.env` 기반 `ADMIN_PASSWORD` 인증 세션 지원.
-  4. **WebSocket 텔레메트리 (`/ws/telemetry`)**: 30초 하트비트 기반 동시 접속자 수 및 로컬/퍼블릭 지연 시간 추적.
-  5. **통합 베이스라인 구축**: 다국어 기능 브랜치는 이 HTTPS 보안 통합 베이스라인 위에서 생성.
-
+### Phase 23 — Public HTTPS / Cloudflare Named Tunnel 및 보안 통합 (Release v3.0.0) [✅ 완료]
+- **완료 일자**: 2026-08-31
+- **주요 산출물**:
+  1. **Cloudflare Named Tunnel 백그라운드 매니저 (`app/tunnel.py`, `app/cloudflared_service.py`)**: 비침습적 백그라운드 헬스 모니터링, Windows 서비스 제어, Cloudflare WAF User-Agent 호환성 확보.
+  2. **Public-Host Guard 보안 경계 (`app/server.py`)**: 공인 도메인 유입 시 `/admin`, 제어 API, QR 생성 라우트 404 차단, 참석자 라우트만 안전하게 노출 (`/` $\to$ `/live` 자동 리다이렉트).
+  3. **운영자 인증 (`app/operator_auth.py`)**: HMAC-SHA256 HttpOnly 세션 쿠키 기반 관리자 보호.
+  4. **지연 및 참석자 텔레메트리 (`/ws/telemetry`, `app/templates/operator.html`)**: Gemini AI 처리 지연(Turn-Onset), 현장 Wi-Fi vs 공용 HTTPS 분리 RTT 및 추정 전체 지연(E2E), 3x2 세션 통계 그리드.
+  5. **2열 데스크톱 설정 GUI (`setup_gui.py` / `SKC_setup.exe`)**: 1060×670 크기의 2열 레이아웃(좌측: 교회/로컬, 우측: Gemini API, 하단: Cloudflare 터널 + 라이브 준비도 배지).
+  6. **병렬 멀티스레드 빌더 (`build_parallel.py`, `build_exe.bat`)**: 다중 코어 병렬 빌드로 패키징 시간 ~50% 단축.
+  7. **포트 8080 표준화**: 포트 충돌 방지 및 신뢰성 확보.
 
 ### Phase 24 — 다국어 / 다중 타겟 동시 통역 (Multilingual / Multi-Target Translation)
 - **상세 아키텍처 및 구현 계획**: [`.agent/SKC Live Translation — Multilingual - Multi-Target Implementation Plan.md`](file:///d:/Desktop/church/live_translation/SKC_live_translation_B/.agent/SKC%20Live%20Translation%20%E2%80%94%20Multilingual%20-%20Multi-Target%20Implementation%20Plan.md) 참조.

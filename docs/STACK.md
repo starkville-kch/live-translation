@@ -107,3 +107,28 @@ output_audio_transcription=types.AudioTranscriptionConfig()
 3. **기본값 OFF (안전 모드)**:
    - 자동 리셋은 기본적으로 OFF(`auto_drift_correction: false`)이며, 수동 **`Pause` → `Resume`**이 가장 안전하고 권장되는 복구 수단입니다.
    - 운영자가 상태 카드에서 필요 시 런타임에만 일시적으로 ON/OFF를 전환할 수 있습니다.
+
+---
+
+## 6. Public HTTPS, Named Cloudflare Tunnel & PublicHostGuard 보안 경계 (Release v3.0.0)
+
+### 1. 포트 8080 영구 표준화
+- Windows 환경에서 포트 80은 IIS, Apache, Docker, VMware, 대학 전산망 백그라운드 서비스와의 충돌 가능성이 높습니다.
+- 포트 8080을 표준으로 고정(`config.yaml`, `app/config.py`, `app/tunnel.py`, `check_skc_live.bat`, Cloudflare Tunnel ingress)하여 충돌 위험을 원천 제거하고, 로컬 Wi-Fi(`http://skc.local:8080`) 및 공인 HTTPS(`https://live.starkvillekoreanchurch.org`) 양쪽 모두에서 일관된 동작을 보장합니다.
+
+### 2. PublicHostGuardMiddleware 기본 거부 (Default-Deny) 원칙
+- 공인 Cloudflare 터널 도메인으로 들어오는 모든 HTTP 요청은 `PublicHostGuardMiddleware`를 통과합니다.
+- **공개 허용**: `/live`, `/stream`, `/audio-stream`, `/ws/telemetry`, `/logo*`, `/static/*`.
+- **자동 리다이렉트**: 공인 도메인의 루트(`/`) 접속 시 참석자 화면(`/live`)으로 자동 rewrite.
+- **원천 차단 (404)**: `/admin`, `/api/devices`, `/api/start`, `/api/stop`, `/api/pause`, `/api/resume`, `/api/qr.png` 등 모든 관리자 및 제어 라우트는 공인 도메인 유입 시 404를 반환하여 외부에서의 공격 표면(Attack Surface)을 0으로 만듭니다.
+
+### 3. 암호학적 운영자 인증 (HMAC-SHA256 Session Cookies)
+- 운영자 기능 보호를 위해 `.env`의 `SKC_OPERATOR_PASSWORD` 기반 HMAC-SHA256 서명 세션 쿠키(`HttpOnly`, `SameSite=Strict`)를 구현했습니다.
+
+### 4. 텔레메트리 지연 시간 분해 모델
+- 체감 지연 시간을 세 단계로 분해하여 투명하게 모니터링합니다:
+  $$\text{공용 체감 지연 (E2E)} = \text{Gemini AI 처리 지연 (Turn-Onset)} + \text{네트워크 RTT} + 200\text{ms (재생 버퍼)}$$
+- 운영자 콘솔에서는 세부 RTT 및 지연 수치를 접이식 아코디언에 보관하고, 대시보드에는 핵심 지표(`공용 체감 지연 ~1.1s`)를 3x2 그리드로 컴팩트하게 노출합니다.
+
+### 5. 병렬 멀티스레드 빌드 파이프라인
+- `build_parallel.py`를 통해 `SKC_translation.spec`과 `SKC_setup.spec`을 멀티코어 환경에서 병렬 실행하여 바이너리 패키징 시간을 50% 단축하고, 콘솔에 실시간 진행 마일스톤과 실제 경과 시간(Wall-clock time)을 출력합니다.

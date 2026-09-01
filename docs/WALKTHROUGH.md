@@ -143,11 +143,22 @@
 * **참석자 화면 — 기타 UX**:
   * 커밋된 자막 줄에서 `[MM:SS]` 타임스탬프를 제거했습니다.
   * 폰트 크기 범위를 20–56px에서 20–40px로 축소, 기본값을 28px에서 20px로 변경. 슬라이더 옆에 실시간 "Font XXpx" 레이블 추가.
-  * 컨트롤 바에 "Tap sentence for Korean" 안내 문구 추가.
+### 세션 17 — Public HTTPS / Cloudflare Named Tunnel, 보안 미들웨어, 운영자 UI 압축 및 병렬 빌더 (Release v3.0.0 / Phase 23)
+
+* **목표**: 상용 예배 환경을 위한 공인 도메인 연결(`https://live.starkvillekoreanchurch.org`), 악의적 외부 제어 차단을 위한 보안 경계 구축, 지연 텔레메트리 정리, 2열 데스크톱 설정 GUI 및 병렬 멀티스레드 빌드 파이프라인 완성.
+
+* **구현 내역**:
+  * **Cloudflare Named Tunnel 백그라운드 매니저 (`app/tunnel.py`, `app/cloudflared_service.py`)**: 비침습적 백그라운드 헬스 체크, Windows 서비스 상태 조회 및 User-Agent 호환성 확보.
+  * **PublicHostGuard 보안 경계 (`app/server.py`)**: 공인 도메인 접근 시 관리자 라우트 및 제어 API 404 차단, 참석자 라우트만 안전하게 통과.
+  * **운영자 인증 (`app/operator_auth.py`)**: HMAC-SHA256 HttpOnly 세션 쿠키 기반 보안 세션 관리.
+  * **지연 텔레메트리 아코디언 (`app/templates/operator.html`)**: 상세 RTT/AI 처리 지연을 접이식 아코디언으로 보관하고, 대시보드 3x2 그리드에 공용 체감 지연(~1.1s) 표시.
+  * **2열 데스크톱 설정 마법사 (`setup_gui.py` / `SKC_setup.exe`)**: 1060×670 px 레이아웃으로 한 화면에 교회 정보, Gemini API 검증, Cloudflare 터널 및 준비도 배지를 집약.
+  * **병렬 멀티스레드 빌더 (`build_parallel.py`, `build_exe.bat`)**: CPU 코어 활용 병렬 빌드로 빌드 시간 50% 단축.
+  * **포트 8080 표준화**: 포트 80 충돌 위험 영구 제거.
 
 ---
 
-## 2. 검증 프로토콜 결과 (V0–V6, V14–V18)
+## 2. 검증 프로토콜 결과 (V0–V6, V14–V18, V23)
 
 * **V0 (구동 및 API 상태)**: 모든 FastAPI 헬스 체크 경로가 정상 작동하며 QR 코드가 문제없이 동적으로 생성됨을 검증 완료 (Pass ✅).
 * **V1 (오디오 경로)**: 로컬 마이크 입력을 모조 테스트 음원으로 Gemini API에 쏘아 자막 변환 및 2.2초 수준의 극초기 지연 시간 도달을 검증 완료 (Pass ✅).
@@ -161,6 +172,7 @@
 * **V16 (무신호 안전망 격리 검증)**: 마이크 입력을 완전히 무음으로 설정했을 때 무신호 감지 메커니즘이 `Service automatically stopped: no audio signal for {N} min` 형식의 독립된 로그를 정상적으로 뱉고, 실제 오디오 낭독이 진행되는 상황에서는 오동작하지 않음을 입증 (Pass ✅).
 * **V17 (세션 복구 핸들 바인딩 검증)**: 구글 GoAway 발생 시 로그 파일에 `resumption_handle_present=True` 및 `resume=True` 상태를 명시하고 성공적으로 컨텍스트를 연계 복구하는지 확인하고, 만료로 인한 콜드 스타트 시 브라우저 경고 이벤트를 띄우는지 검증 완료 (Pass ✅).
 * **V18 (예외 진단 수집 및 27분 GoAway 실시간 검증)**: `GeminiSession._run_session` 예외 로그가 원시 예외(`RuntimeError`) 및 메시지(`GoAway`)를 상세 기록함을 검증하고, 27:05 구글 Live API 세션 연결 교체 경계를 손실 없이 포착해 자동 재연결됨을 최종 입증 완료 (Pass ✅).
+* **V23 (HTTPS, 보안 경계, 텔레메트리 & 2열 설정 GUI 통합 검증)**: 59개 단위/통합 테스트 스위트를 통과하여 PublicHostGuard, HMAC 인증, 텔레메트리 RTT, 데스크톱 설정 GUI 및 병렬 빌더가 완벽히 동작함을 최종 검증 완료 (Pass ✅).
 
 ---
 

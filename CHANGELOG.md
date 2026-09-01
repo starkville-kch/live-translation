@@ -27,9 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Attendee client ping-pong telemetry over `/ws/telemetry` tracking real-time Round Trip Time (RTT).
   - Categorization and aggregation of local Wi-Fi vs. public cloud listeners and latency percentiles.
   - Live public HTTPS status badge and RTT diagnostics displayed in operator console header and QR access card.
-- **Setup Wizard Cloudflare Section (`setup_gui.py`, `SKC_setup.exe`)**:
-  - Added Section 4 for Cloudflare Named Tunnel provisioning, live Windows service detection, and optional service install.
-  - Direct argument arrays used for subprocess execution to prevent shell injection and accidental token logging.
+- **Operator Console UI Consolidation & Latency Telemetry Accordion (`app/templates/operator.html`)**:
+  - Folded detailed Gemini processing and network RTT telemetry into a collapsible accordion (`📊 네트워크 & 지연 세부 분석 (Telemetry Details) ▼`, collapsed by default).
+  - Reorganized session metrics into a compact 3x2 grid featuring overall public latency (`공용 체감 지연 (Est. Delay)`) right before runtime.
+  - Reduced status monitor card vertical footprint to ensure the live caption preview remains prominently visible on standard desktop screens.
+- **Two-Column Desktop Setup GUI (`setup_gui.py`, `SKC_setup.exe`)**:
+  - Redesigned setup wizard into an efficient 2-column layout (1060×670 px): Left Card: Church & Local Network; Right Card: Google Gemini API (with masked key row and compact validation); Bottom Card: Public HTTPS / Cloudflare Named Tunnel.
+  - Added fixed bottom footer with dynamic readiness status pills (`🟢 Local Network`, `🟢 Gemini API`, `🟢 Public HTTPS`) and primary action buttons.
+- **Parallel Multi-Process PyInstaller Builder (`build_parallel.py`, `build_exe.bat`)**:
+  - Added multi-process parallel build runner with `-j/--workers` flags and automatic CPU core detection.
+  - Streams real-time milestone logs (`[Translation]` and `[Setup]`) with elapsed timestamps.
+  - Reports wall-clock time vs sequential compute time and parallel speedup factor.
+- **Cloudflare WAF Bot Protection User-Agent (`app/tunnel.py`)**:
+  - Configured standard browser User-Agent in probe requests (`_public_check()`) to prevent false-positive HTTP 403 blocks from Cloudflare WAF bot management.
 
 ### Changed
 - **Port Standardization (`config.yaml`, `app/config.py`, `app/tunnel.py`, `check_skc_live.bat`)**:
