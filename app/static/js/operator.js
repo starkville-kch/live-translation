@@ -35,9 +35,6 @@ const previewWrap       = document.getElementById('preview-wrap');
 const logEl             = document.getElementById('log');
 const modal             = document.getElementById('earphone-modal');
 const btnAudio          = document.getElementById('btn-audio');
-const volSlider         = document.getElementById('vol-slider');
-const volLabel          = document.getElementById('vol-label');
-const volWrapper                = document.getElementById('volume-wrapper');
 const previewMonitorTargetWrap  = document.getElementById('preview-monitor-target-wrap');
 const monitorTargetSelect       = document.getElementById('monitor-target-select');
 const audioMonitorLangDisplay   = document.getElementById('audio-monitor-lang-display');
@@ -1143,8 +1140,7 @@ function ensureAudioCtx() {
         audioCtx = new AudioContextClass();
       }
       gainNode = audioCtx.createGain();
-      const volEl = document.getElementById('vol-slider');
-      gainNode.gain.value = volEl ? parseFloat(volEl.value) : 0.8;
+      gainNode.gain.value = 1.0;
       gainNode.connect(audioCtx.destination);
       nextPlayAt = audioCtx.currentTime;
     }
@@ -1408,22 +1404,13 @@ function enableAudio() {
   audioEnabled = true;
   connectAudio();
   renderAudioButton();
-  if (volWrapper) volWrapper.style.display = 'inline-flex';
   if (modal) modal.classList.add('hidden');
-  updateVolLabel();
 }
 
 function disableAudio() {
   audioEnabled = false;
   disconnectAudio();
   renderAudioButton();
-  if (volWrapper) volWrapper.style.display = 'none';
-}
-
-function updateVolLabel() {
-  if (volLabel && volSlider) {
-    volLabel.textContent = Math.round(parseFloat(volSlider.value) * 100) + '%';
-  }
 }
 
 const modalOk = document.getElementById('modal-ok');
@@ -1465,13 +1452,6 @@ if (btnAudio) {
 if (monitorTargetSelect) {
   monitorTargetSelect.addEventListener('change', () => {
     setMonitorTarget(monitorTargetSelect.value);
-  });
-}
-
-if (volSlider) {
-  volSlider.addEventListener('input', () => {
-    if (gainNode) gainNode.gain.value = parseFloat(volSlider.value);
-    updateVolLabel();
   });
 }
 
