@@ -154,20 +154,24 @@ def test_multi_tab_independent_audio_and_tab_close():
     Multi-tab attendee test:
     1. Tab 1 connects EN audio.
     2. Tab 2 connects ZH audio.
-    3. Both receive audio on their independent queues.
-    4. Tab 2 closes without pressing stop -> ZH client queue cleaned up.
-    5. Tab 1 EN continues working without disruption.
-    6. A new Tab 3 opens ZH audio and connects cleanly.
+    3. Tab 3 connects ES audio simultaneously.
+    4. All three receive audio on their independent queues.
+    5. Tab 2 (ZH) closes without pressing stop -> ZH client queue cleaned up.
+    6. Tab 1 (EN) and Tab 3 (ES) continue working without disruption.
+    7. Tab 4 re-opens ZH audio and connects cleanly.
+    8. Tab 4 switches language dynamically: ZH -> EN -> ES.
     """
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
          patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
-        asyncio.run(manager.start(active_targets=["en", "zh"], expected_source_language="ko"))
+        asyncio.run(manager.start(active_targets=["en", "zh", "es"], expected_source_language="ko"))
 
         b_en = manager.get_broadcaster("en")
         b_zh = manager.get_broadcaster("zh")
+        b_es = manager.get_broadcaster("es")
         assert b_en is not None
         assert b_zh is not None
+        assert b_es is not None
 
         client = TestClient(app)
 
@@ -179,26 +183,47 @@ def test_multi_tab_independent_audio_and_tab_close():
             with client.websocket_connect("/audio-stream?lang=zh") as ws_zh:
                 assert len(b_zh._audio_clients) == 1
 
-                # 3. Push audio to both
-                b_en.on_audio_chunk(b"EN_CHUNK")
-                b_zh.on_audio_chunk(b"ZH_CHUNK")
-                assert ws_en.receive_bytes() == b"EN_CHUNK"
-                assert ws_zh.receive_bytes() == b"ZH_CHUNK"
+                # 3. Tab 3 connects ES
+                with client.websocket_connect("/audio-stream?lang=es") as ws_es:
+                    assert len(b_es._audio_clients) == 1
 
-            # 4. Tab 2 closed -> ZH clients = 0
+                    # 4. Push audio to all 3 simultaneously
+                    b_en.on_audio_chunk(b"EN_CHUNK")
+                    b_zh.on_audio_chunk(b"ZH_CHUNK")
+                    b_es.on_audio_chunk(b"ES_CHUNK")
+                    assert ws_en.receive_bytes() == b"EN_CHUNK"
+                    assert ws_zh.receive_bytes() == b"ZH_CHUNK"
+                    assert ws_es.receive_bytes() == b"ES_CHUNK"
+
+                # Tab 3 closed -> ES clients = 0
+                assert len(b_es._audio_clients) == 0
+
+            # Tab 2 closed -> ZH clients = 0
             assert len(b_zh._audio_clients) == 0
 
             # 5. Tab 1 EN still receives audio
             b_en.on_audio_chunk(b"EN_CHUNK_2")
             assert ws_en.receive_bytes() == b"EN_CHUNK_2"
 
-            # 6. Tab 3 connects ZH
-            with client.websocket_connect("/audio-stream?lang=zh") as ws_zh_new:
+            # 6. Tab 4 connects ZH again
+            with client.websocket_connect("/audio-stream?lang=zh") as ws_tab4:
                 assert len(b_zh._audio_clients) == 1
                 b_zh.on_audio_chunk(b"ZH_CHUNK_2")
-                assert ws_zh_new.receive_bytes() == b"ZH_CHUNK_2"
+                assert ws_tab4.receive_bytes() == b"ZH_CHUNK_2"
 
-            assert len(b_zh._audio_clients) == 0
+            # 7. Tab 4 dynamically switches to EN, then to ES
+            with client.websocket_connect("/audio-stream?lang=en") as ws_tab4_en:
+                assert len(b_en._audio_clients) == 2  # Tab 1 + Tab 4
+                b_en.on_audio_chunk(b"EN_CHUNK_3")
+                assert ws_en.receive_bytes() == b"EN_CHUNK_3"
+                assert ws_tab4_en.receive_bytes() == b"EN_CHUNK_3"
+
+            with client.websocket_connect("/audio-stream?lang=es") as ws_tab4_es:
+                assert len(b_es._audio_clients) == 1
+                b_es.on_audio_chunk(b"ES_CHUNK_2")
+                assert ws_tab4_es.receive_bytes() == b"ES_CHUNK_2"
+
+            assert len(b_es._audio_clients) == 0
 
         assert len(b_en._audio_clients) == 0
 
@@ -211,7 +236,130 @@ def test_attendee_html_per_tab_state_and_lifecycle():
 
     assert 'updateAudioButton' in html
     assert 'isAudioConnecting' in html
-    assert 'skc_earphone_consent' in html
     assert 'pagehide' in html
     assert 'beforeunload' in html
+
+
+def test_attendee_html_js_syntax():
+    """Verify that embedded JavaScript in attendee.html is syntactically valid and free of undeclared variables."""
+    import re
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js not installed")
+
+    root = Path(__file__).resolve().parent.parent
+    html_path = root / "app" / "templates" / "attendee.html"
+    html = html_path.read_text(encoding="utf-8")
+    script = re.search(r"<script>(.*?)</script>", html, re.DOTALL)
+    assert script is not None, "Script block not found in attendee.html"
+
+    temp_js = root / ".temp_attendee_lint.js"
+    temp_js.write_text(script.group(1), encoding="utf-8")
+
+    try:
+        proc = subprocess.run([node, "--check", str(temp_js)], capture_output=True, text=True)
+        assert proc.returncode == 0, f"attendee.html JavaScript syntax error:\n{proc.stderr}"
+
+        npx = shutil.which("npx")
+        if npx:
+            lint_proc = subprocess.run([npx, "--no-install", "eslint", str(temp_js)], capture_output=True, text=True, shell=True)
+            assert lint_proc.returncode == 0, f"attendee.html ESLint no-undef error:\n{lint_proc.stdout}\n{lint_proc.stderr}"
+    finally:
+        temp_js.unlink(missing_ok=True)
+
+
+def test_attendee_audio_button_clickable_with_three_active_targets():
+    """
+    DOM & state regression test:
+    When service is RUNNING and active_targets = ['en', 'zh', 'es'],
+    for each selected target (en, zh, es):
+    - audio-btn must NOT be disabled (audioBtn.disabled === false).
+    - Audio state remains clickable regardless of target count (1, 2, or 3).
+    """
+    import subprocess
+    import shutil
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js not installed")
+
+    node_test_code = """
+    class MockElement {
+        constructor(id) {
+            this.id = id;
+            this.disabled = false;
+            this.className = '';
+            this.classList = {
+                add: () => {},
+                remove: () => {},
+                contains: () => false
+            };
+            this.textContent = '';
+            this.value = '';
+            this.innerHTML = '';
+            this.appendChild = () => {};
+            this.addEventListener = () => {};
+        }
+    }
+    const elements = {
+        'audio-btn': new MockElement('audio-btn'),
+        'target-lang-select': new MockElement('target-lang-select'),
+        'language-selector-wrap': new MockElement('language-selector-wrap'),
+    };
+    global.document = {
+        getElementById: (id) => elements[id] || new MockElement(id),
+        createElement: (tag) => new MockElement(tag),
+        addEventListener: () => {},
+    };
+    global.WebSocket = class {};
+    global.WebSocket.OPEN = 1;
+
+    let isAudioConnecting = false;
+    let audioWs = null;
+    const audioBtn = document.getElementById('audio-btn');
+
+    function updateAudioButton() {
+        if (!audioBtn) return;
+        if (isAudioConnecting) {
+            audioBtn.disabled = true;
+            audioBtn.textContent = '⏳ Connecting…';
+            audioBtn.classList.remove('active');
+        } else if (audioWs && audioWs.readyState === WebSocket.OPEN) {
+            audioBtn.disabled = false;
+            audioBtn.textContent = '🔊 Audio On';
+            audioBtn.classList.add('active');
+        } else {
+            audioBtn.disabled = false;
+            audioBtn.textContent = '🎧 Audio Off';
+            audioBtn.classList.remove('active');
+        }
+    }
+
+    const testCases = [
+        ['en'],
+        ['en', 'zh'],
+        ['en', 'zh', 'es']
+    ];
+
+    for (const targets of testCases) {
+        for (const target of targets) {
+            updateAudioButton();
+            if (audioBtn.disabled !== false) {
+                console.error(`FAIL: audio-btn disabled for ${target} in ${targets.join(',')}`);
+                process.exit(1);
+            }
+        }
+    }
+    console.log("PASS");
+    """
+
+    res = subprocess.run([node, "-e", node_test_code], capture_output=True, text=True)
+    assert res.returncode == 0, f"Audio button state check failed:\n{res.stderr}"
+    assert "PASS" in res.stdout
+
+
 

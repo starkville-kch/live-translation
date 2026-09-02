@@ -57,5 +57,10 @@
       <button type="button" class="header-lang-btn" id="btn-ui-en" onclick="setOperatorUiLanguage('en')">English</button>
       <button type="button" class="header-lang-btn" id="btn-ui-ko" onclick="setOperatorUiLanguage('ko')">한국어</button>
     </div>
+    <div class="header-auth-controls" id="header-auth-controls" style="{% if auth_enabled and authenticated %}display: inline-flex;{% else %}display: none;{% endif %} align-items: center; margin-left: 6px;">
+      <button type="button" id="btn-operator-logout" class="header-lang-btn" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;" title="Lock console">
+        🔒 <span data-lang="ko">잠금</span><span data-lang="en">Lock</span>
+      </button>
+    </div>
   </div>
 </header>

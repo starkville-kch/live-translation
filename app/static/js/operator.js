@@ -88,20 +88,40 @@ async function checkAuth() {
     const res = await fetch('/api/auth/status');
     const data = await res.json();
     const modalEl = document.getElementById('auth-modal');
-    if (data.auth_enabled && !data.authenticated) {
-      if (modalEl) {
-        modalEl.classList.remove('hidden');
-        modalEl.style.display = 'flex';
+    const authControls = document.getElementById('header-auth-controls');
+    if (data.auth_enabled) {
+      if (authControls) authControls.style.display = data.authenticated ? 'inline-flex' : 'none';
+      if (!data.authenticated) {
+        if (modalEl) {
+          modalEl.classList.remove('hidden');
+          modalEl.style.display = 'flex';
+        }
+        const input = document.getElementById('auth-password');
+        if (input) input.focus();
+      } else {
+        if (modalEl) {
+          modalEl.classList.add('hidden');
+          modalEl.style.display = 'none';
+        }
       }
-      const input = document.getElementById('auth-password');
-      if (input) input.focus();
     } else {
+      if (authControls) authControls.style.display = 'none';
       if (modalEl) {
         modalEl.classList.add('hidden');
         modalEl.style.display = 'none';
       }
     }
   } catch {}
+}
+
+const btnOperatorLogout = document.getElementById('btn-operator-logout');
+if (btnOperatorLogout) {
+  btnOperatorLogout.addEventListener('click', async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    checkAuth();
+  });
 }
 
 async function submitAuth() {
@@ -568,6 +588,11 @@ if (btnPrimaryAction) {
             expected_source_language: _expectedSource
           })
         });
+        if (res.status === 401) {
+          checkAuth();
+          const isEn = getOperatorUiLanguage() === 'en';
+          throw new Error(isEn ? 'Authentication required. Please unlock console.' : '관리자 인증이 필요합니다. 암호를 입력해 주세요.');
+        }
         const startData = await res.json().catch(() => ({}));
         if (!res.ok || startData.ok === false) {
           throw new Error(startData.message || startData.error || 'Failed to start translation');
@@ -868,6 +893,7 @@ async function pollStatus() {
     const res = await fetch('/api/status');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     st = await res.json();
+    window._lastStatusSnapshot = st;
   } catch (err) {
       const ssAudio = document.getElementById('ss-audio');
       if (ssAudio) ssAudio.className = 'modern-badge status-red';
@@ -1128,7 +1154,6 @@ async function pollStatus() {
     _paused = Boolean(st.paused);
     updateControlBar(st);
     updateLanguageTargets(st);
-  }, 1000);
 }
 
 
@@ -1228,7 +1253,6 @@ function renderAudioButton() {
         <span data-lang="en">🔊 Stop</span>
       </span>
     `;
-    if (volWrapper) volWrapper.style.display = 'inline-flex';
   } else {
     btnAudio.className = 'btn-playback-mini off';
     btnAudio.title = `Click to spot-check ${displayName} audio`;
@@ -1244,7 +1268,6 @@ function renderAudioButton() {
         <span data-lang="en">${labelEn}</span>
       </span>
     `;
-    if (volWrapper) volWrapper.style.display = 'none';
   }
 }
 

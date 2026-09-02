@@ -1,5 +1,5 @@
 <!-- Operator Authentication Modal -->
-<div id="auth-modal" class="hidden">
+<div id="auth-modal" class="{% if not auth_enabled or authenticated %}hidden{% endif %}" style="{% if not auth_enabled or authenticated %}display: none;{% else %}display: flex;{% endif %}">
   <div class="modal-box">
     <div class="icon">🔑</div>
     <h2 data-lang="ko">관리자 암호 인증</h2>

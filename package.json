@@ -1,0 +1,11 @@
+{
+  "name": "skc-live-translation",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": {
+    "lint:js": "eslint app/static/js/operator.js"
+  },
+  "devDependencies": {
+    "eslint": "10.9.1"
+  }
+}

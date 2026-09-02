@@ -175,7 +175,7 @@
 {% include "operator/_auth_modal.html" %}
 {% include "operator/_manage_languages_modal.html" %}
 
-<script src="/static/js/operator.js"></script>
+<script src="/static/js/operator.js{% if build_id %}?v={{ build_id }}{% endif %}"></script>
 </body>
 </html>
 

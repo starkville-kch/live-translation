@@ -86,8 +86,12 @@
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+    position: relative;
+    z-index: 5;
   }
   .lang-wrap {
+    flex: 0 1 auto;
+    min-width: 0;
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -100,16 +104,20 @@
     color: var(--color-text-inverse);
     border: 1px solid rgba(212, 184, 114, 0.4);
     border-radius: 6px;
-    padding: 4px 24px 4px 8px;
+    padding: 0 24px 0 10px;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
     font-family: inherit;
     cursor: pointer;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23d4b872' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 6px center;
     transition: all 0.2s ease;
-    max-width: 150px;
+    width: auto;
+    max-width: 160px;
+    min-width: 90px;
+    height: 30px;
+    box-sizing: border-box;
     text-overflow: ellipsis;
     white-space: nowrap;
     overflow: hidden;
@@ -119,16 +127,67 @@
     border-color: var(--color-gold-400);
     background-color: rgba(255, 255, 255, 0.2);
   }
+  .lang-select:disabled {
+    opacity: 0.65;
+    cursor: default;
+    background-image: none;
+    padding-right: 10px;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
   .lang-select option {
     background: var(--color-navy-800);
     color: var(--color-text-inverse);
+  }
+
+  #audio-btn {
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 10;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+  .ctl-btn {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(212, 184, 114, 0.4);
+    color: var(--color-text-inverse);
+    padding: 0 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 30px;
+    box-sizing: border-box;
+  }
+  .ctl-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: var(--color-gold-400);
+  }
+  .ctl-btn.active {
+    background: var(--color-gold-500);
+    color: var(--color-navy-900);
+    border-color: var(--color-gold-400);
+    font-weight: 700;
+  }
+  .ctl-btn.active:hover {
+    background: var(--color-gold-400);
+  }
+  .ctl-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .status-pill {
     font-family: 'Noto Sans KR', sans-serif;
     font-size: 11px;
     font-weight: 700;
-    padding: 4px 8px;
+    padding: 0 8px;
+    height: 30px;
+    box-sizing: border-box;
     border-radius: 99px;
     display: inline-flex;
     align-items: center;
@@ -165,19 +224,20 @@
   /* Control Bar */
   #controls {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     padding: 10px 20px;
     background: var(--color-warm-50);
     border-bottom: 1px solid var(--color-warm-100);
     flex-shrink: 0;
-    gap: 20px;
   }
   .control-group {
     display: flex;
     align-items: center;
     gap: 12px;
-    flex: 1;
+    width: 100%;
+    max-width: 42rem;
+    margin: 0 auto;
   }
   .control-label {
     font-size: 13px;
@@ -191,34 +251,55 @@
     height: 4px;
     border-radius: 2px;
     cursor: pointer;
-    max-width: 300px;
   }
-  .ctl-btn {
-    background: var(--color-warm-white);
-    border: 1px solid var(--color-warm-100);
-    color: var(--color-navy-900);
-    padding: 6px 14px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-    transition: all 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+
+  @media (max-width: 680px) {
+    .church-header {
+      flex-wrap: wrap;
+      padding: 8px 12px;
+      gap: 8px;
+    }
+    .header-content {
+      flex: 1 1 auto;
+    }
+    .header-right {
+      flex: 0 0 auto;
+      gap: 6px;
+    }
   }
-  .ctl-btn:hover {
-    background: var(--color-navy-50);
-    border-color: var(--color-navy-100);
-  }
-  .ctl-btn.active {
-    background: var(--color-gold-500);
-    color: var(--color-text-inverse);
-    border-color: var(--color-gold-500);
-  }
-  .ctl-btn.active:hover {
-    background: var(--color-gold-400);
+
+  @media (max-width: 480px) {
+    .church-header {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 8px 12px;
+      gap: 8px;
+    }
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+    .header-right {
+      display: flex;
+      justify-content: flex-start;
+      width: 100%;
+      gap: 6px;
+    }
+    .lang-wrap {
+      flex: 1 1 auto;
+    }
+    .lang-select {
+      width: 100%;
+      max-width: none;
+    }
+    .header-right .ctl-btn {
+      flex: 0 0 auto;
+    }
+    .header-status {
+      flex: 0 0 auto;
+    }
   }
 
   /* Caption Flow Display */
@@ -367,8 +448,8 @@
 <div id="earphone-modal" class="hidden">
   <div class="modal-box">
     <div class="icon">🎧</div>
-    <h2>Use Earphones</h2>
-    <p>Audio translation will play through your device. Please use wired or Bluetooth earphones to avoid disturbing the service.</p>
+    <h2 id="modal-title">Use Earphones</h2>
+    <p id="modal-desc">Audio translation will play through your device. Please use wired or Bluetooth earphones to avoid disturbing the service.</p>
     <button class="modal-confirm" id="modal-ok">I have earphones — enable audio</button>
     <button class="modal-skip" id="modal-skip">Text only</button>
   </div>
@@ -382,10 +463,11 @@
     </div>
   </div>
   <div class="header-right">
-    <div id="language-selector-wrap" class="lang-wrap hidden">
+    <div id="language-selector-wrap" class="lang-wrap">
       <select id="target-lang-select" class="lang-select" aria-label="Select translation language">
       </select>
     </div>
+    <button id="audio-btn" class="ctl-btn" title="Enable audio translation">🎧 Audio Off</button>
     <div class="header-status">
       <span id="status-pill" class="status-pill warn">● Connecting</span>
     </div>
@@ -401,7 +483,6 @@
     <span class="control-label">Font <span id="font-size-label" style="font-variant-numeric:tabular-nums;">20px</span></span>
     <input id="font-range" type="range" min="16" max="40" value="20">
   </div>
-  <button id="audio-btn" class="ctl-btn" title="Enable audio translation">🔇 Audio Off</button>
 </div>
 
 <div id="tap-hint" style="text-align:center; font-size:12px; color:var(--color-text-muted); padding:4px 20px; background:var(--color-warm-50); border-bottom:1px solid var(--color-warm-100); flex-shrink:0;">
@@ -433,6 +514,7 @@ const langNoticeText = document.getElementById('lang-notice-text');
 let currentTargetLang = '';
 let activeLanguages = [];
 let awaitingFirstTurnForLang = null;  // set on lang switch, cleared on first update/commit
+let isPaused = false;
 
 function showNotice(msg) {
   if (!msg) {
@@ -457,6 +539,7 @@ function clearCurrentTranslationView() {
 
 function switchLanguage(newLang, updateUrl = true) {
   if (!newLang || newLang === currentTargetLang) return;
+  const wasAudioEnabled = audioEnabled;
   currentTargetLang = newLang;
 
   if (langSelect) langSelect.value = currentTargetLang;
@@ -475,9 +558,10 @@ function switchLanguage(newLang, updateUrl = true) {
   showNotice(`${displayName(newLang)} selected — waiting for next translation…`);
 
   // Rebind streams
-  disconnectAudio();
+  disconnectAudio(false);
   connect();
-  if (audioEnabled && !isPaused) {
+  if (wasAudioEnabled && !isPaused) {
+    audioEnabled = true;
     connectAudio();
   }
 
@@ -538,7 +622,7 @@ function updateAudioButton() {
     audioBtn.classList.add('active');
   } else {
     audioBtn.disabled = false;
-    audioBtn.textContent = '🔇 Audio Off';
+    audioBtn.textContent = '🎧 Audio Off';
     audioBtn.classList.remove('active');
   }
 }
@@ -670,14 +754,69 @@ function disconnectAudio(resetAudioEnabled = true) {
   }, { once: true });
 });
 
-function enableAudio() {
+const EARPHONE_TEXTS = {
+  en: {
+    title: "Use Earphones",
+    desc: "Audio translation will play through your device. Please use wired or Bluetooth earphones to avoid disturbing the service.",
+    ok: "I have earphones — enable audio",
+    skip: "Text only"
+  },
+  ko: {
+    title: "이어폰을 착용해 주세요",
+    desc: "예배 중 주변 분들에게 방해가 되지 않도록 이어폰이나 블루투스 헤드셋을 착용한 후 소리를 켜주세요.",
+    ok: "이어폰 착용 완료 — 소리 켜기",
+    skip: "자막만 보기"
+  },
+  zh: {
+    title: "请使用耳机",
+    desc: "音频将通过您的设备播放。为避免影响礼拜，请使用有线或蓝牙耳机。",
+    ok: "我有耳机 — 开启音频",
+    skip: "仅文字"
+  },
+  uk: {
+    title: "Будь ласка, використовуйте навушники",
+    desc: "Аудіовідтворення відбуватиметься через ваш пристрій. Будь ласка, використовуйте навушники, щоб не заважати богослужінню.",
+    ok: "У мене є навушники — увімкнути звук",
+    skip: "Тільки текст"
+  },
+  es: {
+    title: "Use auriculares",
+    desc: "La traducción de audio se reproducirá en su dispositivo. Por favor, use auriculares para no interrumpir el servicio.",
+    ok: "Tengo auriculares — activar audio",
+    skip: "Solo texto"
+  }
+};
+
+let earphoneConsent = false;
+try {
+  localStorage.removeItem('skc_earphone_consent');
+} catch (_) {}
+
+function updateEarphoneModalText() {
+  const lang = currentTargetLang || 'en';
+  const t = EARPHONE_TEXTS[lang] || EARPHONE_TEXTS.en;
+  const titleEl = document.getElementById('modal-title');
+  const descEl = document.getElementById('modal-desc');
+  const okBtn = document.getElementById('modal-ok');
+  const skipBtn = document.getElementById('modal-skip');
+  if (titleEl) titleEl.textContent = t.title;
+  if (descEl) descEl.textContent = t.desc;
+  if (okBtn) okBtn.textContent = t.ok;
+  if (skipBtn) skipBtn.textContent = t.skip;
+}
+
+async function enableAudio() {
+  earphoneConsent = true;
   ensureAudioCtx();
+  if (audioCtx && audioCtx.state === 'suspended') {
+    try {
+      await audioCtx.resume();
+    } catch (_) {}
+  }
   audioEnabled = true;
-  try {
-    localStorage.setItem('skc_earphone_consent', 'true');
-  } catch (_) {}
-  modal.classList.add('hidden');
+  updateAudioButton();
   connectAudio();
+  modal.classList.add('hidden');
 }
 
 document.getElementById('modal-ok').addEventListener('click', enableAudio);
@@ -685,17 +824,14 @@ document.getElementById('modal-skip').addEventListener('click', () => {
   modal.classList.add('hidden');
 });
 
-audioBtn.addEventListener('click', () => {
+audioBtn.addEventListener('click', async () => {
   if (audioEnabled || (audioWs && audioWs.readyState === WebSocket.OPEN)) {
     disconnectAudio(true);
   } else {
-    let consent = false;
-    try {
-      consent = (localStorage.getItem('skc_earphone_consent') === 'true');
-    } catch (_) {}
-    if (consent) {
-      enableAudio();
+    if (earphoneConsent) {
+      await enableAudio();
     } else {
+      updateEarphoneModalText();
       modal.classList.remove('hidden');
     }
   }
@@ -812,6 +948,78 @@ function loadChurchInfo() {
     .catch(() => {});
 }
 
+let availableLanguageMap = new Map();
+let lastActiveTargetsSnapshot = [];
+
+function renderLanguageDropdown(activeTargets) {
+  if (!langSelect || !langWrap) return;
+  langWrap.classList.remove('hidden');
+  langSelect.innerHTML = '';
+
+  if (!activeTargets || activeTargets.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Waiting for translation…';
+    langSelect.appendChild(opt);
+    langSelect.disabled = true;
+    return;
+  }
+
+  activeLanguages = activeTargets.map(code => {
+    const info = availableLanguageMap.get(code);
+    return {
+      code,
+      name: info ? info.name : code,
+      native_name: info ? info.native_name : code,
+      display: info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase()
+    };
+  });
+
+  activeLanguages.forEach(l => {
+    const opt = document.createElement('option');
+    opt.value = l.code;
+    opt.textContent = l.display;
+    langSelect.appendChild(opt);
+  });
+
+  // Enabled only when 2+ target choices exist
+  langSelect.disabled = (activeTargets.length <= 1);
+  if (currentTargetLang && activeTargets.includes(currentTargetLang)) {
+    langSelect.value = currentTargetLang;
+  }
+}
+
+function reconcileLanguages(data) {
+  if (!data) return;
+  const activeTargets = data.active_targets || ['en'];
+  const available = data.available || [];
+  if (available.length > 0) {
+    availableLanguageMap = new Map(available.map(l => [l.code, l]));
+  }
+
+  lastActiveTargetsSnapshot = [...activeTargets];
+  const prevTarget = currentTargetLang;
+  renderLanguageDropdown(activeTargets);
+
+  // Case 3: Operator removed attendee's current language
+  if (prevTarget && activeTargets.length > 0 && !activeTargets.includes(prevTarget)) {
+    const fallbackTarget = activeTargets[0] || 'en';
+    const oldInfo = availableLanguageMap.get(prevTarget);
+    const oldName = oldInfo ? oldInfo.name : prevTarget.toUpperCase();
+    const newInfo = availableLanguageMap.get(fallbackTarget);
+    const newName = newInfo ? newInfo.name : fallbackTarget.toUpperCase();
+
+    showNotice(`${oldName} translation is no longer active. Switched to ${newName}.`);
+
+    const wasAudioEnabled = audioEnabled;
+    disconnectAudio(true);
+    switchLanguage(fallbackTarget, true);
+    if (wasAudioEnabled) {
+      enableAudio();
+    }
+  }
+}
+
 async function initLanguageSelection() {
   const urlParams = new URLSearchParams(window.location.search);
   const requestedLang = (urlParams.get('lang') || '').toLowerCase().trim();
@@ -822,33 +1030,16 @@ async function initLanguageSelection() {
     const data = await res.json();
     const activeTargets = data.active_targets || ['en'];
     const available = data.available || [];
-    const availMap = new Map(available.map(l => [l.code, l]));
-
-    activeLanguages = activeTargets.map(code => {
-      const info = availMap.get(code);
-      return {
-        code,
-        name: info ? info.name : code,
-        native_name: info ? info.native_name : code,
-        display: info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase()
-      };
-    });
-
-    langSelect.innerHTML = '';
-    activeLanguages.forEach(l => {
-      const opt = document.createElement('option');
-      opt.value = l.code;
-      opt.textContent = l.display;
-      langSelect.appendChild(opt);
-    });
+    availableLanguageMap = new Map(available.map(l => [l.code, l]));
+    lastActiveTargetsSnapshot = [...activeTargets];
 
     let initialTarget = activeTargets[0] || 'en';
     if (requestedLang) {
       if (activeTargets.includes(requestedLang)) {
         initialTarget = requestedLang;
         showNotice(null);
-      } else if (availMap.has(requestedLang)) {
-        const requestedInfo = availMap.get(requestedLang);
+      } else if (availableLanguageMap.has(requestedLang)) {
+        const requestedInfo = availableLanguageMap.get(requestedLang);
         showNotice(`${requestedInfo.name} translation is not active for this session.`);
       } else {
         showNotice('The requested language is not available.');
@@ -858,13 +1049,7 @@ async function initLanguageSelection() {
     }
 
     currentTargetLang = initialTarget;
-    langSelect.value = currentTargetLang;
-
-    if (activeTargets.length > 1) {
-      langWrap.classList.remove('hidden');
-    } else {
-      langWrap.classList.add('hidden');
-    }
+    renderLanguageDropdown(activeTargets);
 
     langSelect.addEventListener('change', (e) => {
       showNotice(null);
@@ -874,9 +1059,21 @@ async function initLanguageSelection() {
   } catch (e) {
     console.warn('Language init fallback:', e);
     currentTargetLang = requestedLang || 'en';
+    renderLanguageDropdown([currentTargetLang]);
   }
 
   connect();
+
+  // Periodic reconciliation with operator active_targets
+  setInterval(async () => {
+    try {
+      const res = await fetch('/api/languages');
+      if (res.ok) {
+        const data = await res.json();
+        reconcileLanguages(data);
+      }
+    } catch (_) {}
+  }, 4000);
 }
 
 loadChurchInfo();

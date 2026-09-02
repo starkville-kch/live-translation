@@ -47,8 +47,10 @@ def is_auth_enabled() -> bool:
 
 def log_auth_status_on_startup() -> None:
     if is_auth_enabled():
+        server_log.info("[AUTH] SKC_OPERATOR_PASSWORD configured: yes")
         server_log.info("[AUTH] Operator authentication is ENABLED (Protected with SKC_OPERATOR_PASSWORD)")
     else:
+        server_log.warning("[AUTH] SKC_OPERATOR_PASSWORD configured: no")
         server_log.warning(
             "[AUTH WARNING] Operator console authentication is DISABLED (SKC_OPERATOR_PASSWORD not set). "
             "Local admin endpoints are unauthenticated."

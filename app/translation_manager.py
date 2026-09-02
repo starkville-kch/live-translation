@@ -132,10 +132,10 @@ class TranslationManager:
                 self._on_session_state(target, state)
 
         def _source_cb(src_text: str) -> None:
-            # Distribute source text deltas across all broadcasters for tap-to-reveal original transcripts
-            for b in self.broadcasters.values():
-                b.on_source_delta(src_text)
-            if self._on_source:
+            # Feed source text deltas into this target's broadcaster for tap-to-reveal original transcripts
+            broadcaster.on_source_delta(src_text)
+            # Emit to operator console only from primary target to prevent duplicate [발화]
+            if target == self.primary_target and self._on_source:
                 self._on_source(src_text)
 
         def _audio_cb(pcm_bytes: bytes) -> None:

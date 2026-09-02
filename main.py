@@ -152,13 +152,16 @@ if __name__ == "__main__":
         banner_title = banner_title[:W - 7] + "..."
 
     from app.model_resolver import model_resolver
+    from app.operator_auth import is_auth_enabled
     active_m = model_resolver.active_model
+    auth_str = "Enabled (Password protected)" if is_auth_enabled() else "Disabled (No password set)"
 
     print()
     print("╔" + "═" * W + "╗")
     print(_banner_line(banner_title))
     print("╠" + "═" * W + "╣")
     print(_banner_line(f"STATUS: Ready — Model: {active_m}"))
+    print(_banner_line(f"SECURITY: Operator Auth {auth_str}"))
     print(_banner_line())
     print(_banner_line("ATTENDEES — Public HTTPS (Scan QR or open):"))
     print(_banner_line(f"  {public_live_url}"))
@@ -180,11 +183,24 @@ if __name__ == "__main__":
     print()
 
     # Pass the app object directly (not a string) so PyInstaller frozen builds work.
-    uvicorn.run(
+    import uvicorn
+    from app.server import signal_shutdown
+
+    class SKCUvicornServer(uvicorn.Server):
+        def handle_exit(self, sig: int, frame) -> None:
+            signal_shutdown()
+            super().handle_exit(sig, frame)
+
+    server_config = uvicorn.Config(
         app,
         host=cfg.get("host", "0.0.0.0"),
         port=port,
         reload=False,
         access_log=False,
-        timeout_graceful_shutdown=1,
+        timeout_graceful_shutdown=3,
     )
+    server = SKCUvicornServer(server_config)
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        pass

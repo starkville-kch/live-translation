@@ -182,3 +182,18 @@ def test_operator_default_ui_language_config():
         # Revert back to ko
         client.post("/api/config/ui-language", json={"default_ui_language": "ko"})
 
+
+def test_operator_js_syntax():
+    import subprocess
+    import shutil
+    node_bin = shutil.which("node")
+    if node_bin:
+        js_file = Path(__file__).resolve().parent.parent / "app" / "static" / "js" / "operator.js"
+        res = subprocess.run([node_bin, "-c", str(js_file)], capture_output=True, text=True)
+        assert res.returncode == 0, f"Syntax error in operator.js: {res.stderr}"
+
+        npx = shutil.which("npx")
+        if npx:
+            lint_res = subprocess.run([npx, "--no-install", "eslint", str(js_file)], capture_output=True, text=True, shell=True)
+            assert lint_res.returncode == 0, f"ESLint no-undef error in operator.js:\n{lint_res.stdout}\n{lint_res.stderr}"
+

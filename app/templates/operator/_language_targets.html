@@ -22,12 +22,11 @@
       </div>
       <div class="lang-source-box">
         <select id="lang-source-select" class="lang-source-select" aria-label="Select spoken language">
-          <!-- Populated dynamically: Korean, English, etc. -->
+          <option value="ko" {% if not translation_cfg or translation_cfg.get('expected_source_language') == 'ko' %}selected{% endif %}>한국어 (Korean)</option>
+          <option value="en" {% if translation_cfg and translation_cfg.get('expected_source_language') == 'en' %}selected{% endif %}>English</option>
         </select>
       </div>
     </div>
-
-
 
     <!-- Today's Translation Languages / Active Telemetry -->
     <div class="lang-section" style="margin-top: 12px;">
@@ -41,7 +40,41 @@
 
       <!-- Stopped mode: Checkbox list of supported targets -->
       <div id="lang-targets-config-list" class="lang-targets-list">
-        <!-- Populated dynamically: checkboxes for supported_targets -->
+        {% if translation_cfg and translation_cfg.get('supported_targets') %}
+          {% for code in translation_cfg.get('supported_targets') %}
+            {% if code != translation_cfg.get('expected_source_language', 'ko') %}
+              {% set is_checked = code in translation_cfg.get('default_active_targets', ['en']) %}
+              {% set is_primary = loop.first or (code == translation_cfg.get('default_active_targets', ['en'])[0]) %}
+              <label class="lang-target-item{% if is_checked %} checked{% endif %}{% if is_primary and is_checked %} primary{% endif %}">
+                <input type="checkbox" value="{{ code }}" {% if is_checked %}checked{% endif %} data-code="{{ code }}">
+                <span class="lang-target-label">
+                  {%- if code == 'en' %}English
+                  {%- elif code == 'uk' %}Українська (Ukrainian)
+                  {%- elif code == 'zh' %}中文 (Chinese)
+                  {%- elif code == 'es' %}Español (Spanish)
+                  {%- elif code == 'ja' %}日本語 (Japanese)
+                  {%- else %}{{ code | upper }}
+                  {%- endif -%}
+                </span>
+                {% if is_primary and is_checked %}
+                  <span class="primary-target-badge">
+                    <span data-lang="ko">★ 주 언어</span>
+                    <span data-lang="en">★ Primary</span>
+                  </span>
+                {% endif %}
+              </label>
+            {% endif %}
+          {% endfor %}
+        {% else %}
+          <label class="lang-target-item checked primary">
+            <input type="checkbox" value="en" checked data-code="en">
+            <span class="lang-target-label">English</span>
+            <span class="primary-target-badge">
+              <span data-lang="ko">★ 주 언어</span>
+              <span data-lang="en">★ Primary</span>
+            </span>
+          </label>
+        {% endif %}
       </div>
 
       <!-- Running/Paused mode: Per-target live session telemetry cards -->

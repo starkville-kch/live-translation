@@ -121,8 +121,18 @@ class ServiceState(str, Enum):
     STOPPING = "stopping"
     FAILED = "failed"
 
+# ── Global Application Shutdown Lifecycle ────────────────────────────────────
+shutdown_event = asyncio.Event()
+
+def signal_shutdown() -> None:
+    """Signal all active SSE streams and WebSockets to terminate voluntarily."""
+    if not shutdown_event.is_set():
+        server_log.info("[Shutdown] Shutdown signal received — initiating voluntary stream closures.")
+        shutdown_event.set()
+
 _glossary = GlossaryCorrector()
 manager = TranslationManager(glossary=_glossary)
+_SERVER_BUILD_ID = int(time.time())
 audio = manager.audio
 broadcaster = manager.primary_broadcaster
 session = manager.sessions.get("en") or manager._create_session_for_target("en", "ko")
@@ -575,6 +585,7 @@ def _write_session_log() -> Optional[str]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _qr_png_cache
+    shutdown_event.clear()
     cfg = network_cfg()
     port = cfg.get("port", 8080)
     hostname = (cfg.get("hostname", "") or "").strip()
@@ -688,34 +699,31 @@ class PublicHostGuardMiddleware:
         await send({"type": "http.response.body", "body": body})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        try:
-            if not self._is_public_host(scope):
-                await self.app(scope, receive, send)
-                return
+        if not self._is_public_host(scope):
+            await self.app(scope, receive, send)
+            return
 
-            path = scope.get("path", "")
-            if scope["type"] == "http":
-                is_allowed_path = (path in self._HTTP_GET) or path.startswith("/static/")
-                if scope.get("method") != "GET" or not is_allowed_path:
-                    await self._not_found(send)
-                    return
-                if path == "/":
-                    scope = dict(scope)
-                    scope["path"] = "/live"
-                await self.app(scope, receive, send)
+        path = scope.get("path", "")
+        if scope["type"] == "http":
+            is_allowed_path = (path in self._HTTP_GET) or path.startswith("/static/")
+            if scope.get("method") != "GET" or not is_allowed_path:
+                await self._not_found(send)
                 return
+            if path == "/":
+                scope = dict(scope)
+                scope["path"] = "/live"
+            await self.app(scope, receive, send)
+            return
 
-            if scope["type"] == "websocket" and path in self._WEBSOCKETS:
-                await self.app(scope, receive, send)
-                return
+        if scope["type"] == "websocket" and path in self._WEBSOCKETS:
+            await self.app(scope, receive, send)
+            return
 
-            if scope["type"] == "websocket":
-                await send({"type": "websocket.close", "code": 1008})
-                return
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+            return
 
-            await self._not_found(send)
-        except (asyncio.CancelledError, KeyboardInterrupt):
-            pass
+        await self._not_found(send)
 
 
 app = FastAPI(lifespan=lifespan)
@@ -739,11 +747,11 @@ if _static_dir.exists():
 # ── SSE caption stream ────────────────────────────────────────────────────────
 async def _sse_generator(request: Request, q: asyncio.Queue, target_broadcaster: CaptionBroadcaster) -> AsyncIterator[str]:
     try:
-        while True:
+        while not shutdown_event.is_set():
             if await request.is_disconnected():
                 break
             try:
-                event = await asyncio.wait_for(q.get(), timeout=20.0)
+                event = await asyncio.wait_for(q.get(), timeout=0.5)
                 text_val = event.source if event.kind == "source" else (event.target or event.text)
                 payload = {
                     "kind": event.kind,
@@ -760,9 +768,8 @@ async def _sse_generator(request: Request, q: asyncio.Queue, target_broadcaster:
                     payload["time_str"] = f"{m:02d}:{s:02d}"
                 yield f"data: {json.dumps(payload)}\n\n"
 
-
             except asyncio.TimeoutError:
-                yield ": keepalive\n\n"
+                continue
     except (asyncio.CancelledError, GeneratorExit):
         pass
     finally:
@@ -840,17 +847,16 @@ async def audio_stream(ws: WebSocket, lang: Optional[str] = None):
     await ws.accept()
     q = target_broadcaster.add_audio_client()
     try:
-        while True:
+        while not shutdown_event.is_set():
             try:
-                pcm = await asyncio.wait_for(q.get(), timeout=10.0)
+                pcm = await asyncio.wait_for(q.get(), timeout=0.5)
                 if ws.client_state.name != "CONNECTED":
                     break
                 await ws.send_bytes(pcm)
             except asyncio.TimeoutError:
-                # Keepalive: send empty bytes frame during silence to prevent disconnect
                 if ws.client_state.name != "CONNECTED":
                     break
-                await ws.send_bytes(b"")
+                continue
     except (WebSocketDisconnect, asyncio.CancelledError, ConnectionResetError, BrokenPipeError, OSError):
         pass
     except Exception as e:
@@ -866,8 +872,11 @@ async def audio_stream(ws: WebSocket, lang: Optional[str] = None):
 async def telemetry_stream(ws: WebSocket):
     await ws.accept()
     try:
-        while True:
-            data = await ws.receive_json()
+        while not shutdown_event.is_set():
+            try:
+                data = await asyncio.wait_for(ws.receive_json(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
             msg_type = data.get("type")
             if msg_type == "latency_ping":
                 await ws.send_json({
@@ -1618,14 +1627,28 @@ async def attendee_page():
 
 
 @app.get("/admin", response_class=HTMLResponse)
-async def operator_page():
+async def operator_page(request: Request):
     default_lang = church_cfg().get("default_ui_language", "ko")
     models_state = model_resolver.get_state()
-    return _read_template("operator.html", default_ui_lang=default_lang, models=models_state)
+    t_cfg = translation_cfg()
+    auth_enabled = is_auth_enabled()
+    authenticated = is_authenticated(request)
+    return _read_template(
+        "operator.html",
+        default_ui_lang=default_lang,
+        models=models_state,
+        translation_cfg=t_cfg,
+        auth_enabled=auth_enabled,
+        authenticated=authenticated,
+        build_id=_SERVER_BUILD_ID,
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root_redirect():
+async def root_redirect(request: Request):
+    host = request.headers.get("host", "").lower()
+    if "localhost" in host or "127.0.0.1" in host:
+        return RedirectResponse(url="/admin", status_code=307)
     return RedirectResponse(url="/live", status_code=307)
 
 

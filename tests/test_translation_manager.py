@@ -220,3 +220,87 @@ def test_manager_state_representation():
     assert "sessions" in st
     assert "audio" in st
     assert st["audio"]["status"] == "stopped"
+
+
+def test_manager_directional_failure_isolation_and_source_preview():
+    """Verify failure isolation matrix in both directions:
+    Test A (Secondary ZH failure/reconnect):
+      Primary EN continues translating; operator [발화] continues unbroken.
+    Test B (Primary EN failure/reconnect):
+      Secondary ZH continues translating; shared microphone remains active;
+      operator [발화] pauses only during EN disconnect and resumes cleanly on reconnect.
+    """
+    async def _run():
+        mock_audio = MagicMock(spec=AudioCapture)
+        mock_audio.start = MagicMock()
+        mock_audio.stop = MagicMock()
+
+        source_events = []
+        caption_events = []
+
+        def _on_source(text: str):
+            source_events.append(text)
+
+        def _on_caption(target: str, text: str):
+            caption_events.append((target, text))
+
+        mgr = TranslationManager(
+            audio_capture=mock_audio,
+            on_source=_on_source,
+            on_caption=_on_caption,
+        )
+
+        with patch.object(GeminiSession, "start", new_callable=AsyncMock):
+            await mgr.start(active_targets=["en", "zh"], expected_source_language="ko")
+            assert mgr.primary_target == "en"
+
+            sess_en = mgr.sessions["en"]
+            sess_zh = mgr.sessions["zh"]
+
+            # 1. Baseline: both receive speech
+            sess_en._on_source("안녕하세요 (EN)")
+            sess_zh._on_source("안녕하세요 (ZH)")
+            # Only primary EN calls operator _on_source
+            assert source_events == ["안녕하세요 (EN)"]
+
+            sess_en._on_caption("Hello")
+            sess_zh._on_caption("你好")
+            assert ("en", "Hello") in caption_events
+            assert ("zh", "你好") in caption_events
+
+            # 2. Test A: Secondary ZH fails / reconnects (epoch 1 -> 2)
+            sess_zh.session_status = SessionStatus.RECONNECTING
+            # Primary EN continues translation & source preview
+            sess_en._on_source("환영합니다 (EN)")
+            sess_en._on_caption("Welcome")
+            assert source_events == ["안녕하세요 (EN)", "환영합니다 (EN)"]
+            assert ("en", "Welcome") in caption_events
+            # Microphone remains active and service remains running
+            assert mgr.is_running is True
+            mock_audio.stop.assert_not_called()
+
+            # ZH reconnects
+            sess_zh.session_status = SessionStatus.CONNECTED
+            sess_zh._on_caption("欢迎")
+            assert ("zh", "欢迎") in caption_events
+
+            # 3. Test B: Primary EN fails / reconnects (epoch 1 -> 2)
+            sess_en.session_status = SessionStatus.RECONNECTING
+            # Secondary ZH continues translating uninterrupted
+            sess_zh._on_caption("很高兴见到你")
+            assert ("zh", "很高兴见到你") in caption_events
+            # Service and audio capture remain alive
+            assert mgr.is_running is True
+            mock_audio.stop.assert_not_called()
+
+            # EN reconnects cleanly and resumes source deltas
+            sess_en.session_status = SessionStatus.CONNECTED
+            sess_en._on_source("감사합니다 (EN)")
+            sess_en._on_caption("Thank you")
+            assert source_events[-1] == "감사합니다 (EN)"
+            assert ("en", "Thank you") in caption_events
+
+            await mgr.stop()
+
+    asyncio.run(_run())
+

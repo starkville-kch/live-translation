@@ -198,3 +198,42 @@ def test_status_default_drift_correction_is_manual_before_start():
     data = res.json()
     assert data["auto_drift_correction"] is False
 
+
+def test_signal_shutdown_terminates_active_streams_cleanly():
+    """
+    Verify that when signal_shutdown() is called:
+    - shutdown_event is set.
+    - _sse_generator exits cleanly without hanging or raising CancelledError.
+    - Target broadcaster removes the client queue cleanly.
+    """
+    from app.server import shutdown_event, signal_shutdown, _sse_generator
+    from unittest.mock import MagicMock
+
+    shutdown_event.clear()
+    assert not shutdown_event.is_set()
+
+    q = asyncio.Queue()
+    mock_b = MagicMock()
+    mock_req = MagicMock()
+    mock_req.is_disconnected = AsyncMock(return_value=False)
+
+    async def run_test():
+        gen = _sse_generator(mock_req, q, mock_b)
+        await q.put(CaptionEvent(kind="ping"))
+        item = await gen.__anext__()
+        assert "ping" in item
+
+        # Trigger shutdown
+        signal_shutdown()
+        assert shutdown_event.is_set()
+
+        # Next iteration should terminate voluntarily (StopAsyncIteration)
+        with pytest.raises(StopAsyncIteration):
+            await gen.__anext__()
+
+        mock_b.remove_client.assert_called_once_with(q)
+
+    asyncio.run(run_test())
+    shutdown_event.clear()
+
+
