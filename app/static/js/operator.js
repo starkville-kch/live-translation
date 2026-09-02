@@ -858,13 +858,17 @@ function startEventPoll() {
 // ============================================================
 function startStatusPoll() {
   if (polling) clearInterval(polling);
-  polling = setInterval(async () => {
-    let st;
-    try {
-      const res = await fetch('/api/status');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      st = await res.json();
-    } catch (err) {
+  pollStatus();
+  polling = setInterval(pollStatus, 1000);
+}
+
+async function pollStatus() {
+  let st;
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    st = await res.json();
+  } catch (err) {
       const ssAudio = document.getElementById('ss-audio');
       if (ssAudio) ssAudio.className = 'modern-badge status-red';
       const ssGemini = document.getElementById('ss-gemini');
@@ -993,22 +997,26 @@ function startStatusPoll() {
         sel.disabled = st.service_running || isTestingModel;
         const currentOpts = Array.from(sel.options).map(o => o.value);
         const newModels = m.available_models || [m.fallback_model];
-        if (JSON.stringify(currentOpts) !== JSON.stringify(newModels)) {
+        const isEn = getOperatorUiLanguage() === 'en';
+        const langRendered = sel.getAttribute('data-lang-rendered');
+        const currentLangKey = isEn ? 'en' : 'ko';
+        if (JSON.stringify(currentOpts) !== JSON.stringify(newModels) || langRendered !== currentLangKey || sel.options.length === 0) {
           sel.innerHTML = '';
+          sel.setAttribute('data-lang-rendered', currentLangKey);
           newModels.forEach(name => {
             const opt = document.createElement('option');
             opt.value = name;
             let label = name;
             if (name === m.fallback_model && name === m.preferred_model) {
-              label += ' — 기본 · 권장';
+              label += isEn ? ' — Default · Recommended' : ' — 기본 · 권장';
             } else if (name === m.fallback_model) {
-              label += ' — 기본';
+              label += isEn ? ' — Default' : ' — 기본';
             } else if (name === m.preferred_model) {
-              label += ' — 권장';
+              label += isEn ? ' — Recommended' : ' — 권장';
             } else if (name === m.last_known_good_model) {
-              label += ' — 최근 검증됨';
+              label += isEn ? ' — Last Verified' : ' — 최근 검증됨';
             } else {
-              label += ' — 새 모델 · 확인 중';
+              label += isEn ? ' — New Model' : ' — 새 모델 · 확인 중';
             }
             opt.textContent = label;
             if (name === m.preferred_model || name === m.active_model) opt.selected = true;

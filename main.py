@@ -151,11 +151,14 @@ if __name__ == "__main__":
     if len(banner_title) > W - 4:
         banner_title = banner_title[:W - 7] + "..."
 
+    from app.model_resolver import model_resolver
+    active_m = model_resolver.active_model
+
     print()
     print("╔" + "═" * W + "╗")
     print(_banner_line(banner_title))
     print("╠" + "═" * W + "╣")
-    print(_banner_line("STATUS: Ready"))
+    print(_banner_line(f"STATUS: Ready — Model: {active_m}"))
     print(_banner_line())
     print(_banner_line("ATTENDEES — Public HTTPS (Scan QR or open):"))
     print(_banner_line(f"  {public_live_url}"))

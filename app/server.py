@@ -1620,9 +1620,8 @@ async def attendee_page():
 @app.get("/admin", response_class=HTMLResponse)
 async def operator_page():
     default_lang = church_cfg().get("default_ui_language", "ko")
-    if getattr(sys, "frozen", False):
-        return _read_template("operator.html", default_ui_lang=default_lang)
-    return _read_template("operator.html", default_ui_lang=default_lang)
+    models_state = model_resolver.get_state()
+    return _read_template("operator.html", default_ui_lang=default_lang, models=models_state)
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -22,7 +22,23 @@
   </span>
   <div class="stat-row-content">
     <div class="model-control-group">
-      <select id="model-select"></select>
+      <select id="model-select">
+        {% if models and models.available_models %}
+          {% for name in models.available_models %}
+            <option value="{{ name }}" {% if name == models.preferred_model or name == models.active_model %}selected{% endif %}>
+              {{ name }}
+              {%- if name == models.fallback_model and name == models.preferred_model %} — 기본 · 권장
+              {%- elif name == models.fallback_model %} — 기본
+              {%- elif name == models.preferred_model %} — 권장
+              {%- elif name == models.last_known_good_model %} — 최근 검증됨
+              {%- else %} — 새 모델 · 확인 중
+              {%- endif -%}
+            </option>
+          {% endfor %}
+        {% else %}
+          <option value="gemini-3.5-live-translate-preview" selected>gemini-3.5-live-translate-preview — 기본 · 권장</option>
+        {% endif %}
+      </select>
       <span id="stat-model-status">✓ Ready</span>
       <button class="btn" id="btn-test-selected-model">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
