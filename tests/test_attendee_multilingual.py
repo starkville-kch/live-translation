@@ -2,7 +2,6 @@
 tests/test_attendee_multilingual.py — Tests for Attendee Multilingual UI & Stream Binding
 """
 import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient

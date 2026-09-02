@@ -1,12 +1,8 @@
-"""Tests for Operator Authentication Boundary."""
-import os
-import pytest
 from fastapi.testclient import TestClient
 from app.server import app
 from app.operator_auth import (
     create_session_token,
     is_auth_enabled,
-    verify_password,
     verify_session_token,
 )
 

@@ -59,21 +59,22 @@ On /api/stop, ``_write_session_log()`` writes exactly four canonical files to
 import asyncio
 import io
 import json
-
 import socket
+import sys
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import AsyncIterator, List, Optional
+from typing import AsyncIterator, Optional
 
+from jinja2 import Environment, FileSystemLoader
 import qrcode
 from starlette.types import ASGIApp, Receive, Scope, Send
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from app.audio import AudioCapture, AudioStatus, list_input_devices
-from app.broadcast import CaptionBroadcaster, CaptionEvent
+from app.audio import AudioStatus, list_input_devices
+from app.broadcast import CaptionBroadcaster
 from app.config import (
     audio_cfg,
     church_cfg,
@@ -89,7 +90,7 @@ from app.config import (
 )
 
 from app.events import operator_events
-from app.gemini_session import GeminiSession, SessionState, SessionStatus
+from app.gemini_session import SessionStatus
 from app.glossary import GlossaryCorrector
 from app.languages import get_available_languages, get_language, is_valid_language_code
 from app.logger import server_log
@@ -1653,8 +1654,6 @@ async def root_redirect(request: Request):
 
 
 def _read_template(filename: str, **kwargs) -> str:
-    import sys
-    from jinja2 import Environment, FileSystemLoader
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         template_dir = Path(sys._MEIPASS) / "app" / "templates"
     else:
@@ -1671,6 +1670,5 @@ def _read_template(filename: str, **kwargs) -> str:
 
 
 # Cache templates in production
-import sys
 _ATTENDEE_HTML_CACHE = _read_template("attendee.html")
 

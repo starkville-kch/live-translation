@@ -2,7 +2,6 @@
 tests/test_server_multilingual_routes.py — Tests for Multilingual Server Routes & Status
 """
 import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.audio import AudioCapture
 from app.broadcast import CaptionEvent
 from app.gemini_session import GeminiSession
-from app.server import app, manager, _state, ServiceState
+from app.server import app, manager, _state
 
 
 @pytest.fixture(autouse=True)
