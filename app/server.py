@@ -61,12 +61,14 @@ import io
 import json
 
 import socket
+import sys
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterator
 
+from jinja2 import Environment, FileSystemLoader
 import qrcode
 from starlette.types import ASGIApp, Receive, Scope, Send
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
@@ -1270,8 +1272,6 @@ async def root_redirect():
 
 
 def _read_template(filename: str) -> str:
-    import sys
-    from jinja2 import Environment, FileSystemLoader
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         template_dir = Path(sys._MEIPASS) / "app" / "templates"
     else:
@@ -1288,7 +1288,6 @@ def _read_template(filename: str) -> str:
 
 
 # Cache templates in production
-import sys
 _ATTENDEE_HTML_CACHE = _read_template("attendee.html")
 _OPERATOR_HTML_CACHE = _read_template("operator.html")
 

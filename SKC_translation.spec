@@ -10,7 +10,7 @@
 # Build environment setup (one-time):
 #   conda create -n skc_build python=3.11 --yes
 #   conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy \
-#       python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf pyinstaller
+#       python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf jinja2 pyinstaller
 
 import sys
 from pathlib import Path
