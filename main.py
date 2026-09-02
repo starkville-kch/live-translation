@@ -177,4 +177,11 @@ if __name__ == "__main__":
     print()
 
     # Pass the app object directly (not a string) so PyInstaller frozen builds work.
-    uvicorn.run(app, host=cfg.get("host", "0.0.0.0"), port=port, reload=False, access_log=False)
+    uvicorn.run(
+        app,
+        host=cfg.get("host", "0.0.0.0"),
+        port=port,
+        reload=False,
+        access_log=False,
+        timeout_graceful_shutdown=1,
+    )

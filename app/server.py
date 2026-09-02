@@ -621,10 +621,11 @@ async def lifespan(app: FastAPI):
             for b in manager.broadcasters.values():
                 b._push(CaptionEvent(kind="ping"))
 
-    asyncio.create_task(_ping())
+    ping_task = asyncio.create_task(_ping())
     try:
         yield
     finally:
+        ping_task.cancel()
         tunnel_mgr = getattr(app.state, "tunnel_manager", None)
         if tunnel_mgr:
             tunnel_mgr.stop()
@@ -687,31 +688,34 @@ class PublicHostGuardMiddleware:
         await send({"type": "http.response.body", "body": body})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        if not self._is_public_host(scope):
-            await self.app(scope, receive, send)
-            return
-
-        path = scope.get("path", "")
-        if scope["type"] == "http":
-            is_allowed_path = (path in self._HTTP_GET) or path.startswith("/static/")
-            if scope.get("method") != "GET" or not is_allowed_path:
-                await self._not_found(send)
+        try:
+            if not self._is_public_host(scope):
+                await self.app(scope, receive, send)
                 return
-            if path == "/":
-                scope = dict(scope)
-                scope["path"] = "/live"
-            await self.app(scope, receive, send)
-            return
 
-        if scope["type"] == "websocket" and path in self._WEBSOCKETS:
-            await self.app(scope, receive, send)
-            return
+            path = scope.get("path", "")
+            if scope["type"] == "http":
+                is_allowed_path = (path in self._HTTP_GET) or path.startswith("/static/")
+                if scope.get("method") != "GET" or not is_allowed_path:
+                    await self._not_found(send)
+                    return
+                if path == "/":
+                    scope = dict(scope)
+                    scope["path"] = "/live"
+                await self.app(scope, receive, send)
+                return
 
-        if scope["type"] == "websocket":
-            await send({"type": "websocket.close", "code": 1008})
-            return
+            if scope["type"] == "websocket" and path in self._WEBSOCKETS:
+                await self.app(scope, receive, send)
+                return
 
-        await self._not_found(send)
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
+                return
+
+            await self._not_found(send)
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            pass
 
 
 app = FastAPI(lifespan=lifespan)
@@ -759,6 +763,8 @@ async def _sse_generator(request: Request, q: asyncio.Queue, target_broadcaster:
 
             except asyncio.TimeoutError:
                 yield ": keepalive\n\n"
+    except (asyncio.CancelledError, GeneratorExit):
+        pass
     finally:
         target_broadcaster.remove_client(q)
 
