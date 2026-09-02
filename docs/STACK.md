@@ -132,3 +132,39 @@ output_audio_transcription=types.AudioTranscriptionConfig()
 
 ### 5. 병렬 멀티스레드 빌드 파이프라인
 - `build_parallel.py`를 통해 `SKC_translation.spec`과 `SKC_setup.spec`을 멀티코어 환경에서 병렬 실행하여 바이너리 패키징 시간을 50% 단축하고, 콘솔에 실시간 진행 마일스톤과 실제 경과 시간(Wall-clock time)을 출력합니다.
+
+---
+
+## 7. 다중 타겟 실시간 통역 및 런타임 안정화 원칙 (Release v3.1.0)
+
+### 1. 단일 오디오 캡처 + 다중 타겟 팬아웃 (One-Audio Multi-Session)
+- **결정**: 하드웨어 마이크/믹서는 오직 1개의 `AudioCapture` 인스턴스만 독점 점유합니다.
+- `TranslationManager`가 캡처된 단일 16kHz PCM 청크를 메모리 내에서 활성화된 각 타겟 세션(`GeminiSession[lang]`)으로 비동기 팬아웃합니다.
+- **불변 원칙**: 타겟 언어가 3개 이상 추가되더라도 마이크 장치 캡처 스레드는 항상 1개만 동작해야 하며, 오디오 장치를 중복 오픈하거나 별도 프로세스를 띄우지 않습니다.
+
+### 2. 방향성 세션 장애 격리 (Directional Failure Isolation)
+- **주 타겟(Primary: EN) 장애 시**: 보조 타겟(Secondary: ZH, ES) 세션과 마이크 캡처는 중단 없이 지속됩니다. 운영자 화면의 `[발화]` 미리보기만 주 세션 재연결 동안 일시 멈췄다가 복구 시 중복/깨짐 없이 재개됩니다.
+- **보조 타겟(Secondary) 장애 시**: 주 타겟(EN) 통역, 운영자 화면, 마이크 캡처는 어떠한 지연이나 중단도 겪지 않습니다.
+- **불변 원칙**: 특정 언어 세션의 일시적 끊김이나 오류가 다른 언어 청취자나 전체 번역 파이프라인을 중단시키지 않아야 합니다.
+
+### 3. 참석자 Web Audio 동기식 제스처 활성화 (User-Gesture Activation)
+- 모바일 브라우저(iOS Safari / Android Chrome)는 비동기 콜백 중간에 생성되거나 재개되는 `AudioContext`를 `suspended` 상태로 차단합니다.
+- **결정**: 이어폰 확인 모달의 `[확인]` 버튼 클릭 이벤트 핸들러 스택 내부에서 즉시 동기식으로 `AudioContext.resume()`을 호출한 뒤 비동기 WebSocket 연결 및 UI 업데이트를 진행합니다.
+- 다중 언어 3개 탭 동시 청취는 단일 PC 사운드카드 공유 시 경합이 발생할 수 있으나, 실제 운영 환경에서는 개별 참석자의 독립 기기에서 1인 1컨텍스트로 완전히 격리되어 재생됩니다.
+
+### 4. 자발적 셧다운 수명주기 (Voluntary Shutdown Lifecycle)
+- 기존에는 Ctrl+C 발생 시 Uvicorn이 3초 graceful timeout 동안 SSE 큐 대기(`queue.get()`)를 강제 종료하면서 ASGI `CancelledError` 및 `KeyboardInterrupt` 트레이스백을 출력했습니다.
+- **결정**:
+  1. 전역 `shutdown_event = asyncio.Event()` 및 `signal_shutdown()` 도입.
+  2. `SKCUvicornServer` 서브클래스에서 OS 첫 번째 시그널 포착 즉시 `signal_shutdown()` 트리거.
+  3. `_sse_generator`, `audio_stream`, `telemetry_stream`이 0.5초 타임아웃으로 이벤트를 확인하고 **자발적으로 리턴**하여 스트림을 우아하게 종료.
+  4. `main.py` 프로세스 경계에서 `KeyboardInterrupt`를 정상 종료로 처리.
+
+### 5. 오프라인 고정 린팅 원칙 (Pinned Offline Static Linting)
+- 테스트 스위트 내에서 `npx -y`를 호출하면 네트워크 동적 다운로드 의존성 및 미래 버전 파편화가 발생합니다.
+- **결정**: `package.json`에 `eslint: 10.9.1`을 로컬 개발 의존성으로 고정하고, 테스트 스위트에서는 `npx --no-install eslint`를 호출하여 100% 오프라인 상태에서도 `no-undef` 정적 검증이 보장되도록 합니다.
+
+### 6. 서버 렌더링 템플릿 및 패키징 (Jinja2)
+- 운영자 인증 모달과 동적 레이아웃은 클라이언트 측 JS 실행 전 서버 사이드 Jinja2 템플릿(`app/templates/operator/_auth_modal.html`)으로 완성되어 전송됩니다.
+- 단일 실행 파일 빌드 시 `jinja2`가 번들에 누락되지 않도록 `requirements.txt`와 `SKC_translation.spec`에 명시적 의존성으로 등록 및 관리합니다.
+

@@ -5,6 +5,42 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-09-02
+
+### Added
+- **Multilingual Multi-Target Live Translation (`app/translation_manager.py`, `app/languages.py`, `app/server.py`)**:
+  - `TranslationManager` fan-out pipeline managing concurrent per-target `GeminiSession`s from a single shared microphone capture.
+  - Standard catalog of 70+ supported languages (`app/languages.py`) with native naming and code validation.
+  - Multi-target routing for attendee SSE caption streams (`/stream?lang=<target>`) and binary audio streams (`/audio-stream?lang=<target>`).
+  - Active targets dynamic synchronization endpoint `GET /api/languages`.
+  - Canonical 4-file post-service session export (`session.json`, `transcript.jsonl`, `transcript.md`, `summary.txt`) capturing multi-target turns and per-target billing metrics.
+- **Server-Rendered Operator Authentication (`app/templates/operator/_auth_modal.html`, `app/operator_auth.py`, `app/server.py`)**:
+  - Auth modal rendered directly into server HTML when unauthenticated, eliminating client-side JavaScript execution timing lag.
+- **Directional Session Failure Isolation (`app/translation_manager.py`, `tests/test_translation_manager.py`)**:
+  - Primary target session failure isolated so secondary translations and shared microphone continue uninterrupted.
+  - Secondary target failure isolated so primary session and operator live preview continue uninterrupted.
+- **Voluntary Streaming Shutdown Lifecycle (`app/server.py`, `main.py`)**:
+  - Global `shutdown_event` and `signal_shutdown()` triggering early voluntary termination across active SSE, audio, and telemetry streams.
+  - `SKCUvicornServer` subclass in `main.py` overriding `handle_exit` to initiate stream drainage on first OS signal.
+  - Process-level `KeyboardInterrupt` handling in `main.py` eliminating ASGI `CancelledError` tracebacks.
+- **Pinned Offline JavaScript Static Analysis (`eslint.config.mjs`, `package.json`)**:
+  - Pinned local `eslint` (v10.9.1) enforcing `no-undef: error` across browser JavaScript files.
+  - Automated offline test assertions using `npx --no-install eslint` inside `tests/test_operator_ui.py` and `tests/test_attendee_multilingual.py`.
+
+### Changed
+- **Attendee UI & Audio Controls Layout (`app/templates/attendee.html`)**:
+  - Moved audio toggle into persistent header bar directly adjacent to the language selector and status pill.
+  - Simplified control bar below header to contain font size slider only.
+  - Language selector permanently visible: disabled when active targets $\le 1$, interactive dropdown when active targets $\ge 2$.
+  - Enforced explicit CSS flex and z-index boundaries preventing select element from overlapping the audio button on 3+ target choices.
+  - Synchronous `AudioContext.resume()` execution directly inside user click gesture stack for earphone modal confirmation.
+  - Runtime reconciliation polling `/api/languages` with notification banner and fallback switching if operator removes attendee's active language.
+- **Model Resolver Idempotence (`app/model_resolver.py`)**:
+  - Guarded `unlock_session()` to ignore redundant unlock invocations during multi-target session teardown.
+- **PyInstaller Packaging (`requirements.txt`, `SKC_translation.spec`, `build_exe.bat`)**:
+  - Added `jinja2>=3.1.2` dependency to `requirements.txt` and PyInstaller build specifications.
+  - Validated standalone execution of `SKC_translation.exe` without missing module errors.
+
 ## [3.0.0] - 2026-08-31
 
 ### Added

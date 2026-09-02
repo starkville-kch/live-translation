@@ -14,29 +14,29 @@ After any major piece of work, update this file and the relevant docs.
 ---
 
 ## Project Summary
-Real-time Korean→English captioning appliance for church services. Audio from USB mixer → Gemini Live API (`gemini-3.5-live-translate-preview`) → English captions over SSE + translated audio over binary WebSocket → attendee phones. Single session per 60–90 min service. Standard port: **8080** (accessible via `http://skc.local:8080` / `http://skc.local:8080/admin` on LAN, or `https://live.starkvillekoreanchurch.org` via Cloudflare Named Tunnel).
+Real-time multilingual live translation appliance for church services. Single audio capture from USB mixer → `TranslationManager` fanout to concurrent Gemini Live sessions (`gemini-3.5-live-translate-preview`) → target-specific captions over SSE (`/stream?lang=...`) + translated voice over binary WebSocket (`/audio-stream?lang=...`) → attendee mobile phones (supporting 70+ languages, e.g. English, Chinese, Spanish, Ukrainian). Standard port: **8080** (`http://skc.local:8080` / `http://skc.local:8080/admin` on LAN, or `https://live.starkvillekoreanchurch.org` via Cloudflare Named Tunnel).
 
 ---
 
 ## Architecture
 ```
-[USB Mixer] → app/audio.py (PCM16 16kHz) → app/gemini_session.py (Gemini Live)
-                                                       ↓
-                                              app/broadcast.py
-                                              ├── SSE caption fanout (_clients)
-                                              └── PCM audio fanout (_audio_clients)
-                                                       ↓
-                                              app/events.py (OperatorEventLog)
-                                              └── thread-safe ring buffer, polled by frontend
-                                                       ↓
-                                              app/server.py (FastAPI)
-                                              ├── GET  /admin                ← operator page
-                                              ├── GET  /                     ← attendee phone page
-                                              ├── GET  /stream               ← SSE caption stream
-                                              ├── WS   /audio-stream         ← binary PCM16 audio
-                                              ├── GET  /api/qr.png           ← QR → / at current hostname
-                                              ├── POST /api/start|stop|pause|resume
-                                              └── GET  /api/events?since=N   ← operator event polling
+[USB Mixer] → app/audio.py (PCM16 16kHz, single capture)
+                     ↓
+          app/translation_manager.py (central orchestrator & failure isolation)
+          ├── app/gemini_session.py [target: en, zh, es, ...] (per-target Gemini Live sessions)
+          └── app/broadcast.py [target: en, zh, es, ...] (per-target SSE & PCM audio fanout)
+                     ↓
+          app/events.py (OperatorEventLog — ring buffer, polled by frontend)
+                     ↓
+          app/server.py (FastAPI, shutdown_event lifecycle, PublicHostGuard)
+          ├── GET  /admin                ← operator console (auth protected, multi-target selection)
+          ├── GET  /live                 ← attendee page (persistent language selector + audio)
+          ├── GET  /stream?lang=...      ← target-specific SSE caption stream
+          ├── WS   /audio-stream?lang=...← target-specific binary PCM16 audio stream
+          ├── WS   /ws/telemetry         ← RTT & latency decomposition telemetry
+          ├── GET  /api/languages        ← active & supported target language catalog
+          ├── GET  /api/qr.png           ← QR → / at current hostname
+          └── POST /api/start|stop|pause|resume
 ```
 
 ---
@@ -103,6 +103,9 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 - **Telemetry Latency Decomposition (`/ws/telemetry`, `app/templates/operator.html`)**: Decomposed telemetry into Gemini Processing Latency (AI turn-onset), Local/Public WebSocket RTT, and Public End-to-End Latency (~1.1s) displayed cleanly in operator console with collapsible detailed diagnostics.
 - **Parallel Multi-Process PyInstaller Builder (`build_parallel.py`)**: Concurrently builds `SKC_translation.spec` and `SKC_setup.spec` across available CPU cores, outputting live milestone logs and wall-clock execution time.
 - **Cloudflare WAF Bot Protection User-Agent (`app/tunnel.py`)**: Probe HTTP requests use a standard browser User-Agent (`Mozilla/5.0...`) to prevent Cloudflare WAF bot management 403 Forbidden false alarms.
+- **Multilingual Fanout & Directional Failure Isolation (`app/translation_manager.py`)**: Hardware microphone capture is strictly single-instance. `TranslationManager` fans out PCM audio to concurrent `GeminiSession[target]` instances. Primary session failure does not terminate secondary streams; secondary failure does not interrupt primary stream or operator live captioning preview.
+- **Voluntary Streaming Shutdown Lifecycle (`app/server.py`, `main.py`)**: `shutdown_event = asyncio.Event()` signals active SSE/WS streams to exit gracefully within 0.5s. `SKCUvicornServer` intercepts signals to trigger early voluntary drainage, and `main.py` catches `KeyboardInterrupt` at the process level to eliminate ASGI `CancelledError` noise.
+- **Pinned Offline JavaScript Linter (`eslint.config.mjs`, `package.json`)**: `eslint: 10.9.1` is pinned locally in `package.json`. Pytest runs `npx --no-install eslint` to ensure 100% offline reproducibility and prevent undeclared variable bugs (`no-undef`).
 - **Repository Testing Conventions**:
   - Run Python tests exclusively from the repository root using `python -m pytest tests/...`.
   - Never execute test files directly (`python tests/test_file.py`).
@@ -115,16 +118,18 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 
 | Document | Content | Read when |
 |---|---|---|
-| `docs/STACK.md` | 기술적 의사결정 및 영구 불변 원칙 (Language hints, Clean reset, LKG cascade) | 아키텍처 원칙 및 실패 경험 재발 방지 확인 시 |
+| `docs/STACK.md` | 기술적 의사결정 및 영구 불변 원칙 (Language hints, Clean reset, LKG cascade, Multi-target fanout) | 아키텍처 원칙 및 실패 경험 재발 방지 확인 시 |
+| `app/translation_manager.py` | `TranslationManager` — multi-target session lifecycle, audio fanout, failure isolation | Understanding multilingual orchestration |
+| `app/languages.py` | 70+ target language catalog, native display names, validation | Understanding language capabilities |
 | `app/events.py` | `OperatorEventLog` — thread-safe ring buffer, 7 categories, `since(last_id)` API | Understanding operator event plumbing |
 | `app/model_resolver.py` | Model discovery, candidate classification, 5-tier lifecycle, fallback cascade | Understanding model selection and fallback |
 | `app/gemini_session.py` | Gemini Live WebSocket session runner, anti-contamination boundaries, drift watchdog | Understanding Gemini Live integration |
-| `docs/PLAN.md` | 시스템 개요, 파일 맵, 단계별 개발 현황(0–22), 신뢰성 요구사항, 설정 참조 | 아키텍처 및 시스템 사양 확인 시 |
+| `docs/PLAN.md` | 시스템 개요, 파일 맵, 단계별 개발 현황(0–24), 신뢰성 요구사항, 설정 참조 | 아키텍처 및 시스템 사양 확인 시 |
 | `docs/TECHNICAL.md` | 코드 레벨: FastAPI 라우트, Gemini 세션, 오디오 파이프라인, asyncio 패턴 | 코드 수정 및 디버깅 시 |
-| `docs/WALKTHROUGH.md` | 세션별 빌드 기록, 검증 프로토콜(V0–V22) 결과, 기술적 회고 | 과거 기술 의사결정 및 이슈 추적 시 |
+| `docs/WALKTHROUGH.md` | 세션별 빌드 기록, 검증 프로토콜 결과, 기술적 회고 | 과거 기술 의사결정 및 이슈 추적 시 |
 | `docs/BUILD_EXE.md` | PyInstaller 빌드 기록, spec 설정, 단일 실행 파일 패키징 | 독립 실행 파일 재빌드 시 |
 | `CHANGELOG.md` | 릴리즈 버전 히스토리 (Version history) | 버전별 변경점 확인 시 |
-| `.agent/https_implementation_plan.md` | `main`과 `develop` 브랜치 간 HTTPS / Cloudflare Tunnel / Public Host Guard 보안 통합 계획 | Phase 23 HTTPS/보안 포팅 작업 시 |
-| `.agent/SKC Live Translation — Multilingual - Multi-Target Implementation Plan.md` | 다국어/다중 타겟 통역 시스템(One-codebase, Source/Target language matrix, Per-target GeminiSession) 상세 설계 및 구현 계획 | Phase 24 다국어/동시 통역 기능 개발 시 |
-| `tests/` | 모델 리졸버, 설정, 오염 방지, UI 접근성 등 59개 자동화 테스트 스위트 | 테스트 실행 및 코드 검증 시 |
+| `.agent/phase25-auto-source-language.md` | 자동 소스 언어 감지 및 다중 화자 모드 설계 및 구현 계획 | Phase 25 자동 언어 전환 개발 시 |
+| `tests/` | 모델 리졸버, 다국어 라우팅, 장애 격리, 수명주기 셧다운 등 132개 자동화 테스트 스위트 | 테스트 실행 및 코드 검증 시 |
+
 

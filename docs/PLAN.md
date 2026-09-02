@@ -25,38 +25,36 @@ USB 믹서
     ▼
 Windows PC (본 애플리케이션)
     │
-    ├─ app/audio.py ──────────── 16kHz 모노 PCM16 데이터 캡처
+    ├─ app/audio.py ──────────── 16kHz 모노 PCM16 데이터 캡처 (단일 캡처)
     │                            오디오 장치 기본 주파수에서 리샘플링
     │                            RMS 데시벨 레벨 미터링 (10Hz 주기)
     │                            신호 차단 및 장치 연결 해제 자동 감지
     │
-    ├─ app/gemini_session.py ─── Gemini Live API로 실시간 오디오 스트리밍
-    │                            한국어 소스 전사 텍스트 수신 (로그 전용)
-    │                            영어 번역 텍스트 수신
-    │                            세션 자동 복구(Resumption) 및 컨텍스트 압축
-    │                            GoAway 서버 종료 신호 감지 시 지수 백오프 재연결
-    │
-    ├─ app/broadcast.py ─────── 메모리 내 SSE 자막 전송 + 오디오 웹소켓 큐 관리
-    │                            실시간 커밋 자막 처리 (1.5초 대기 임계값)
-    │                            커밋 이벤트에 매칭된 한국어 원문 (`ko` 필드) 포함
-    │                            오디오 출력용 WebSocket 클라이언트 팬아웃
+    ├─ app/translation_manager.py ─ 다중 타겟 세션 및 브로드캐스터 중앙 오케스트레이션
+    │    │                         단일 오디오 청크를 각 타겟 세션으로 비동기 팬아웃
+    │    │                         타겟별 장애 격리 (Directional Failure Isolation)
+    │    │
+    │    ├─ app/gemini_session.py [target: en, zh, es, ...] (타겟별 독립 세션)
+    │    │    한국어/영어 소스 전사 수신 + 타겟 번역 텍스트/합성 오디오 수신
+    │    │    GoAway 서버 종료 신호 감지 시 자동 복구 및 재연결
+    │    │
+    │    └─ app/broadcast.py [target: en, zh, es, ...] (타겟별 독립 브로드캐스터)
+    │         메모리 내 SSE 자막 전송 (`/stream?lang=<target>`)
+    │         바이너리 WebSocket 오디오 전송 (`/audio-stream?lang=<target>`)
     │
     └─ app/server.py ─────────── FastAPI 웹 서버
           │
-          ├─ GET  /                  관리자 콘솔 (입력 설정, 시작/종료, QR 코드, 프리뷰)
-          ├─ GET  /live              참석자 페이지 (자막 창, 글꼴 크기 제어, 영문 UI)
-          ├─ GET  /stream            SSE 자막 스트림 (참석자 모바일 기기용)
-          ├─ WS   /audio-stream      바이너리 WebSocket (오디오 활성화 기기 전용 PCM 피드)
-          ├─ GET  /api/status        시스템 상태 JSON API
-          ├─ GET  /api/devices       오디오 장치 목록 조회
-          ├─ POST /api/devices/select 오디오 장치 인덱스 config.yaml 저장
-          ├─ POST /api/start         번역 파이프라인 시작
-          ├─ POST /api/stop          번역 파이프라인 종료 및 텍스트 파일 저장
-          ├─ POST /api/pause         마이크 캡처 및 API 세션 일시 중지
-          ├─ POST /api/resume        마이크 캡처 및 API 세션 재개
-          ├─ GET  /logo.webp              로컬 저장된 PCA 로고 이미지 서비스
-          ├─ GET  /api/qr.png             참석자 페이지 접속용 QR 코드 생성
-          └─ GET  /api/events?since=N     운영자 이벤트 증분 폴링
+          ├─ GET  /admin                운영자 콘솔 (인증 보호, 타겟 언어 다중 선택, 상태 제어)
+          ├─ GET  /live                 참석자 페이지 (지속형 언어 선택 드롭다운, 헤더 오디오 버튼)
+          ├─ GET  /stream               SSE 자막 스트림 (타겟 언어 파라미터 지원)
+          ├─ WS   /audio-stream         바이너리 WebSocket 오디오 피드
+          ├─ WS   /ws/telemetry         실시간 RTT 측정 및 지연 분리 텔레메트리
+          ├─ GET  /api/status           시스템 상태 및 모델 정보 JSON API
+          ├─ GET  /api/languages        실시간 활성/지원 타겟 언어 카탈로그
+          ├─ GET  /api/devices          오디오 장치 목록 조회 및 동적 리스캔
+          ├─ POST /api/start|stop|pause|resume  번역 파이프라인 수명주기 제어
+          ├─ GET  /api/qr.png           참석자 페이지 접속용 QR 코드 생성
+          └─ GET  /api/events?since=N   운영자 이벤트 증분 폴링
 ```
 
 ---
@@ -122,9 +120,13 @@ Windows PC (본 애플리케이션)
 | `app/events.py` | `OperatorEventLog` — 스레드 안전 링 버퍼(50개), 7개 카테고리, `since(last_id)` API |
 | `app/logger.py` | 회전 파일 + 콘솔 로거 |
 | `app/audio.py` | PyAudio 캡처, PCM16 리샘플링, RMS 미터링, 연결 해제 감지 |
+| `app/translation_manager.py` | 다중 타겟 번역 매니저 — 세션 팬아웃, 장애 격리, 세션 수명주기 오케스트레이션 |
+| `app/languages.py` | 지원 언어 카탈로그 (70+ 언어, 네이티브 명칭, 유효성 검증) |
 | `app/gemini_session.py` | Gemini Live 세션, 모델 자동 선택, 재연결, GoAway 처리 |
 | `app/broadcast.py` | SSE 자막 팬아웃 + 바이너리 PCM 오디오 팬아웃 |
-| `app/server.py` | FastAPI 라우트 + 운영자·참석자 페이지 HTML + 로고 라우트 |
+| `app/server.py` | FastAPI 라우트 + 수명주기 셧다운 이벤트 + 템플릿 렌더링 + 미들웨어 |
+| `app/templates/operator/` | 모듈식 운영자 콘솔 템플릿 (`_auth_modal.html`, `_language_targets.html` 등) |
+| `app/templates/attendee.html` | 지속형 언어 선택 드롭다운 + 헤더 오디오 제어 참석자 화면 |
 | `app/glossary.py` | 번역 후처리 용어집 교정 패스 (PCA 고유 용어 강제 적용) |
 | `config/glossary.yaml` | 용어집 정의 파일 (직접 치환 항목 + 검토 전용 항목) |
 | `docs/HOW_TO_USE.md` | 언어 선택 인덱스 → `.en.md` / `.ko.md` |
@@ -181,7 +183,8 @@ Windows PC (본 애플리케이션)
 | 21 | 오염 방지 및 무결 세션 리셋 아키텍처: 일시정지 시 오디오 프레임 즉시 폐기, Pause → Resume 컨텍스트 완전 분리 및 재개 토큰 초기화, 세션 세대(Epoch) 격리, 완료 턴 기반 롤링 언어 이탈 감시 및 오디오 버퍼 플러시 | ✅ 완료 |
 | 22 | 운영자 콘솔 컨트롤 바 분리 및 일시정지 알림: 3열 고정 레이아웃, `role="status"` 및 `aria-live="polite"` 접근성 상태 배지, 일시정지 경과 타이머, 3분 경과 주황색 강조 알림, `prefers-reduced-motion` 지원 및 비활성 중립 회색 종료 버튼 | ✅ 완료 |
 | 23 | HTTPS 공인 접속 및 보안 강화 (Release v3.0.0): Cloudflare Named Tunnel 백그라운드 매니저, PublicHostGuard 미들웨어, 운영자 HMAC-SHA256 세션 인증, 네트워크/AI 지연 분리 텔레메트리, 2열 데스크톱 설정 마법사 (1060x670), 병렬 멀티스레드 빌더 (`build_parallel.py`) 및 포트 8080 표준화 | ✅ 완료 |
-| V0–V23 | 검증 프로토콜 및 자동화 테스트 스위트 (59개 테스트) | ✅ 전체 통과 |
+| 24 | 다국어 / 다중 타겟 동시 통역 & 런타임 안정화 (Release v3.1.0): `TranslationManager` 다중 타겟 오케스트레이션, 70+ 언어 카탈로그, SSE/WS 다중 언어 라우팅, 지속형 참석자 언어/오디오 UI, 방향성 장애 격리, 비동기 셧다운 수명주기, 오프라인 ESLint 검증, `jinja2` 단일 실행 파일 패키징 | ✅ 완료 |
+| V0–V24 | 검증 프로토콜 및 자동화 테스트 스위트 (132개 테스트) | ✅ 전체 통과 |
 
 ---
 
@@ -220,27 +223,23 @@ logging:
 
 ### Phase 23 — Public HTTPS / Cloudflare Named Tunnel 및 보안 통합 (Release v3.0.0) [✅ 완료]
 - **완료 일자**: 2026-08-31
-- **주요 산출물**:
-  1. **Cloudflare Named Tunnel 백그라운드 매니저 (`app/tunnel.py`, `app/cloudflared_service.py`)**: 비침습적 백그라운드 헬스 모니터링, Windows 서비스 제어, Cloudflare WAF User-Agent 호환성 확보.
-  2. **Public-Host Guard 보안 경계 (`app/server.py`)**: 공인 도메인 유입 시 `/admin`, 제어 API, QR 생성 라우트 404 차단, 참석자 라우트만 안전하게 노출 (`/` $\to$ `/live` 자동 리다이렉트).
-  3. **운영자 인증 (`app/operator_auth.py`)**: HMAC-SHA256 HttpOnly 세션 쿠키 기반 관리자 보호.
-  4. **지연 및 참석자 텔레메트리 (`/ws/telemetry`, `app/templates/operator.html`)**: Gemini AI 처리 지연(Turn-Onset), 현장 Wi-Fi vs 공용 HTTPS 분리 RTT 및 추정 전체 지연(E2E), 3x2 세션 통계 그리드.
-  5. **2열 데스크톱 설정 GUI (`setup_gui.py` / `SKC_setup.exe`)**: 1060×670 크기의 2열 레이아웃(좌측: 교회/로컬, 우측: Gemini API, 하단: Cloudflare 터널 + 라이브 준비도 배지).
-  6. **병렬 멀티스레드 빌더 (`build_parallel.py`, `build_exe.bat`)**: 다중 코어 병렬 빌드로 패키징 시간 ~50% 단축.
-  7. **포트 8080 표준화**: 포트 충돌 방지 및 신뢰성 확보.
+- **주요 산출물**: Cloudflare Named Tunnel 매니저, PublicHostGuard 보안 경계, 운영자 HMAC 인증, 텔레메트리 RTT 분리, 2열 GUI, 병렬 빌더.
 
-### Phase 24 — 다국어 / 다중 타겟 동시 통역 (Multilingual / Multi-Target Translation)
-- **상세 아키텍처 및 구현 계획**: [`.agent/SKC Live Translation — Multilingual - Multi-Target Implementation Plan.md`](file:///d:/Desktop/church/live_translation/SKC_live_translation_B/.agent/SKC%20Live%20Translation%20%E2%80%94%20Multilingual%20-%20Multi-Target%20Implementation%20Plan.md) 참조.
-- **핵심 아키텍처 불변 원칙**:
-  - **단일 코드베이스 (One Codebase)**: 언어별 별도 레포/브랜치/exe 복제 금지.
-  - **단일 오디오 캡처**: 단일 `AudioCapture`에서 캡처한 PCM 청크를 모든 활성 세션에 브로드캐스트.
-  - **독립 타겟 세션**: 활성 타겟 언어마다 1개의 독립 `GeminiSession[lang]` 가동 (예: English `en`, Ukrainian `uk`, Chinese `zh`).
-  - **참석자 라우팅**: 단일 QR 코드 ➔ 언어 선택 허브 (`/`) ➔ 언어별 스트림 (`/live?lang=uk` / `/stream?lang=uk` / `/audio-stream?lang=uk`).
-- **1차 검증 목표**:
-  1. 한국어 → 영어 (`ko` → `en`) : 기존 SKC 회귀 테스트.
-  2. 영어 → 우크라이나어 (`en` → `uk`).
-  3. 영어 → 중국어 (`en` → `zh`).
-  4. 영어 → 우크라이나어 + 중국어 (`en` → `uk` + `zh`) 동시 통역.
+### Phase 24 — 다국어 / 다중 타겟 동시 통역 & 런타임 안정화 (Release v3.1.0) [✅ 완료]
+- **완료 일자**: 2026-09-02
+- **주요 산출물**:
+  1. **TranslationManager 팬아웃 파이프라인 (`app/translation_manager.py`)**: 단일 오디오 캡처에서 타겟별 독립 `GeminiSession` 및 `CaptionBroadcaster`로 비동기 팬아웃.
+  2. **표준 70+ 언어 카탈로그 (`app/languages.py`)**: 네이티브 명칭 매핑 및 동적 활성 언어 동기화 (`GET /api/languages`).
+  3. **지속형 참석자 UI (`app/templates/attendee.html`)**: 헤더 내 언어 선택기 및 오디오 토글 영구 배치, 3+ 타겟 확장 시 CSS 오버랩 방지, 이어폰 동의 클릭 내 동기식 `AudioContext.resume()` 실행.
+  4. **방향성 장애 격리 (Directional Failure Isolation)**: 주 타겟 장애 시 보조 타겟 통역 유지, 보조 타겟 장애 시 주 타겟 및 운영자 발화 프리뷰 유지.
+  5. **자발적 셧다운 수명주기 (`app/server.py`, `main.py`)**: `shutdown_event` 및 `SKCUvicornServer`를 통한 SSE/WS 스트림 0.5초 조기 종료로 Ctrl+C ASGI Traceback 제거.
+  6. **오프라인 린팅 & 패키징 (`eslint.config.mjs`, `SKC_translation.spec`)**: 로컬 `eslint: 10.9.1` 기반 `no-undef` 검증, `jinja2` 패키징 보완.
+
+### Phase 25 — 자동 소스 언어 감지 및 다중 화자 모드 (Auto Source Language Detection / Multi-Speaker Mode) [⏳ 계획 중]
+- **상세 아키텍처 및 구현 계획**: [`.agent/phase25-auto-source-language.md`](file:///d:/Desktop/church/live_translation/SKC_live_translation_B/.agent/phase25-auto-source-language.md) 참조.
+- **주요 과제**:
+  - 한국어/영어 코드 스위칭 및 다중 화자 예배(한/영 번갈아 발화) 환경에서 입력 언어를 실시간으로 자동 감지 및 세션 프롬프트 동적 조정.
+  - 소스 언어 전환 시 컨텍스트 오염 방지 및 지연 최소화.
 
 
 
