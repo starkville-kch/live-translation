@@ -1,0 +1,121 @@
+<!-- Dual QR Modal (Public HTTPS & Local Wi-Fi Side-by-Side) -->
+<div id="dual-qr-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="dual-qr-title" onclick="if(event.target===this) closeDualQrModal()">
+  <div class="dual-qr-dialog">
+    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--color-gold-500); padding-bottom:12px; margin-bottom:16px;">
+      <div>
+        <h3 id="dual-qr-title" style="font-family:'Noto Serif KR', serif; font-size:16px; color:var(--color-navy-900); font-weight:700; margin:0;">
+          <span data-lang="ko">참석자 실시간 통역 접속 안내 (Attendee QR Codes)</span>
+          <span data-lang="en">Live Translation Attendee Access (QR Codes)</span>
+        </h3>
+        <p style="font-size:12px; color:var(--color-text-secondary); margin:2px 0 0 0;">
+          <span data-lang="ko">스마트폰 카메라로 QR 코드를 스캔하여 별도 앱 설치 없이 자막과 음성을 이용하세요.</span>
+          <span data-lang="en">Scan with smartphone camera to view live captions & audio. No app install required.</span>
+        </p>
+      </div>
+      <button type="button" class="no-print" onclick="closeDualQrModal()" style="width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer; font-size:16px; font-weight:700; color:#475569;" aria-label="Close modal">
+        ✕
+      </button>
+    </div>
+
+    <!-- Dual Columns Container -->
+    <div class="dual-qr-columns" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:16px; margin-bottom:16px;">
+      <!-- Public HTTPS Column -->
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.05); display:flex; flex-direction:column; justify-content:space-between;">
+        <div>
+          <div style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--color-navy-900); background:var(--color-navy-50); border:1px solid var(--color-warm-200); border-radius:20px; padding:3px 10px; margin-bottom:10px;">
+            <svg style="width:14px; height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            <span data-lang="ko">공용 인터넷 (권장)</span>
+            <span data-lang="en">Public HTTPS (Default)</span>
+          </div>
+
+          <div style="margin:0 auto 10px auto; max-width:220px;">
+            <img id="modal-qr-public-img" src="/api/qr.png?type=public" alt="Public HTTPS QR" style="width:100%; height:auto; display:block; border-radius:8px; border:1px solid var(--color-gold-500); background:#fff;">
+          </div>
+
+          <div style="font-size:11px; font-weight:700; color:var(--color-success); margin-bottom:4px;">
+            <span data-lang="ko">📱 LTE / 5G 스마트폰 및 모든 네트워크</span>
+            <span data-lang="en">📱 Cellular Data (LTE/5G) & Any Network</span>
+          </div>
+          <div style="font-size:11px; color:var(--color-text-muted); margin-bottom:8px;">
+            <span data-lang="ko">와이파이 연결 없이도 누구나 즉시 접속 가능</span>
+            <span data-lang="en">Connect instantly without church Wi-Fi login</span>
+          </div>
+        </div>
+
+        <div>
+          <a id="modal-qr-public-url" href="https://live.starkvillekoreanchurch.org" target="_blank" style="font-size:11px; font-weight:600; color:var(--color-navy-900); word-break:break-all; text-decoration:underline; display:block; margin-bottom:8px;">
+            https://live.starkvillekoreanchurch.org
+          </a>
+          <button type="button" class="secondary no-print" onclick="copyModalUrl('modal-qr-public-url', this)" style="width:100%; padding:6px 10px; font-size:11px; font-weight:700; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; gap:4px;">
+            <span data-lang="ko">📋 공용 주소 복사</span>
+            <span data-lang="en">📋 Copy Public Link</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Local Wi-Fi Column -->
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.05); display:flex; flex-direction:column; justify-content:space-between;">
+        <div>
+          <div style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--color-navy-900); background:#fef9c3; border:1px solid #fde047; border-radius:20px; padding:3px 10px; margin-bottom:10px;">
+            <svg style="width:14px; height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            <span data-lang="ko">교회 현장 Wi-Fi</span>
+            <span data-lang="en">Local Wi-Fi (LAN)</span>
+          </div>
+
+          <div style="margin:0 auto 10px auto; max-width:220px;">
+            <img id="modal-qr-local-img" src="/api/qr.png?type=local" alt="Local Wi-Fi QR" style="width:100%; height:auto; display:block; border-radius:8px; border:1px solid var(--color-gold-500); background:#fff;">
+          </div>
+
+          <div style="font-size:11px; font-weight:700; color:var(--color-navy-900); margin-bottom:4px;">
+            <span data-lang="ko">📶 교회 내부 Wi-Fi 연결 필수 (초저지연)</span>
+            <span data-lang="en">📶 Requires Church Wi-Fi (Ultra-low latency)</span>
+          </div>
+          <div style="font-size:11px; color:var(--color-text-muted); margin-bottom:8px;">
+            <span data-lang="ko">외부 인터넷 장애 시에도 예배실 내부에서 정상 작동</span>
+            <span data-lang="en">Works locally even if public internet is interrupted</span>
+          </div>
+        </div>
+
+        <div>
+          <a id="modal-qr-local-url" href="http://skc.local:8080/live" target="_blank" style="font-size:11px; font-weight:600; color:var(--color-gold-500); word-break:break-all; text-decoration:underline; display:block; margin-bottom:8px;">
+            http://skc.local:8080/live
+          </a>
+          <button type="button" class="secondary no-print" onclick="copyModalUrl('modal-qr-local-url', this)" style="width:100%; padding:6px 10px; font-size:11px; font-weight:700; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; gap:4px;">
+            <span data-lang="ko">📋 현장 주소 복사</span>
+            <span data-lang="en">📋 Copy Local Link</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:12px;" class="no-print">
+      <div style="font-size:11px; color:var(--color-text-muted);">
+        <span data-lang="ko">💡 [안내문 인쇄] 버튼을 누르면 예배실 부착용 안내지로 출력됩니다.</span>
+        <span data-lang="en">💡 Click [Print Poster] to print a bulletin/poster flyer.</span>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="primary" onclick="window.print()" style="width:auto; padding:6px 14px; font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:5px; border-radius:6px;">
+          <svg style="width:14px; height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"/>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+            <rect x="6" y="14" width="12" height="8"/>
+          </svg>
+          <span data-lang="ko">🖨️ 안내문 인쇄</span>
+          <span data-lang="en">🖨️ Print Poster</span>
+        </button>
+        <button type="button" class="secondary" onclick="closeDualQrModal()" style="width:auto; padding:6px 14px; font-size:12px; font-weight:600; border-radius:6px;">
+          <span data-lang="ko">닫기</span>
+          <span data-lang="en">Close</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -15,6 +15,10 @@ let userScrolledUp = false;
 let eventPollTimer = null;
 let lastAutoRestartAttempt = 0;
 let lastQrUrl = null;
+let currentQrMode = 'public';
+let lastPublicUrl = '';
+let lastLocalUrl = '';
+let lastStatusData = null;
 let _cachedDeviceName = "";
 let _isRefreshingDevices = false;
 let isTestingModel = false;
@@ -775,19 +779,192 @@ if (btnTestModel) {
 
 
 // ============================================================
-// ATTENDEE ACCESS
+// ATTENDEE ACCESS & QR MANAGEMENT
 // ============================================================
-function copyPublicLink() {
-  const el = document.getElementById('qr-public-url');
-  const url = el ? el.textContent.trim() : 'https://live.starkvillekoreanchurch.org';
-  if (navigator.clipboard && navigator.clipboard.writeText) {
+function updateModalQrUrls() {
+  const pubUrlEl = document.getElementById('modal-qr-public-url');
+  const locUrlEl = document.getElementById('modal-qr-local-url');
+  const pubImgEl = document.getElementById('modal-qr-public-img');
+  const locImgEl = document.getElementById('modal-qr-local-img');
 
+  const pubLink = lastPublicUrl || 'https://live.starkvillekoreanchurch.org';
+  const locLink = lastLocalUrl || 'http://skc.local:8080/live';
+
+  if (pubUrlEl) {
+    pubUrlEl.textContent = pubLink;
+    pubUrlEl.href = pubLink;
+  }
+  if (locUrlEl) {
+    locUrlEl.textContent = locLink;
+    locUrlEl.href = locLink;
+  }
+  if (pubImgEl) {
+    pubImgEl.src = '/api/qr.png?type=public&v=' + Date.now();
+  }
+  if (locImgEl) {
+    locImgEl.src = '/api/qr.png?type=local&v=' + Date.now();
+  }
+}
+
+function openDualQrModal() {
+  const m = document.getElementById('dual-qr-modal');
+  if (m) {
+    updateModalQrUrls();
+    m.classList.remove('hidden');
+  }
+}
+
+function closeDualQrModal() {
+  const m = document.getElementById('dual-qr-modal');
+  if (m) m.classList.add('hidden');
+}
+
+function copyModalUrl(elementId, btn) {
+  const el = document.getElementById(elementId);
+  const url = el ? el.textContent.trim() : '';
+  if (!url) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => {
+      if (btn) {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '✓ Copied!';
+        setTimeout(() => { btn.innerHTML = orig; }, 2000);
+      }
+    }).catch(() => {
+      prompt('Copy link:', url);
+    });
+  } else {
+    prompt('Copy link:', url);
+  }
+}
+
+function switchQrMode(mode) {
+  if (mode !== 'public' && mode !== 'local') mode = 'public';
+  currentQrMode = mode;
+
+  const radioPublic = document.getElementById('qr-tab-public');
+  const radioLocal = document.getElementById('qr-tab-local');
+  if (radioPublic && radioLocal) {
+    radioPublic.checked = (mode === 'public');
+    radioLocal.checked = (mode === 'local');
+  }
+
+  const pillIcon = document.getElementById('qr-pill-icon');
+  const pillKo = document.getElementById('qr-pill-label-ko');
+  const pillEn = document.getElementById('qr-pill-label-en');
+
+  const qrImgEl = document.getElementById('qr-img');
+  const qrPubStatusEl = document.getElementById('qr-public-status');
+  const qrPubUrlEl = document.getElementById('qr-public-url');
+  const qrUsageNote = document.getElementById('qr-usage-note');
+  const btnOpenAtt = document.getElementById('btn-open-attendee');
+
+  const altImgEl = document.getElementById('qr-alt-img');
+  const altKo = document.getElementById('qr-alt-label-ko');
+  const altEn = document.getElementById('qr-alt-label-en');
+  const qrLocUrlEl = document.getElementById('qr-local-url');
+
+  if (mode === 'public') {
+    if (pillIcon) pillIcon.textContent = '🌐';
+    if (pillKo) pillKo.textContent = '공용 인터넷 QR (Public HTTPS)';
+    if (pillEn) pillEn.textContent = 'Public HTTPS QR';
+
+    if (qrImgEl) {
+      qrImgEl.src = '/api/qr.png?type=public&v=' + Date.now();
+      qrImgEl.alt = 'Public HTTPS QR Code';
+    }
+
+    if (qrPubStatusEl) {
+      if (lastStatusData && lastStatusData.tunnel_ready) {
+        qrPubStatusEl.textContent = '✓ Public HTTPS ready';
+        qrPubStatusEl.style.color = 'var(--color-success)';
+      } else if (lastStatusData && lastStatusData.public_https_status === 'reconnecting') {
+        qrPubStatusEl.textContent = '🟡 Public link connecting…';
+        qrPubStatusEl.style.color = 'var(--color-gold-500)';
+      } else {
+        qrPubStatusEl.textContent = '⚠️ Public link offline (Local Wi-Fi ready)';
+        qrPubStatusEl.style.color = 'var(--color-gold-500)';
+      }
+    }
+
+    const pubLink = lastPublicUrl || 'https://live.starkvillekoreanchurch.org';
+    if (qrPubUrlEl) {
+      qrPubUrlEl.textContent = pubLink;
+      qrPubUrlEl.href = pubLink;
+    }
+    if (btnOpenAtt) btnOpenAtt.href = pubLink;
+
+    if (qrUsageNote) {
+      qrUsageNote.innerHTML = '<span data-lang="ko">📱 LTE/5G 및 외부 참석자 스캔</span><span data-lang="en">📱 Cellular Data (LTE/5G) & Remote</span>';
+    }
+
+    if (altImgEl) {
+      altImgEl.src = '/api/qr.png?type=local&v=' + Date.now();
+      altImgEl.alt = 'Local Wi-Fi QR Thumbnail';
+      altImgEl.title = '클릭하여 메인 QR을 현장 Wi-Fi로 전환 / Click to switch to Local Wi-Fi';
+    }
+    if (altKo) altKo.textContent = '🏛️ 현장 Wi-Fi 백업:';
+    if (altEn) altEn.textContent = '🏛️ Local Wi-Fi Fallback:';
+    if (qrLocUrlEl) {
+      const locLink = lastLocalUrl || 'http://skc.local:8080/live';
+      qrLocUrlEl.textContent = locLink;
+      qrLocUrlEl.href = locLink;
+    }
+  } else {
+    // Local mode
+    if (pillIcon) pillIcon.textContent = '🏛️';
+    if (pillKo) pillKo.textContent = '현장 Wi-Fi QR (Local Wi-Fi)';
+    if (pillEn) pillEn.textContent = 'Local Wi-Fi QR';
+
+    if (qrImgEl) {
+      qrImgEl.src = '/api/qr.png?type=local&v=' + Date.now();
+      qrImgEl.alt = 'Local Wi-Fi QR Code';
+    }
+
+    if (qrPubStatusEl) {
+      qrPubStatusEl.textContent = '✓ Local Wi-Fi ready (교회 내부망)';
+      qrPubStatusEl.style.color = 'var(--color-success)';
+    }
+
+    const locLink = lastLocalUrl || 'http://skc.local:8080/live';
+    if (qrPubUrlEl) {
+      qrPubUrlEl.textContent = locLink;
+      qrPubUrlEl.href = locLink;
+    }
+    if (btnOpenAtt) btnOpenAtt.href = locLink;
+
+    if (qrUsageNote) {
+      qrUsageNote.innerHTML = '<span data-lang="ko">📶 교회 내부 Wi-Fi 연결 시 즉시 접속 (초저지연)</span><span data-lang="en">📶 Connects over Church Wi-Fi (Ultra-low latency)</span>';
+    }
+
+    if (altImgEl) {
+      altImgEl.src = '/api/qr.png?type=public&v=' + Date.now();
+      altImgEl.alt = 'Public HTTPS QR Thumbnail';
+      altImgEl.title = '클릭하여 메인 QR을 공용 인터넷으로 전환 / Click to switch to Public HTTPS';
+    }
+    if (altKo) altKo.textContent = '🌐 공용 인터넷 백업:';
+    if (altEn) altEn.textContent = '🌐 Public HTTPS Fallback:';
+    if (qrLocUrlEl) {
+      const pubLink = lastPublicUrl || 'https://live.starkvillekoreanchurch.org';
+      qrLocUrlEl.textContent = pubLink;
+      qrLocUrlEl.href = pubLink;
+    }
+  }
+}
+
+function toggleQrMode() {
+  switchQrMode(currentQrMode === 'public' ? 'local' : 'public');
+}
+
+function copyPublicLink() {
+  const url = currentQrMode === 'local' ? (lastLocalUrl || 'http://skc.local:8080/live') : (lastPublicUrl || 'https://live.starkvillekoreanchurch.org');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url).then(() => {
       const btn = document.getElementById('btn-copy-public-link');
       if (btn) {
         const orig = btn.innerHTML;
         btn.innerHTML = '✓ Copied!';
-        setTimeout(() => btn.innerHTML = orig, 2000);
+        setTimeout(() => { btn.innerHTML = orig; }, 2000);
       }
     }).catch(() => {
       prompt('Copy attendee link:', url);
@@ -796,6 +973,13 @@ function copyPublicLink() {
     prompt('Copy attendee link:', url);
   }
 }
+
+window.switchQrMode = switchQrMode;
+window.toggleQrMode = toggleQrMode;
+window.openDualQrModal = openDualQrModal;
+window.closeDualQrModal = closeDualQrModal;
+window.copyPublicLink = copyPublicLink;
+window.copyModalUrl = copyModalUrl;
 
 // Foldable cards (QR & Log)
 ['qr-toggle', 'log-toggle'].forEach(id => {
@@ -1071,36 +1255,36 @@ async function pollStatus() {
 
 
     // Update Attendee Access Card
+    lastStatusData = st;
     const publicLiveLink = st.live_url_public || st.public_attendee_url || st.live_url_primary || 'https://live.starkvillekoreanchurch.org';
     const localLiveLink = st.live_url_local || st.live_url_fallback || 'http://skc.local:8080/live';
 
+    const urlChanged = (publicLiveLink !== lastPublicUrl || localLiveLink !== lastLocalUrl);
+    lastPublicUrl = publicLiveLink;
+    lastLocalUrl = localLiveLink;
 
-    const qrPubUrlEl = document.getElementById('qr-public-url');
-    if (qrPubUrlEl) {
-      qrPubUrlEl.textContent = publicLiveLink;
-      qrPubUrlEl.href = publicLiveLink;
-    }
-
-    const btnOpenAtt = document.getElementById('btn-open-attendee');
-    if (btnOpenAtt) btnOpenAtt.href = publicLiveLink;
-
-    const qrLocUrlEl = document.getElementById('qr-local-url');
-    if (qrLocUrlEl) {
-      qrLocUrlEl.textContent = localLiveLink;
-      qrLocUrlEl.href = localLiveLink;
-    }
-
-    const qrPubStatusEl = document.getElementById('qr-public-status');
-    if (qrPubStatusEl) {
-      if (st.tunnel_ready) {
-        qrPubStatusEl.textContent = '✓ Public HTTPS ready';
-        qrPubStatusEl.style.color = 'var(--color-success)';
-      } else if (st.public_https_status === 'reconnecting') {
-        qrPubStatusEl.textContent = '🟡 Public link connecting…';
-        qrPubStatusEl.style.color = 'var(--color-gold-500)';
-      } else {
-        qrPubStatusEl.textContent = '⚠️ Public link offline (Local Wi-Fi ready)';
-        qrPubStatusEl.style.color = 'var(--color-gold-500)';
+    if (urlChanged || !lastQrUrl) {
+      lastQrUrl = currentQrMode === 'local' ? localLiveLink : publicLiveLink;
+      switchQrMode(currentQrMode);
+    } else {
+      // Dynamic status badge updates
+      const qrPubStatusEl = document.getElementById('qr-public-status');
+      if (qrPubStatusEl) {
+        if (currentQrMode === 'public') {
+          if (st.tunnel_ready) {
+            qrPubStatusEl.textContent = '✓ Public HTTPS ready';
+            qrPubStatusEl.style.color = 'var(--color-success)';
+          } else if (st.public_https_status === 'reconnecting') {
+            qrPubStatusEl.textContent = '🟡 Public link connecting…';
+            qrPubStatusEl.style.color = 'var(--color-gold-500)';
+          } else {
+            qrPubStatusEl.textContent = '⚠️ Public link offline (Local Wi-Fi ready)';
+            qrPubStatusEl.style.color = 'var(--color-gold-500)';
+          }
+        } else {
+          qrPubStatusEl.textContent = '✓ Local Wi-Fi ready (교회 내부망)';
+          qrPubStatusEl.style.color = 'var(--color-success)';
+        }
       }
     }
 
@@ -1109,12 +1293,6 @@ async function pollStatus() {
       const pubRtt = st.telemetry.public_rtt_ms !== undefined ? st.telemetry.public_rtt_ms + 'ms' : '—';
       const locRtt = st.telemetry.local_rtt_ms !== undefined ? st.telemetry.local_rtt_ms + 'ms' : '—';
       qrRttEl.textContent = `RTT: Public ${pubRtt} · Local ${locRtt}`;
-    }
-
-    const qrImgEl = document.getElementById('qr-img');
-    if (qrImgEl && st.live_url_primary && st.live_url_primary !== lastQrUrl) {
-      lastQrUrl = st.live_url_primary;
-      qrImgEl.src = '/api/qr.png?v=' + Date.now();
     }
 
     if (st.service_running) {

@@ -659,12 +659,15 @@ class PublicHostGuardMiddleware:
     def _get_public_hosts(cls) -> set[str]:
         cfg = network_cfg()
         pub_url = cfg.get("public_url", "")
-        hosts = {"live.starkvillekoreanchurch.org"}
+        hosts = {"live.starkvillekoreanchurch.org", "live-origin.starkvillekoreanchurch.org"}
         if pub_url:
             from urllib.parse import urlparse
             parsed = urlparse(str(pub_url) if "://" in str(pub_url) else f"https://{pub_url}")
             if parsed.hostname:
-                hosts.add(parsed.hostname.lower())
+                h = parsed.hostname.lower()
+                hosts.add(h)
+                if h.startswith("live."):
+                    hosts.add("live-origin." + h[5:])
         return hosts
 
     def _is_public_host(self, scope: Scope) -> bool:
@@ -1561,6 +1564,8 @@ async def qr_png(type: str = "primary"):
 
     if type == "local":
         target_url = local_url
+    elif type in ("fallback", "ip"):
+        target_url = fallback_url
     elif type == "public":
         target_url = public_url
     else:

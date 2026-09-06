@@ -497,3 +497,60 @@ async def my_endpoint():
 ### 오디오 샘플레이트 변경
 
 `config.yaml`의 `audio.sample_rate`만 바꾸면 리샘플러가 자동 적용됩니다. Gemini는 항상 16kHz로 전송됩니다.
+
+---
+
+## 12. Cloudflare Named Tunnel 및 Windows 서비스 관리
+
+### 아키텍처 및 서비스 수명주기
+- **바이너리 위치**: 실행 파일 인접 디렉터리 (`cloudflared.exe` — Frozen exe 디렉터리, 앱 루트, CWD, PATH 순 탐색)
+- **토큰 구성**:
+  - 단일 통합 구성: `.env` 파일 내 `CLOUDFLARE_TUNNEL_TOKEN=<TOKEN>` (앱 시작 시 자동 로드)
+  - 하위 호환 폴백: `C:\ProgramData\cloudflared\token` 또는 로컬 토큰 파일
+- **Windows 서비스 명칭**: `Cloudflared` (교회 고정 PC용)
+- **실행 명령 (On-Demand)**: `cloudflared.exe tunnel run --token <TOKEN>` (표준 사용자 권한으로 실행)
+- **백그라운드 감시 및 로깅**:
+  - `app/cloudflared_service.py` (`CloudflaredService`)가 서버 시작 시 Windows 서비스를 우선 조회.
+  - Windows 서비스 미구동 시 on-demand 임베디드 자식 프로세스로 실행 (`CREATE_NO_WINDOW`).
+  - 프로세스 출력은 `logs/cloudflared.log`에 기록되어 Windows 파이프 버퍼(4KB) 교착 상태(Deadlock)를 방지.
+- **공용 엔드포인트**: `https://live.starkvillekoreanchurch.org/live` (또는 `config.yaml`의 `public_url`)
+
+### 설정 마법사 및 타 컴퓨터 배포
+- **설정 마법사 (`SKC_setup.exe` / `setup_gui.py`)**:
+  - `Card 3 (Public HTTPS)`에서 토큰 입력 시 `.env` 파일에 `CLOUDFLARE_TUNNEL_TOKEN`으로 원자적(Atomic) 직접 저장.
+  - 관리자 권한이 없는 일반 노트북 사용자라도 UAC 오류 없이 "포터블 모드 준비 완료" 상태로 안내.
+  - `[⬇️ Download cloudflared.exe]` 버튼을 통해 공식 최신 바이너리(~54MB)를 원클릭 다운로드.
+- **아카이브된 참조 스크립트 (`.agent/scratch/`)**:
+  - `install_cloudflare_tunnel.bat`: 초기 교회 PC 서비스 설치 배치 (참조용).
+  - `fix_cloudflared_service.bat`: 서비스 경로 복구 배치 (참조용).
+  - `check_skc_live.bat`: 3단계 헬스체크 배치 (참조용).
+  - *임베디드 온디맨드 터널 탑재로 인해 일반 배포본에서는 배치 스크립트가 불필요하여 root에서 scratch로 정리되었습니다.*
+
+### Cloudflare Zero Trust 대시보드 및 터널 토큰(Token) 확인
+- **대시보드 접속 주소**: [https://one.dash.cloudflare.com](https://one.dash.cloudflare.com) 또는 [https://dash.cloudflare.com](https://dash.cloudflare.com)
+- **탐색 경로**:
+  1. Cloudflare Zero Trust 접속 ➔ **Networks** ➔ **Tunnels**
+  2. 등록된 터널(예: `skc-live` / `live.starkvillekoreanchurch.org`) 선택
+  3. **Configure** ➔ **Overview** 또는 **Install and run a connector** 탭 클릭
+  4. 운영체제 **Windows** 선택 후 나타나는 설치 명령어 확인:
+     ```cmd
+     cloudflared.exe service install <TOKEN_STRING>
+     ```
+  5. 명령어 뒷부분의 `<TOKEN_STRING>`(Base64 인코딩된 긴 토큰 문자열)이 해당 터널의 인증 키입니다.
+- **토큰 저장 방식**:
+  - 최우선 (권장): `.env` 파일의 `CLOUDFLARE_TUNNEL_TOKEN` 변수 (Git 추적 제외)
+  - Windows 서비스 전역: `C:\ProgramData\cloudflared\token` (SYSTEM 계정 권한 보관)
+
+### 이중 실행 모드 (Dual Operation Mode)
+1. **교회 본당 컴퓨터 (Windows Service 모드)**:
+   - 고정 컴퓨터에서는 백그라운드 윈도우 서비스(`Cloudflared`)로 항상 켜져 있거나 서비스로 기동됩니다.
+2. **개인 노트북 / 비관리자 환경 (임베디드 프로세스 모드 - On-Demand Process)**:
+   - 관리자 권한(UAC) 없이 표준 사용자 권한으로도 실행 가능합니다.
+   - 번역 프로그램(`main.py` / `SKC_translation.exe`) 실행 시:
+     - 시스템 윈도우 서비스가 실행 중이지 않으면 앱 내부의 `CloudflaredService`가 `cloudflared.exe tunnel run --token <TOKEN>`을 창 없는 백그라운드 자식 프로세스(`CREATE_NO_WINDOW`)로 직접 구동합니다.
+   - 번역 프로그램 종료 시:
+     - `server.py` lifespan teardown 및 Python `atexit` 훅을 통해 `cloudflared.exe` 프로세스를 안전하게 자동 종료합니다.
+     - 노트북을 닫거나 집에서 프로그램을 종료하면 터널이 함께 내려가므로 교회 본당 시스템과의 커넥터 충돌이 원천 방지됩니다.
+
+
+

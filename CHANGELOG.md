@@ -5,6 +5,48 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.2] - 2026-09-05
+
+### Added
+- **Embedded On-Demand Cloudflare Tunnel (`app/cloudflared_service.py`, `app/config.py`)**:
+  - Non-admin laptop execution: when the system Windows service is not running, the application starts `cloudflared.exe tunnel run --token <TOKEN>` as an embedded, windowless child process (`CREATE_NO_WINDOW`).
+  - Native `.env` configuration: `CLOUDFLARE_TUNNEL_TOKEN` is loaded directly from `.env` (via `get_tunnel_token()`), eliminating the requirement for a separate `token.txt` file.
+  - Output redirection to `logs/cloudflared.log` to prevent Windows 4KB pipe buffer deadlocks.
+  - Graceful termination on server shutdown and registration with Python `atexit` to ensure child processes never linger.
+  - Public Host Guard allowance for dynamic `live-origin.*` host headers.
+- **Setup GUI Direct `.env` Tunnel Token Provisioning (`setup_gui.py`, `app/config.py`)**:
+  - Generalized `update_env_var()` and added `update_tunnel_token()` in `app/config.py` for atomic `.env` modifications.
+  - Setup GUI saves tunnel token directly into `.env` and clarifies that the application operates portably without requiring Administrator UAC elevation.
+- **Packaging & Build Resilience (`build_parallel.py`, `build_exe.bat`)**:
+  - `_safe_copy()` helper prevents `[Errno 13] Permission denied` crashes when destination files are running or unchanged.
+  - Automated packaging of `cloudflared.exe`, `.env`, and `.env.example` into `.agent/dist/`.
+  - Pre-build `taskkill` in `build_exe.bat` ensuring destination binaries are unlocked before compilation.
+  - Replaced Unicode emojis with ASCII progress indicators to prevent Windows console `charmap` encoding errors.
+
+### Changed
+- **Repository Decluttering**:
+  - Archived legacy batch scripts (`install_cloudflare_tunnel.bat`, `fix_cloudflared_service.bat`, `check_skc_live.bat`) and `token.txt` into `.agent/scratch/`.
+  - Simplified `find_tunnel_token_file()` in `app/cloudflared_service.py` to a single directory search comprehension.
+
+## [3.1.1] - 2026-09-05
+
+### Added
+- **Operator Console Dual QR Code Access (`app/templates/operator/_attendee_access.html`, `app/templates/operator/_dual_qr_modal.html`, `app/static/js/operator.js`, `app/server.py`)**:
+  - Added Local Wi-Fi QR code (`/api/qr.png?type=local`) alongside the Public HTTPS QR code on the operator console.
+  - Interactive segmented pill switcher (`[ 🌐 공용 인터넷 | 🏛️ 현장 Wi-Fi ]`) enabling instant 1-click toggling between Public HTTPS and Local Wi-Fi modes.
+  - Dynamic Attendee Access card updating the active QR code, status badge, direct URL link, and copy/open buttons according to the selected network mode.
+  - Scannable secondary QR thumbnail with 1-click quick-switch action in the alternate network info box.
+  - High-resolution Dual QR Code Modal (`_dual_qr_modal.html`) displaying both Public HTTPS and Local Wi-Fi QR codes side-by-side with church branding, attendee guidance notes, and print poster stylesheet (`@media print`).
+  - Extended `/api/qr.png` endpoint to support `type="fallback"` and `type="ip"` query parameters for raw IP fallback access.
+- **Universal Cloudflare Tunnel Installer & Auto-Downloader (`install_cloudflare_tunnel.bat`, `fix_cloudflared_service.bat`, `setup_gui.py`)**:
+  - Direct binary download routine in `setup_gui.py` (`SKC_setup.exe`) to pull the official `cloudflared.exe` (~54MB) directly into the software directory.
+  - Added `Tunnel Binary:` status indicator and `[⬇️ Download cloudflared.exe]` button in Card 3 of Setup GUI.
+  - Automatic prompt to download `cloudflared.exe` when attempting to install/start service if binary is missing.
+  - Seamless UAC elevation integration launching `fix_cloudflared_service.bat` with user's Tunnel Token when non-admin permissions block service registration.
+  - Created `install_cloudflare_tunnel.bat` with auto-elevation, binary download, token provisioning via argument / file / prompt, service registration (`sc create`/`sc config`), and dynamic endpoint testing.
+  - Enhanced `fix_cloudflared_service.bat` to support token argument passing (`fix_cloudflared_service.bat [TOKEN]`), auto-download missing binary, and repair Windows Service `binPath` portably.
+  - Documented Cloudflare Zero Trust dashboard token retrieval steps and URLs in `how_to_use.html` and `docs/TECHNICAL.md`.
+
 ## [3.1.0] - 2026-09-02
 
 ### Added

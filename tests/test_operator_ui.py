@@ -85,6 +85,19 @@ def test_operator_html_structure_and_accessibility():
     assert 'setOperatorUiLanguage' in js
     assert 'skc_ui_lang' in js
 
+    # 10. Check Attendee QR Access (Public HTTPS & Local Wi-Fi dual QR support)
+    assert 'id="qr-access-tabs"' in html
+    assert 'id="qr-tab-public"' in html
+    assert 'id="qr-tab-local"' in html
+    assert 'id="qr-img"' in html
+    assert 'id="qr-alt-img"' in html
+    assert 'id="dual-qr-modal"' in html
+    assert 'id="modal-qr-public-img"' in html
+    assert 'id="modal-qr-local-img"' in html
+    assert 'switchQrMode' in js
+    assert 'openDualQrModal' in js
+    assert '#qr-access-tabs input[type="radio"]:checked + .seg-label' in css
+
 
 
 def test_api_devices_and_rescan():

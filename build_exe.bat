@@ -38,6 +38,11 @@ if errorlevel 1 (
 
 cd /d "%~dp0"
 
+:: Terminate any running instances so Windows does not lock files in .agent\dist
+taskkill /F /IM SKC_translation.exe >nul 2>&1
+taskkill /F /IM SKC_setup.exe >nul 2>&1
+taskkill /F /IM cloudflared.exe >nul 2>&1
+
 echo [2/2] Running Multi-Threaded Parallel Build (SKC_translation.exe + SKC_setup.exe)...
 python build_parallel.py -j 4
 if errorlevel 1 (

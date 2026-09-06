@@ -28,6 +28,7 @@ from app.config import (
     save_church_identity,
     save_public_url,
     update_gemini_api_key,
+    update_tunnel_token,
 )
 from app.cloudflared_service import CloudflaredService
 
@@ -44,19 +45,46 @@ COLOR_TEXT_MUTED = "#627d98"
 COLOR_SUCCESS = "#2b8a3e"
 COLOR_ERROR = "#c92a2a"
 
+CLOUDFLARED_DOWNLOAD_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+
+
+def sanitize_tunnel_token(raw_token: str) -> str:
+    """Extract clean base64 token if user pasted the entire command or wrapped in quotes."""
+    s = raw_token.strip().strip('"').strip("'").strip()
+    if not s:
+        return ""
+    for chunk in s.split():
+        clean_chunk = chunk.strip().strip('"').strip("'")
+        if clean_chunk.startswith("eyJh"):
+            return clean_chunk
+    if "service install" in s:
+        parts = s.split("service install", 1)
+        if len(parts) > 1:
+            candidate = parts[1].strip().split()[0].strip('"').strip("'")
+            if candidate:
+                return candidate
+    if "--token" in s:
+        parts = s.split("--token", 1)
+        if len(parts) > 1:
+            candidate = parts[1].strip().split()[0].strip('"').strip("'")
+            if candidate:
+                return candidate
+    return s
+
 
 class SetupApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Live Translation Setup")
-        self.root.geometry("1060x670")
-        self.root.minsize(980, 620)
+        self.root.geometry("1060x700")
+        self.root.minsize(980, 650)
         self.root.configure(bg=COLOR_BG)
 
         self.app_root = get_app_root()
         self.selected_logo_source: Path | None = None
         self.testing = False
         self.validation_passed = False
+        self.is_downloading_cf = False
 
         # Load existing configuration
         self.current_church = church_cfg()
@@ -75,6 +103,7 @@ class SetupApp:
 
         self._setup_styles()
         self._build_ui()
+        self._refresh_binary_status()
         self._update_readiness_pills()
 
     def _setup_styles(self):
@@ -319,7 +348,15 @@ class SetupApp:
         p_tunnel = tk.Frame(card_tunnel, bg=COLOR_CARD_BG, padx=14, pady=10)
         p_tunnel.pack(fill="both", expand=True)
 
-        ttk.Label(p_tunnel, text="3. PUBLIC HTTPS / CLOUDFLARE NAMED TUNNEL", style="SectionTitle.TLabel").pack(anchor="w", pady=(0, 6))
+        f_tunnel_hdr = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
+        f_tunnel_hdr.pack(fill="x", pady=(0, 6))
+        ttk.Label(f_tunnel_hdr, text="3. PUBLIC HTTPS / CLOUDFLARE NAMED TUNNEL", style="SectionTitle.TLabel").pack(side="left")
+        btn_cf_dash = ttk.Button(
+            f_tunnel_hdr,
+            text="🌐 Open Cloudflare Zero Trust (Get Token)",
+            command=lambda: webbrowser.open("https://one.dash.cloudflare.com/"),
+        )
+        btn_cf_dash.pack(side="right")
 
         # Row 1: Public URL
         f_puburl = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
@@ -329,7 +366,16 @@ class SetupApp:
         self.entry_public_url.insert(0, self.current_network.get("public_url", "https://live.starkvillekoreanchurch.org"))
         self.entry_public_url.pack(side="left", fill="x", expand=True)
 
-        # Row 2: Service Status + Refresh
+        # Row 2: Tunnel Binary Status + Download
+        f_bin = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
+        f_bin.pack(fill="x", pady=3)
+        ttk.Label(f_bin, text="Tunnel Binary:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        self.lbl_bin_status = tk.Label(f_bin, text="Checking...", font=("Segoe UI", 9, "bold"), bg=COLOR_CARD_BG, fg=COLOR_TEXT_MUTED)
+        self.lbl_bin_status.pack(side="left", padx=4)
+        self.btn_download_cf = ttk.Button(f_bin, text="⬇️ Download cloudflared.exe", command=self._start_download_cloudflared)
+        self.btn_download_cf.pack(side="right")
+
+        # Row 3: Service Status + Refresh
         f_svc = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
         f_svc.pack(fill="x", pady=3)
         ttk.Label(f_svc, text="Windows Service:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
@@ -338,7 +384,7 @@ class SetupApp:
         btn_refresh_svc = ttk.Button(f_svc, text="🔄 Refresh", width=10, command=self._refresh_service_status)
         btn_refresh_svc.pack(side="right")
 
-        # Row 3: Tunnel Token + Start / Install
+        # Row 4: Tunnel Token + Start / Install
         f_tok = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
         f_tok.pack(fill="x", pady=3)
         ttk.Label(f_tok, text="Tunnel Token:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
@@ -349,7 +395,7 @@ class SetupApp:
 
         ttk.Label(
             p_tunnel,
-            text="• Token is only needed once to install or repair the Windows service. Runtime translation monitors the service automatically.",
+            text="• To get your Token: Open Cloudflare Zero Trust ➔ Networks ➔ Tunnels ➔ Configure ➔ Copy token string.\n• Token is saved locally to C:\\ProgramData\\cloudflared\\token. cloudflared.exe runs directly from this folder.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 0))
 
@@ -514,6 +560,134 @@ class SetupApp:
 
         self._update_readiness_pills()
 
+    def _get_local_cloudflared_path(self) -> Path:
+        return self.app_root / "cloudflared.exe"
+
+    def _find_cloudflared(self) -> Path | None:
+        local_path = self._get_local_cloudflared_path()
+        if local_path.exists():
+            return local_path
+        which_path = shutil.which("cloudflared.exe") or shutil.which("cloudflared")
+        if which_path and Path(which_path).exists():
+            return Path(which_path)
+        legacy_path = self.app_root.parent / "cloudflare_tunnel" / "cloudflared.exe"
+        if legacy_path.exists():
+            return legacy_path
+        return None
+
+    def _refresh_binary_status(self):
+        if not hasattr(self, "lbl_bin_status"):
+            return
+        found = self._find_cloudflared()
+        local_path = self._get_local_cloudflared_path()
+        if found and found.exists():
+            try:
+                size_mb = found.stat().st_size / (1024 * 1024)
+                size_str = f" ({size_mb:.1f} MB)"
+            except Exception:
+                size_str = ""
+            if found.resolve() == local_path.resolve():
+                self.lbl_bin_status.configure(
+                    text=f"🟢 Present in software folder{size_str}",
+                    fg=COLOR_SUCCESS,
+                )
+            else:
+                self.lbl_bin_status.configure(
+                    text=f"🟢 Found in {found.parent.name}{size_str}",
+                    fg=COLOR_SUCCESS,
+                )
+            if hasattr(self, "btn_download_cf"):
+                self.btn_download_cf.configure(text="🔄 Re-download Binary", state="normal")
+        else:
+            self.lbl_bin_status.configure(
+                text="⚪ Not Found (Required for Public HTTPS)",
+                fg=COLOR_ERROR,
+            )
+            if hasattr(self, "btn_download_cf"):
+                self.btn_download_cf.configure(text="⬇️ Download cloudflared.exe", state="normal")
+
+    def _start_download_cloudflared(self):
+        if getattr(self, "is_downloading_cf", False):
+            return
+        self.is_downloading_cf = True
+        if hasattr(self, "btn_download_cf"):
+            self.btn_download_cf.configure(text="⏳ Downloading (~54 MB)...", state="disabled")
+        if hasattr(self, "lbl_bin_status"):
+            self.lbl_bin_status.configure(text="⏳ Downloading cloudflared.exe (~54 MB)...", fg=COLOR_GOLD)
+
+        threading.Thread(target=self._run_download_cloudflared, daemon=True).start()
+
+    def _run_download_cloudflared(self):
+        dest = self._get_local_cloudflared_path()
+        temp_dest = dest.with_suffix(".tmp")
+        success = False
+        err_msg = ""
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                CLOUDFLARED_DOWNLOAD_URL,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp, open(temp_dest, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            if temp_dest.exists() and temp_dest.stat().st_size > 10_000_000:
+                if dest.exists():
+                    try:
+                        dest.unlink()
+                    except Exception:
+                        pass
+                os.replace(str(temp_dest), str(dest))
+                success = True
+            else:
+                err_msg = "Downloaded file is incomplete or corrupted."
+        except Exception as e:
+            err_msg = str(e)
+            # Fallback using curl.exe
+            try:
+                import subprocess
+                subprocess.run(
+                    ["curl.exe", "-L", "--silent", "--show-error", "-o", str(temp_dest), CLOUDFLARED_DOWNLOAD_URL],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if temp_dest.exists() and temp_dest.stat().st_size > 10_000_000:
+                    if dest.exists():
+                        try:
+                            dest.unlink()
+                        except Exception:
+                            pass
+                    os.replace(str(temp_dest), str(dest))
+                    success = True
+                    err_msg = ""
+            except Exception as e2:
+                err_msg = f"{err_msg}; curl fallback failed: {e2}"
+        finally:
+            if temp_dest.exists():
+                try:
+                    temp_dest.unlink()
+                except OSError:
+                    pass
+
+        self.root.after(0, self._on_download_complete, success, err_msg)
+
+    def _on_download_complete(self, success: bool, err_msg: str):
+        self.is_downloading_cf = False
+        self._refresh_binary_status()
+        self._refresh_service_status()
+        if success:
+            messagebox.showinfo(
+                "Download Succeeded",
+                f"cloudflared.exe was successfully downloaded directly into:\n{self._get_local_cloudflared_path()}\n\n"
+                "You can now paste your Tunnel Token and click 'Start / Install Service'.",
+            )
+        else:
+            messagebox.showerror(
+                "Download Failed",
+                f"Could not download cloudflared.exe automatically:\n{err_msg}\n\n"
+                "Tip: You can manually place 'cloudflared.exe' in this folder.",
+            )
+
     def _refresh_service_status(self):
         state = self.cloudflared_service._query()
         if state == "running":
@@ -545,16 +719,32 @@ class SetupApp:
 
         # 3. Cloudflare readiness
         state = self.cloudflared_service._query()
+        has_env_token = bool(self.cloudflared_service.get_tunnel_token())
         if state == "running":
             self.lbl_pill_cloudflare.configure(text="🟢 Public HTTPS", bg="#dcfce7", fg=COLOR_SUCCESS)
-        elif state == "stopped":
-            self.lbl_pill_cloudflare.configure(text="🟡 Service Stopped", bg="#fef9c3", fg=COLOR_GOLD)
+        elif has_env_token or state == "stopped":
+            self.lbl_pill_cloudflare.configure(text="🟢 Public HTTPS (Configured)", bg="#dcfce7", fg=COLOR_SUCCESS)
         else:
             self.lbl_pill_cloudflare.configure(text="⚪ Public HTTPS", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
 
     def _start_or_install_service(self):
+        # 1. Verify binary exists or offer download
+        cf_bin = self._find_cloudflared()
+        if not cf_bin:
+            if messagebox.askyesno(
+                "cloudflared.exe Missing",
+                "cloudflared.exe is required for public HTTPS access, but was not found in this folder.\n\n"
+                "Would you like to automatically download the official Cloudflare binary now (~54 MB)?",
+            ):
+                self._start_download_cloudflared()
+            return
+
         state = self.cloudflared_service._query()
-        token = self.entry_tunnel_token.get().strip() if hasattr(self, "entry_tunnel_token") else ""
+        raw_token = self.entry_tunnel_token.get().strip() if hasattr(self, "entry_tunnel_token") else ""
+        token = sanitize_tunnel_token(raw_token)
+        if token and hasattr(self, "entry_tunnel_token") and token != raw_token:
+            self.entry_tunnel_token.delete(0, tk.END)
+            self.entry_tunnel_token.insert(0, token)
 
         if state == "running":
             messagebox.showinfo("Cloudflared Service", "Cloudflared service is already RUNNING and active.")
@@ -562,13 +752,14 @@ class SetupApp:
 
         if state == "stopped":
             success = self.cloudflared_service._run("start")
-            self._refresh_service_status()
+            self._update_readiness_pills()
             if success:
                 messagebox.showinfo("Cloudflared Service", "Cloudflared service started successfully!")
             else:
-                messagebox.showwarning(
-                    "Service Start Elevation Required",
-                    "Could not start the service directly due to Windows permission constraints.\n\nPlease start it via Windows Services (services.msc) or run 'net start cloudflared' in an Administrator Command Prompt.",
+                messagebox.showinfo(
+                    "Service Info",
+                    "The system Windows service could not be started directly without Administrator rights.\n\n"
+                    "No problem: Live Translation will automatically run the tunnel in portable on-demand mode whenever you start the application.",
                 )
             return
 
@@ -576,33 +767,51 @@ class SetupApp:
             if not token:
                 messagebox.showwarning(
                     "Tunnel Token Required",
-                    "To install the Cloudflared Windows service, please paste your Cloudflare Tunnel Token into the field above.\n\nPossession of that token permits the connector to run the tunnel.",
+                    "To configure Cloudflare Tunnel, please paste your Tunnel Token into the field above.\n\n"
+                    "Where to find your token:\n"
+                    "1. Open Cloudflare Zero Trust (https://one.dash.cloudflare.com)\n"
+                    "2. Navigate to Networks ➔ Tunnels ➔ select your tunnel ➔ Configure\n"
+                    "3. Under 'Install connector (Windows)', copy the token string.",
                 )
                 return
 
+            # Save token directly to .env (single source of truth)
+            try:
+                update_tunnel_token(token)
+            except Exception as e:
+                messagebox.showwarning(".env Warning", f"Could not save token to .env: {e}")
+
+            # Provision to C:\ProgramData\cloudflared\token for system service compatibility if writable
+            token_dir = Path("C:/ProgramData/cloudflared")
+            try:
+                token_dir.mkdir(parents=True, exist_ok=True)
+                (token_dir / "token").write_text(token, encoding="utf-8")
+            except Exception:
+                pass
+
+            # Best-effort attempt to register Windows service
             try:
                 import subprocess
-                res = subprocess.run(["cloudflared.exe", "service", "install", token], capture_output=True, text=True, timeout=15)
-                self._refresh_service_status()
+                cf_exe_str = str(cf_bin)
+                res = subprocess.run([cf_exe_str, "service", "install", token], capture_output=True, text=True, timeout=15)
+                self._update_readiness_pills()
                 out_lower = (res.stdout + " " + res.stderr).lower()
                 if res.returncode == 0 or "installed" in out_lower:
                     if hasattr(self, "entry_tunnel_token"):
                         self.entry_tunnel_token.delete(0, tk.END)
                     messagebox.showinfo("Installation Complete", "Cloudflared Windows service installed successfully!\n\nThe token has been provisioned into the Windows service.")
-                elif "access is denied" in out_lower or "permission" in out_lower:
-                    messagebox.showerror(
-                        "Administrator Elevation Required",
-                        "Installing a Windows service requires Administrator privileges.\n\nPlease right-click SKC_setup.exe and select 'Run as administrator', or execute:\n\ncloudflared.exe service install <TOKEN>\n\nin an Administrator Command Prompt.",
-                    )
                 else:
                     messagebox.showinfo(
-                        "Installation Result",
-                        f"Command output:\n{res.stdout or res.stderr or 'Check services.msc'}\n\nTip: Installing Windows services requires Administrator privileges.",
+                        "Token Configured (Portable Mode Ready)",
+                        "Your Cloudflare Tunnel token has been saved to .env!\n\n"
+                        "Live Translation will automatically run the tunnel on-demand whenever you launch the app—no Administrator rights required.",
                     )
-            except FileNotFoundError:
-                messagebox.showerror("cloudflared.exe Not Found", "cloudflared.exe was not found on your system PATH.\n\nPlease install cloudflared or place cloudflared.exe in the application folder.")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to run cloudflared.exe:\n{e}\n\nMake sure you have Administrator privileges.")
+            except Exception:
+                messagebox.showinfo(
+                    "Token Configured (Portable Mode Ready)",
+                    "Your Cloudflare Tunnel token has been saved to .env!\n\n"
+                    "Live Translation will automatically run the tunnel on-demand whenever you launch the app—no Administrator rights required.",
+                )
 
     def _save_and_finish(self):
         church_name = self.entry_church_name.get().strip() or "Starkville Korean Church"

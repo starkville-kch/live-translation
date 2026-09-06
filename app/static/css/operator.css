@@ -884,6 +884,67 @@ header {
   border: 1px solid var(--color-gold-500);
 }
 
+#qr-access-tabs input[type="radio"]:checked + .seg-label {
+  background-color: var(--color-navy-800);
+  border-color: var(--color-navy-900);
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+}
+
+#dual-qr-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 27, 45, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+  padding: 16px;
+}
+#dual-qr-modal.hidden {
+  display: none !important;
+}
+
+.dual-qr-dialog {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid var(--color-warm-200);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  max-width: 600px;
+  width: 100%;
+  padding: 20px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #dual-qr-modal, #dual-qr-modal * {
+    visibility: visible;
+  }
+  #dual-qr-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #ffffff;
+    padding: 0;
+    display: block !important;
+  }
+  .dual-qr-dialog {
+    box-shadow: none;
+    border: none;
+    max-width: 100%;
+    padding: 0;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
 /* ============================================================
    TELEMETRY
    ============================================================ */

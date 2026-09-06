@@ -188,3 +188,129 @@ def test_save_public_url():
     """Verify save_public_url updates config.yaml atomically."""
     save_public_url("https://live.starkvillekoreanchurch.org", enable_tunnel=True)
 
+
+def test_cloudflared_binary_detection_and_status():
+    """Verify cloudflared binary detection and UI status label updates."""
+    from setup_gui import SetupApp, CLOUDFLARED_DOWNLOAD_URL
+    import tkinter as tk
+
+    assert "cloudflared-windows-amd64.exe" in CLOUDFLARED_DOWNLOAD_URL
+
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        is_mock_root = False
+    except (tk.TclError, Exception):
+        root = MagicMock()
+        root.after.side_effect = lambda delay, fn, *args: fn(*args)
+        is_mock_root = True
+
+    try:
+        app = SetupApp(root)
+        local_path = app._get_local_cloudflared_path()
+        assert local_path.name == "cloudflared.exe"
+
+        # Check binary status refresh sets UI widgets
+        app._refresh_binary_status()
+        assert hasattr(app, "lbl_bin_status")
+        assert hasattr(app, "btn_download_cf")
+
+        # Test binary detection when present in app_root
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app.app_root = Path(tmpdir)
+            mock_exe = app.app_root / "cloudflared.exe"
+            mock_exe.write_bytes(b"MZ" + b"\x00" * 1024)
+            found = app._find_cloudflared()
+            assert found == mock_exe
+            app._refresh_binary_status()
+            if not is_mock_root:
+                assert "Present in software folder" in app.lbl_bin_status.cget("text")
+    finally:
+        if not is_mock_root:
+            root.destroy()
+
+
+def test_sanitize_tunnel_token():
+    """Verify sanitize_tunnel_token extracts clean base64 token from various command formats."""
+    from setup_gui import sanitize_tunnel_token
+
+    sample_token = "eyJhIjoiYjQyNDA5YmE2ZmQzNWQ4MzExZDcwMDIzNzdkYWUwZTIiLCJ0IjoiMjYxYjZhZjUtYmE2MC00ZWY1LTgzZDAtNzgzMjAyYTMwNTZkIiwicyI6Ik1UQXhZV1ZqTkdNdE16ZGlaQzAwTkRGaExXRm1ZbVV0WkRnME9UWXdOMll6WVRjMCJ9"
+
+    # 1. Plain token
+    assert sanitize_tunnel_token(sample_token) == sample_token
+
+    # 2. Quoted token
+    assert sanitize_tunnel_token(f'"{sample_token}"') == sample_token
+    assert sanitize_tunnel_token(f"'{sample_token}'") == sample_token
+
+    # 3. Full Cloudflare dashboard copy command: cloudflared.exe service install <TOKEN>
+    cmd1 = f"cloudflared.exe service install {sample_token}"
+    assert sanitize_tunnel_token(cmd1) == sample_token
+
+    # 4. Without .exe
+    cmd2 = f"cloudflared service install {sample_token}"
+    assert sanitize_tunnel_token(cmd2) == sample_token
+
+    # 5. CLI flag: tunnel run --token <TOKEN>
+    cmd3 = f"cloudflared tunnel run --token {sample_token}"
+    assert sanitize_tunnel_token(cmd3) == sample_token
+
+    # 6. Empty / None
+    assert sanitize_tunnel_token("") == ""
+    assert sanitize_tunnel_token("   ") == ""
+
+
+def test_cloudflared_embedded_process_lifecycle(monkeypatch, tmp_path):
+    """Verify CloudflaredService discovers binary/token and manages subprocess lifecycle."""
+    from unittest.mock import MagicMock
+    from app.cloudflared_service import CloudflaredService
+
+    service = CloudflaredService()
+
+    # Mock binary and token file
+    fake_bin = tmp_path / "cloudflared.exe"
+    fake_bin.write_text("fake binary", encoding="utf-8")
+    fake_token = tmp_path / "token.txt"
+    fake_token.write_text("eyJhIjoiZXhhbXBsZSJ9", encoding="utf-8")
+
+    monkeypatch.delenv("CLOUDFLARE_TUNNEL_TOKEN", raising=False)
+    monkeypatch.setattr(CloudflaredService, "find_cloudflared_binary", classmethod(lambda cls: fake_bin))
+    monkeypatch.setattr(CloudflaredService, "find_tunnel_token_file", classmethod(lambda cls: fake_token))
+    monkeypatch.setattr(service, "_run", lambda action: False)  # Service start fails/not available
+    monkeypatch.setattr(service, "_query", lambda: "stopped" if service._proc is None else "running")
+
+    # Mock Popen
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = None  # Process is running
+    mock_proc.pid = 99999
+    captured_args = []
+
+    def mock_popen(cmd, **kwargs):
+        captured_args.append(cmd)
+        return mock_proc
+
+    monkeypatch.setattr("subprocess.Popen", mock_popen)
+
+    # Start service -> should spawn embedded process with token-file fallback
+    service.start()
+
+    assert service._proc is mock_proc
+    assert len(captured_args) == 1
+    assert captured_args[0] == [str(fake_bin), "tunnel", "run", "--token-file", str(fake_token)]
+
+    # Query status -> should be running
+    assert service._query() == "running"
+
+    # Stop service -> terminates proc
+    service.stop()
+    mock_proc.terminate.assert_called_once()
+    assert service._proc is None
+
+    # Now test with CLOUDFLARE_TUNNEL_TOKEN in environment
+    monkeypatch.setenv("CLOUDFLARE_TUNNEL_TOKEN", "my-env-secret-token")
+    captured_args.clear()
+    service.start()
+    assert len(captured_args) == 1
+    assert captured_args[0] == [str(fake_bin), "tunnel", "run", "--token", "my-env-secret-token"]
+    service.stop()
+

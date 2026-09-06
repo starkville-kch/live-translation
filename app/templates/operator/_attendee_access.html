@@ -1,27 +1,73 @@
-<!-- Attendee Access Card (Public QR, URL, and Status) -->
+<!-- Attendee Access Card (Public HTTPS & Local Wi-Fi QR Codes) -->
 <div class="card">
   <h2 class="card-toggle open" id="qr-toggle">
     <span class="tooltip tooltip-left">
       <span data-lang="ko">접속 QR 코드 (Attendee Access)</span>
       <span data-lang="en">Attendee Access QR</span>
-      <span class="tooltiptext" data-lang="ko">참석자들이 스마트폰으로 스캔하여 실시간 통역(/live)에 접속할 수 있는 공용 HTTPS QR 코드입니다.</span>
-      <span class="tooltiptext" data-lang="en">Public HTTPS QR code for attendees to scan and view live captions & audio on mobile devices.</span>
+      <span class="tooltiptext" data-lang="ko">참석자들이 스마트폰으로 스캔하여 실시간 통역(/live)에 접속할 수 있는 공용 HTTPS 및 현장 Wi-Fi QR 코드입니다.</span>
+      <span class="tooltiptext" data-lang="en">QR codes for attendees to scan and access live captions & audio via Public HTTPS or Local Wi-Fi.</span>
     </span>
     <span class="chevron">▼</span>
   </h2>
   <div class="card-body" id="qr-body">
-    <div style="background:#ffffff; border-radius:8px; padding:12px; border:1px solid var(--color-warm-200); text-align:center; margin-bottom:12px;">
-      <img id="qr-img" src="/api/qr.png" alt="Public HTTPS QR Code" style="width:100%; max-width:220px; height:auto; display:inline-block; border-radius:6px; margin:0 auto 8px auto; border: 1px solid var(--color-gold-500);">
+    <!-- Network Mode Segmented Tabs -->
+    <div class="segmented-control" id="qr-access-tabs" style="display:flex; width:100%; margin-bottom:10px;">
+      <input type="radio" name="qr-view-mode" id="qr-tab-public" value="public" checked onchange="switchQrMode('public')">
+      <label for="qr-tab-public" class="seg-label" style="flex:1; justify-content:center; padding:4px 6px; font-size:11px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+        <span data-lang="ko">공용 인터넷</span>
+        <span data-lang="en">Public HTTPS</span>
+      </label>
+      <input type="radio" name="qr-view-mode" id="qr-tab-local" value="local" onchange="switchQrMode('local')">
+      <label for="qr-tab-local" class="seg-label" style="flex:1; justify-content:center; padding:4px 6px; font-size:11px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+        <span data-lang="ko">현장 Wi-Fi</span>
+        <span data-lang="en">Local Wi-Fi</span>
+      </label>
+    </div>
+
+    <!-- Main QR Card Box -->
+    <div style="background:#ffffff; border-radius:8px; padding:12px; border:1px solid var(--color-warm-200); text-align:center; margin-bottom:10px;">
+      <!-- Active Mode Pill -->
+      <div id="qr-active-pill" style="display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:var(--color-navy-900); background:var(--color-navy-50); border:1px solid var(--color-warm-200); border-radius:4px; padding:2px 8px; margin-bottom:8px;">
+        <span id="qr-pill-icon">🌐</span>
+        <span id="qr-pill-label-ko" data-lang="ko">공용 인터넷 QR (Public HTTPS)</span>
+        <span id="qr-pill-label-en" data-lang="en">Public HTTPS QR</span>
+      </div>
+
+      <div style="position:relative; display:inline-block; margin:0 auto 8px auto;">
+        <img id="qr-img" src="/api/qr.png?type=public" alt="Attendee Access QR Code" style="width:100%; max-width:220px; height:auto; display:block; border-radius:6px; margin:0 auto; border: 1px solid var(--color-gold-500);">
+        <button type="button" id="btn-enlarge-qr" onclick="openDualQrModal()" title="크게 보기 / 안내문 인쇄" style="position:absolute; bottom:6px; right:6px; width:26px; height:26px; padding:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.92); border:1px solid #cbd5e1; border-radius:4px; cursor:pointer; color:var(--color-navy-800);" aria-label="Enlarge QR codes">
+          <svg style="width:13px; height:13px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 3 21 3 21 9"/>
+            <polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/>
+            <line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+        </button>
+      </div>
+
       <div id="qr-public-status" style="font-size:12px; font-weight:700; color:var(--color-success); margin-bottom:4px;">
         ✓ Public HTTPS ready
       </div>
       <a id="qr-public-url" href="https://live.starkvillekoreanchurch.org" target="_blank" style="font-size:12px; font-weight:600; color:var(--color-navy-900); word-break:break-all; text-decoration:underline; display:block;">
         https://live.starkvillekoreanchurch.org
       </a>
+      <div id="qr-usage-note" style="font-size:10px; color:var(--color-text-muted); margin-top:4px;">
+        <span data-lang="ko">📱 LTE/5G 및 외부 참석자 스캔</span>
+        <span data-lang="en">📱 Cellular Data (LTE/5G) & Remote</span>
+      </div>
     </div>
 
     <!-- Action Buttons: Open & Copy -->
-    <div style="display:flex; gap:8px; margin-bottom:12px;">
+    <div style="display:flex; gap:8px; margin-bottom:10px;">
       <a id="btn-open-attendee" href="https://live.starkvillekoreanchurch.org" target="_blank" class="primary" style="flex:1; text-align:center; padding:8px 6px; font-size:12px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:4px; border-radius:6px;">
         🌐 Open Attendee
       </a>
@@ -32,18 +78,45 @@
       </button>
     </div>
 
-    <!-- Local Fallback Link -->
-    <div style="padding:8px 10px; background:#f8fafc; border-radius:6px; border:1px solid var(--color-warm-200); font-size:11px;">
-      <div style="font-weight:700; color:var(--color-text-secondary); margin-bottom:2px;">
-        <span data-lang="ko">🏛️ 현장 Wi-Fi 백업:</span>
-        <span data-lang="en">🏛️ Local Wi-Fi Fallback:</span>
+    <!-- Alternate Network Card (Thumbnail QR + Switch Button) -->
+    <div id="qr-alt-card" style="padding:8px 10px; background:#f8fafc; border-radius:6px; border:1px solid var(--color-warm-200); font-size:11px;">
+      <div style="display:flex; align-items:flex-start; gap:8px;">
+        <!-- Scannable Secondary QR Thumbnail -->
+        <div style="text-align:center; flex-shrink:0;">
+          <img id="qr-alt-img" src="/api/qr.png?type=local" alt="Local Wi-Fi QR Thumbnail" onclick="toggleQrMode()" title="클릭하여 메인 QR로 전환 / Click to switch QR" style="width:62px; height:62px; display:block; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer; background:#fff; padding:1px;">
+          <button type="button" onclick="toggleQrMode()" style="background:none; border:none; padding:1px 0; font-size:9px; color:var(--color-gold-500); font-weight:700; cursor:pointer; display:block; width:100%; text-decoration:underline;">
+            <span data-lang="ko">전환 ⇄</span>
+            <span data-lang="en">Switch ⇄</span>
+          </button>
+        </div>
+
+        <div style="flex:1; min-width:0;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
+            <div id="qr-alt-label" style="font-weight:700; color:var(--color-text-secondary); font-size:11px;">
+              <span id="qr-alt-label-ko" data-lang="ko">🏛️ 현장 Wi-Fi 백업:</span>
+              <span id="qr-alt-label-en" data-lang="en">🏛️ Local Wi-Fi Fallback:</span>
+            </div>
+          </div>
+          <a id="qr-local-url" href="http://skc.local:8080/live" target="_blank" style="color:var(--color-gold-500); word-break:break-all; text-decoration:underline; font-weight:600; display:block; font-size:11px;">
+            http://skc.local:8080/live
+          </a>
+          <div id="qr-rtt-stat" style="margin-top:3px; color:var(--color-text-muted); font-size:10px;">
+            RTT: —
+          </div>
+        </div>
       </div>
-      <a id="qr-local-url" href="http://skc.local:8080/live" target="_blank" style="color:var(--color-gold-500); word-break:break-all; text-decoration:underline; font-weight:600;">
-        http://skc.local:8080/live
-      </a>
-      <div id="qr-rtt-stat" style="margin-top:4px; color:var(--color-text-muted);">
-        RTT: —
-      </div>
+    </div>
+
+    <!-- Dual QR Modal Trigger Link -->
+    <div style="margin-top:8px; text-align:right;">
+      <button type="button" onclick="openDualQrModal()" style="width:auto; background:none; border:none; color:var(--color-navy-700); font-size:11px; font-weight:600; text-decoration:underline; cursor:pointer; padding:2px 4px; display:inline-flex; align-items:center; gap:4px;">
+        <svg style="width:12px; height:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <line x1="12" y1="3" x2="12" y2="21"/>
+        </svg>
+        <span data-lang="ko">⊞ 공용 & 현장 QR 둘 다 보기 (인쇄용)</span>
+        <span data-lang="en">⊞ View Both QR Codes (Printable)</span>
+      </button>
     </div>
   </div>
 </div>

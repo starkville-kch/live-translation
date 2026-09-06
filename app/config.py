@@ -300,11 +300,11 @@ def mask_api_key(key: str) -> str:
     return f"{clean_key[:6]}••••••••{clean_key[-4:]}"
 
 
-def update_gemini_api_key(new_key: str, env_path: Path | None = None) -> None:
-    """Atomically update or append GEMINI_API_KEY in .env while preserving existing lines."""
+def update_env_var(var_name: str, new_value: str, env_path: Path | None = None) -> None:
+    """Atomically update or append an environment variable in .env while preserving existing lines."""
     target_path = env_path or _ENV_PATH
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    clean_key = new_key.strip()
+    clean_val = new_value.strip()
 
     lines = []
     key_found = False
@@ -313,11 +313,13 @@ def update_gemini_api_key(new_key: str, env_path: Path | None = None) -> None:
             lines = f.readlines()
 
     new_lines = []
+    prefix_check = f"{var_name}="
+    export_check = f"export {var_name}="
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("GEMINI_API_KEY=") or stripped.startswith("export GEMINI_API_KEY="):
+        if stripped.startswith(prefix_check) or stripped.startswith(export_check):
             prefix = "export " if stripped.startswith("export ") else ""
-            new_lines.append(f"{prefix}GEMINI_API_KEY={clean_key}\n")
+            new_lines.append(f"{prefix}{var_name}={clean_val}\n")
             key_found = True
         else:
             new_lines.append(line)
@@ -325,7 +327,7 @@ def update_gemini_api_key(new_key: str, env_path: Path | None = None) -> None:
     if not key_found:
         if new_lines and not new_lines[-1].endswith("\n"):
             new_lines.append("\n")
-        new_lines.append(f"GEMINI_API_KEY={clean_key}\n")
+        new_lines.append(f"{var_name}={clean_val}\n")
 
     # Atomic write via temp file
     temp_file = tempfile.NamedTemporaryFile(
@@ -350,7 +352,17 @@ def update_gemini_api_key(new_key: str, env_path: Path | None = None) -> None:
         raise
 
     # Also update in-memory os.environ
-    os.environ["GEMINI_API_KEY"] = clean_key
+    os.environ[var_name] = clean_val
+
+
+def update_gemini_api_key(new_key: str, env_path: Path | None = None) -> None:
+    """Atomically update or append GEMINI_API_KEY in .env."""
+    update_env_var("GEMINI_API_KEY", new_key, env_path=env_path)
+
+
+def update_tunnel_token(new_token: str, env_path: Path | None = None) -> None:
+    """Atomically update or append CLOUDFLARE_TUNNEL_TOKEN in .env."""
+    update_env_var("CLOUDFLARE_TUNNEL_TOKEN", new_token, env_path=env_path)
 
 
 def translation_cfg() -> dict:

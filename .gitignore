@@ -24,3 +24,5 @@ logs/sessions/*
 var/
 .pytest_cache/
 node_modules/
+cloudflared.exe
+token.txt

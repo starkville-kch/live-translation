@@ -299,3 +299,9 @@ build_exe.bat
 1. **실시간 마일스톤 스트리밍**: `[Translation]` 및 `[Setup]` 프리픽스와 경과 시간을 실시간으로 콘솔에 출력.
 2. **정확한 실제 경과 시간 (Wall-Clock Time) 측정**: 순차 연산 시간의 단순 합산이 아닌 실제 작업 완료까지 걸린 현실 시간을 측정하여 속도 향상(Speedup Factor)을 보고.
 3. **독립 격리 빌드**: 각 빌드가 충돌 없이 별도 작업 디렉토리를 사용하도록 보장.
+4. **빌드 후 필수 자산 자동 패키징 (`_safe_copy`)**:
+   - `branding/church-logo.png`
+   - `config.yaml`
+   - `cloudflared.exe` (공식 Cloudflare 바이너리)
+   - `.env` 및 `.env.example`
+   - 파일 잠금 충돌(`PermissionError: [Errno 13]`) 방지: 파일 크기가 동일하거나 실행 중인 경우 안전하게 건너뛰며, `build_exe.bat` 시작 시 `taskkill`로 잔여 프로세스를 선제 정리.
