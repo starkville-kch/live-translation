@@ -22,8 +22,10 @@
       </div>
       <div class="lang-source-box">
         <select id="lang-source-select" class="lang-source-select" aria-label="Select spoken language">
-          <option value="ko" {% if not translation_cfg or translation_cfg.get('expected_source_language') == 'ko' %}selected{% endif %}>한국어 (Korean)</option>
-          <option value="en" {% if translation_cfg and translation_cfg.get('expected_source_language') == 'en' %}selected{% endif %}>English</option>
+          <option value="ko+en" {% if not translation_cfg or translation_cfg.get('expected_source_language') == 'ko+en' %}selected{% endif %}>Korean + English (한국어+영어 - 기본값)</option>
+          <option value="ko" {% if translation_cfg and translation_cfg.get('expected_source_language') == 'ko' %}selected{% endif %}>한국어 (Korean only)</option>
+          <option value="en" {% if translation_cfg and translation_cfg.get('expected_source_language') == 'en' %}selected{% endif %}>English (영어만)</option>
+          <option value="any" {% if translation_cfg and translation_cfg.get('expected_source_language') == 'any' %}selected{% endif %}>Any (자동 감지 / Auto-detect)</option>
         </select>
       </div>
     </div>

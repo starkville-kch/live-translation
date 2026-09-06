@@ -21,10 +21,123 @@ class CloudflaredService:
         self._proc: Optional[subprocess.Popen] = None
         self._proc_lock = threading.Lock()
         self._atexit_registered = False
+        self._job = None
 
     @property
     def is_windows(self) -> bool:
         return sys.platform == "win32"
+
+    def _bind_to_job(self, proc: subprocess.Popen) -> None:
+        """Bind child process to Windows Job Object so it terminates when parent exits."""
+        if not self.is_windows or not proc:
+            return
+        kernel32 = None
+        try:
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+            # Close any previous job handle to avoid handle leaks on restarts
+            if self._job:
+                try:
+                    kernel32.CloseHandle(self._job)
+                except Exception:
+                    pass
+                self._job = None
+
+            self._job = kernel32.CreateJobObjectW(None, None)
+            if not self._job:
+                err = ctypes.get_last_error()
+                server_log.warning("CreateJobObjectW failed (winerror=%s); relying on PID tracking", err)
+                return
+
+            class IO_COUNTERS(ctypes.Structure):
+                _fields_ = [
+                    ("ReadOperationCount", ctypes.c_uint64),
+                    ("WriteOperationCount", ctypes.c_uint64),
+                    ("OtherOperationCount", ctypes.c_uint64),
+                    ("ReadTransferCount", ctypes.c_uint64),
+                    ("WriteTransferCount", ctypes.c_uint64),
+                    ("OtherTransferCount", ctypes.c_uint64),
+                ]
+
+            class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [
+                    ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+                    ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+                    ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t),
+                    ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD),
+                ]
+
+            class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [
+                    ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                    ("IoInfo", IO_COUNTERS),
+                    ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryLimit", ctypes.c_size_t),
+                    ("PeakJobMemoryLimit", ctypes.c_size_t),
+                ]
+
+            info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            ok_set = kernel32.SetInformationJobObject(
+                self._job, 9, ctypes.byref(info), ctypes.sizeof(info)
+            )
+            if not ok_set:
+                err = ctypes.get_last_error()
+                server_log.warning("SetInformationJobObject failed (winerror=%s); Job Object cleanup disabled", err)
+                kernel32.CloseHandle(self._job)
+                self._job = None
+                return
+
+            ok_assign = kernel32.AssignProcessToJobObject(self._job, int(proc._handle))
+            if not ok_assign:
+                err = ctypes.get_last_error()
+                server_log.warning("AssignProcessToJobObject failed (winerror=%s); Job Object binding inactive", err)
+                kernel32.CloseHandle(self._job)
+                self._job = None
+                return
+
+            server_log.debug("Successfully bound cloudflared (PID %s) to Job Object with KILL_ON_JOB_CLOSE", proc.pid)
+        except Exception as exc:
+            server_log.warning("Job object binding for cloudflared failed: %s; relying on PID tracking", exc)
+            if self._job and kernel32:
+                try:
+                    kernel32.CloseHandle(self._job)
+                except Exception:
+                    pass
+                self._job = None
+
+    @classmethod
+    def _pid_file_path(cls) -> Path:
+        return Path("logs") / "cloudflared.pid"
+
+    def _cleanup_recorded_orphan_pid(self) -> None:
+        """Scoped cleanup: terminate only our own recorded child PID if left running from an unclean exit."""
+        pid_file = self._pid_file_path()
+        if not pid_file.is_file():
+            return
+        try:
+            pid_str = pid_file.read_text(encoding="utf-8").strip()
+            if pid_str.isdigit():
+                pid = int(pid_str)
+                if self.is_windows:
+                    res = subprocess.run(
+                        ["tasklist", "/FI", f"PID eq {pid}", "/FI", "IMAGENAME eq cloudflared.exe", "/FO", "CSV", "/NH"],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if "cloudflared" in res.stdout.lower():
+                        server_log.info("Terminating verified child cloudflared process (PID %s)...", pid)
+                        subprocess.run(["taskkill", "/F", "/PID", str(pid), "/T"], capture_output=True, timeout=5)
+            pid_file.unlink(missing_ok=True)
+        except Exception as exc:
+            server_log.debug("Scoped child PID cleanup ignored: %s", exc)
 
     @classmethod
     def find_cloudflared_binary(cls) -> Optional[Path]:
@@ -162,6 +275,10 @@ class CloudflaredService:
             return False
 
     def start(self) -> None:
+        if self.is_windows:
+            with self._proc_lock:
+                self._cleanup_recorded_orphan_pid()
+
         state = self._query()
         if state == "running":
             self._started_by_app = True
@@ -212,6 +329,11 @@ class CloudflaredService:
                         stderr=out_target,
                         creationflags=flags,
                     )
+                    self._bind_to_job(self._proc)
+                    try:
+                        self._pid_file_path().write_text(str(self._proc.pid), encoding="utf-8")
+                    except Exception:
+                        pass
                 time.sleep(1.0)
                 with self._proc_lock:
                     if self._proc and self._proc.poll() is None:
@@ -228,6 +350,10 @@ class CloudflaredService:
                         rc = self._proc.poll()
                         server_log.warning("Embedded cloudflared exited immediately with code %s (Check logs/cloudflared.log)", rc)
                         self._proc = None
+                        try:
+                            self._pid_file_path().unlink(missing_ok=True)
+                        except Exception:
+                            pass
             except Exception as e:
                 server_log.error("Failed to spawn embedded cloudflared process: %s", e)
 
@@ -256,4 +382,19 @@ class CloudflaredService:
                     server_log.debug("Error terminating embedded cloudflared: %s", e)
                 finally:
                     self._proc = None
+
+            if self.is_windows and self._job:
+                try:
+                    import ctypes
+                    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                    kernel32.CloseHandle(self._job)
+                except Exception as e:
+                    server_log.debug("Error closing job handle: %s", e)
+                finally:
+                    self._job = None
+
+            try:
+                self._pid_file_path().unlink(missing_ok=True)
+            except Exception:
+                pass
 

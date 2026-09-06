@@ -236,3 +236,40 @@ def test_signal_shutdown_terminates_active_streams_cleanly():
     shutdown_event.clear()
 
 
+def test_status_cost_and_runtime_calculation():
+    client = TestClient(app)
+
+    with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
+         patch.object(AudioCapture, "start", MagicMock()), \
+         patch.object(AudioCapture, "stop", MagicMock()):
+
+        # Start with 2 targets
+        res_start = client.post(
+            "/api/start",
+            json={"active_targets": ["en", "zh"], "expected_source_language": "ko"},
+        )
+        assert res_start.status_code == 200
+
+        # Simulate 120 billed seconds in manager
+        manager._billed_seconds = 120.0
+
+        res_status = client.get("/api/status")
+        assert res_status.status_code == 200
+        data = res_status.json()
+
+        from app.server import _COST_PER_AUDIO_SEC
+        assert data["cost_usd"] == round(2 * 120.0 * _COST_PER_AUDIO_SEC, 4)
+
+        # Stop service
+        res_stop = client.post("/api/stop")
+        assert res_stop.status_code == 200
+
+        # Post-stop status must preserve the session's active_targets and cost multiplier
+        res_status_stopped = client.get("/api/status")
+        assert res_status_stopped.status_code == 200
+        data_stopped = res_status_stopped.json()
+        assert data_stopped["cost_usd"] == round(2 * 120.0 * _COST_PER_AUDIO_SEC, 4)
+        assert data_stopped["translation"]["active_targets"] == ["en", "zh"]
+
+
+

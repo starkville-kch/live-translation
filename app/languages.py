@@ -110,6 +110,45 @@ def is_valid_language_code(code: str) -> bool:
     return load_language_catalog().contains(code)
 
 
+def parse_source_language_codes(source: str | list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    """Parse source language specifier into a tuple of clean language codes.
+    
+    Supports:
+        - "any" -> ("any",)
+        - "ko+en" or "ko,en" -> ("ko", "en")
+        - ["ko", "en"] -> ("ko", "en")
+    """
+    if isinstance(source, (list, tuple)):
+        items = []
+        for s in source:
+            items.extend(parse_source_language_codes(s))
+        return tuple(dict.fromkeys(items))
+    s = (source or "").strip().lower()
+    if not s:
+        return ()
+    if s == "any":
+        return ("any",)
+    # Split composite strings like "ko+en" or "ko, en"
+    delims = ["+", ","]
+    parts = [s]
+    for d in delims:
+        next_parts = []
+        for p in parts:
+            next_parts.extend(p.split(d))
+        parts = next_parts
+    cleaned = [p.strip() for p in parts if p.strip()]
+    return tuple(dict.fromkeys(cleaned))
+
+
+def is_valid_source_language_code(code: str | list[str] | tuple[str, ...]) -> bool:
+    parsed = parse_source_language_codes(code)
+    if not parsed:
+        return False
+    if "any" in parsed:
+        return len(parsed) == 1
+    return all(is_valid_language_code(p) for p in parsed)
+
+
 def get_available_languages() -> List[LanguageInfo]:
     return load_language_catalog().languages
 

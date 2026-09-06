@@ -131,10 +131,11 @@ def test_api_status_includes_pause_duration():
 def test_pause_resume_status_lifecycle():
     client = TestClient(app)
 
-    # Simulate running service state
+    # Simulate running service state on server and manager
     server_mod._state = ServiceState.RUNNING
-    server_mod._paused = False
-    server_mod._pause_start = None
+    server_mod.manager._is_running = True
+    server_mod.manager._is_paused = False
+    server_mod.manager._pause_start = None
 
     # Status while active
     st_run = client.get("/api/status").json()
@@ -164,8 +165,9 @@ def test_pause_resume_status_lifecycle():
 
     # Reset state
     server_mod._state = ServiceState.STOPPED
-    server_mod._paused = False
-    server_mod._pause_start = None
+    server_mod.manager._is_running = False
+    server_mod.manager._is_paused = False
+    server_mod.manager._pause_start = None
 
 
 def test_operator_default_ui_language_config():

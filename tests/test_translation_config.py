@@ -17,7 +17,7 @@ from app.config import (
 def test_translation_config_defaults_and_backward_compatibility():
     # If no translation block exists, returns safe fallback
     cfg = translation_cfg()
-    assert cfg["expected_source_language"] == "ko"
+    assert cfg["expected_source_language"] in ("ko", "ko+en")
     assert "en" in cfg["supported_targets"]
     assert "en" in cfg["default_active_targets"]
 
@@ -89,3 +89,58 @@ def test_save_translation_settings_atomic(tmp_path: Path):
         saved = yaml.safe_load(f)
     assert saved["translation"]["expected_source_language"] == "en"
     assert saved["translation"]["supported_targets"] == ["uk", "zh"]
+
+
+def test_any_source_language_validation_and_persistence(tmp_path: Path):
+    """Verify 'any' is accepted as valid expected_source_language."""
+    validate_translation_settings(
+        expected_source_language="any",
+        supported_targets=["en", "uk", "zh"],
+        default_active_targets=["uk", "zh"],
+    )
+
+    temp_yaml = tmp_path / "config.yaml"
+    temp_yaml.write_text("translation:\n  expected_source_language: ko\n", encoding="utf-8")
+    res = save_translation_settings(
+        expected_source_language="any",
+        supported_targets=["en", "uk"],
+        default_active_targets=["en", "uk"],
+        config_path=temp_yaml,
+    )
+    assert res["expected_source_language"] == "any"
+    assert res["supported_targets"] == ["en", "uk"]
+    assert res["drift_window"] == 2
+    assert res["drift_threshold"] == 3
+
+
+def test_ko_plus_en_source_language_validation_and_persistence(tmp_path: Path):
+    """Verify 'ko+en' bilingual default is valid and allows 'en' as default active target."""
+    validate_translation_settings(
+        expected_source_language="ko+en",
+        supported_targets=["en", "uk", "zh"],
+        default_active_targets=["en"],
+    )
+
+    temp_yaml = tmp_path / "config.yaml"
+    temp_yaml.write_text("translation:\n  expected_source_language: ko\n", encoding="utf-8")
+    res = save_translation_settings(
+        expected_source_language="ko+en",
+        supported_targets=["en", "uk", "zh"],
+        default_active_targets=["en"],
+        config_path=temp_yaml,
+    )
+    assert res["expected_source_language"] == "ko+en"
+    assert res["supported_targets"] == ["en", "uk", "zh"]
+    assert res["default_active_targets"] == ["en"]
+
+
+def test_all_keyword_rejected():
+    """Verify 'all' is NOT accepted as a source language keyword."""
+    import pytest
+    with pytest.raises(ValueError, match="Invalid expected source language"):
+        validate_translation_settings(
+            expected_source_language="all",
+            supported_targets=["en", "uk"],
+            default_active_targets=["en"],
+        )
+

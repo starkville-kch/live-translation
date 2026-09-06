@@ -141,10 +141,9 @@ session = manager.sessions.get("en") or manager._create_session_for_target("en",
 _state_lock = asyncio.Lock()
 _state = ServiceState.STOPPED
 _qr_png_cache: bytes | None = None
-_paused = False
-_service_start_time: float | None = None   # monotonic, set when service starts
-_billed_seconds: float = 0.0               # audio seconds sent to Gemini
-_pause_start: float | None = None          # monotonic when paused
+_last_session_runtime: float = 0.0
+_last_session_billed_seconds: float = 0.0
+_last_session_targets: list[str] = []
 _auto_restart_attempt = 0
 _auto_restart_reason = ""
 _auto_restart_task: asyncio.Task | None = None
@@ -387,12 +386,9 @@ def _build_qr(url: str) -> bytes:
     return buf.getvalue()
 
 def _runtime_seconds() -> float:
-    if _service_start_time is None:
-        return 0.0
-    elapsed = time.monotonic() - _service_start_time
-    if _pause_start is not None:
-        elapsed -= (time.monotonic() - _pause_start)
-    return max(0.0, elapsed)
+    if manager and manager.is_running:
+        return manager.runtime_seconds
+    return _last_session_runtime
 
 
 def _write_session_log() -> Optional[str]:
@@ -425,7 +421,8 @@ def _write_session_log() -> Optional[str]:
         session_dir.mkdir(parents=True, exist_ok=True)
 
         active_tgts = list(manager.active_targets) if manager.active_targets else ["en"]
-        per_target_cost = _billed_seconds * _COST_PER_AUDIO_SEC
+        billed_sec = manager.billed_seconds if (manager and manager.is_running) else _last_session_billed_seconds
+        per_target_cost = billed_sec * _COST_PER_AUDIO_SEC
         total_cost = len(active_tgts) * per_target_cost
 
         session_end_dt = datetime.now()
@@ -437,7 +434,7 @@ def _write_session_log() -> Optional[str]:
 
         primary_sess = manager.sessions.get(manager.primary_target)
 
-        t0 = _service_start_time if _service_start_time is not None else None
+        t0 = manager._start_time if (manager and manager._start_time is not None) else None
         if t0 is None:
             for s in manager.sessions.values():
                 if s.transcript:
@@ -501,7 +498,7 @@ def _write_session_log() -> Optional[str]:
             "started_at": session_start_dt.isoformat(),
             "ended_at": session_end_dt.isoformat(),
             "runtime_seconds": round(runtime, 1),
-            "audio_billed_seconds": round(_billed_seconds, 1),
+            "audio_billed_seconds": round(billed_sec, 1),
             "estimated_total_cost_usd": round(total_cost, 4),
             "cost_by_target": {tgt: round(per_target_cost, 4) for tgt in active_tgts},
             "total_turns": len(consolidated_turns),
@@ -567,7 +564,7 @@ def _write_session_log() -> Optional[str]:
             f"Spoken:         {src_name}",
             f"Active Targets: {', '.join(tgt_names)}",
             f"Committed turns:{len(consolidated_turns)}",
-            f"Audio billed:   {_billed_seconds:.0f}s per target",
+            f"Audio billed:   {billed_sec:.0f}s per target",
             f"Est. total cost:${total_cost:.4f} USD",
             f"Model:          {model_resolver.active_model}",
         ]
@@ -952,13 +949,14 @@ async def auth_logout(response: Response):
 
 # ── Operator control API ───────────────────────────────────────────────────────
 async def _teardown():
-    global _state, _paused, _pause_start
+    global _state, _last_session_runtime, _last_session_billed_seconds, _last_session_targets
+    _last_session_runtime = manager.runtime_seconds if (manager and manager.is_running) else 0.0
+    _last_session_billed_seconds = manager.billed_seconds if (manager and manager.is_running) else 0.0
+    _last_session_targets = list(manager.active_targets) if (manager and manager.active_targets) else []
     saved_dir = _write_session_log()
     if saved_dir:
         operator_events.add("info", f"Session logs saved: {saved_dir}")
     await manager.stop()
-    _paused = False
-    _pause_start = None
     _state = ServiceState.STOPPED
 
 
@@ -980,7 +978,7 @@ async def _auto_stop_check():
             continue
 
         current_status = audio.state.status
-        if current_status in (AudioStatus.NO_SIGNAL, AudioStatus.DISCONNECTED) and not _paused:
+        if current_status in (AudioStatus.NO_SIGNAL, AudioStatus.DISCONNECTED) and not manager.is_paused:
             if silence_start is None:
                 silence_start = time.monotonic()
             elif time.monotonic() - silence_start >= (timeout_min * 60.0):
@@ -1020,7 +1018,7 @@ async def start_service(request: Request = None, body: dict = None, from_auto_re
                 body = {}
         else:
             body = {}
-    global _state, _paused, _service_start_time, _billed_seconds, _pause_start
+    global _state, _last_session_runtime, _last_session_billed_seconds, _last_session_targets
 
     global _auto_restart_task, _auto_restart_attempt, _auto_restart_reason
     if not from_auto_restart:
@@ -1038,8 +1036,8 @@ async def start_service(request: Request = None, body: dict = None, from_auto_re
             await _teardown()
             device_index = body.get("device_index")
             t_cfg = translation_cfg()
-            if "targets" in body:
-                active_targets = body.get("targets")
+            if "targets" in body or "active_targets" in body:
+                active_targets = body.get("targets") or body.get("active_targets")
                 if not active_targets:
                     return JSONResponse(
                         status_code=400,
@@ -1055,10 +1053,9 @@ async def start_service(request: Request = None, body: dict = None, from_auto_re
                 active_targets=active_targets,
                 expected_source_language=expected_src,
             )
-            _service_start_time = time.monotonic()
-            _billed_seconds = 0.0
-            _paused = False
-            _pause_start = None
+            _last_session_runtime = 0.0
+            _last_session_billed_seconds = 0.0
+            _last_session_targets = []
 
             asyncio.create_task(_auto_stop_check())
             _state = ServiceState.RUNNING
@@ -1128,28 +1125,22 @@ async def shutdown_service(request: Request):
 async def pause_service(request: Request = None):
     if auth_err := _check_auth(request):
         return auth_err
-    global _paused, _pause_start
-    if _state == ServiceState.RUNNING and not _paused:
-        _paused = True
-        _pause_start = time.monotonic()
+    if _state == ServiceState.RUNNING and not manager.is_paused:
         await manager.pause_clean()
         server_log.info("Service paused (clean standby on locked model)")
         operator_events.add("user", "Translation paused (clean standby)")
-    return {"ok": True, "paused": _paused}
+    return {"ok": True, "paused": manager.is_paused}
 
 
 @app.post("/api/resume")
 async def resume_service(request: Request = None):
     if auth_err := _check_auth(request):
         return auth_err
-    global _paused, _pause_start
-    if _state == ServiceState.RUNNING and _paused:
+    if _state == ServiceState.RUNNING and manager.is_paused:
         await manager.resume_clean()
-        _paused = False
-        _pause_start = None
         server_log.info("Service resumed (fresh Gemini sessions on locked model)")
         operator_events.add("user", "Translation resumed (fresh context)")
-    return {"ok": True, "paused": _paused}
+    return {"ok": True, "paused": manager.is_paused}
 
 
 @app.post("/api/config/auto-drift-correction")
@@ -1361,7 +1352,6 @@ async def get_status():
     primary_sess_state = primary_sess.state if primary_sess else None
 
     runtime = _runtime_seconds()
-    cost = _billed_seconds * _COST_PER_AUDIO_SEC
     local_url, fallback_url, public_url_cfg = _get_live_urls()
     active_share_url, _ = _get_active_attendee_share_url()
     ch = church_cfg()
@@ -1393,8 +1383,9 @@ async def get_status():
     total_audio = sum(b.audio_client_count for b in manager.broadcasters.values()) if manager.broadcasters else broadcaster.audio_client_count
 
     t_cfg = translation_cfg()
-    active_tgts = list(manager.active_targets) if manager.is_running else t_cfg["default_active_targets"]
-    per_target_cost = _billed_seconds * _COST_PER_AUDIO_SEC
+    active_tgts = list(manager.active_targets) if manager.is_running else (_last_session_targets or t_cfg["default_active_targets"])
+    billed_sec = manager.billed_seconds if (manager and manager.is_running) else _last_session_billed_seconds
+    per_target_cost = billed_sec * _COST_PER_AUDIO_SEC
     total_cost = len(active_tgts) * per_target_cost
 
     session_states = mgr_state.get("sessions", {})
@@ -1413,11 +1404,11 @@ async def get_status():
     return {
         "service_running": _state != ServiceState.STOPPED,
         "state": _state.value,
-        "paused": _paused,
-        "pause_duration_s": round(time.monotonic() - _pause_start, 1) if (_paused and _pause_start) else 0.0,
+        "paused": manager.is_paused,
+        "pause_duration_s": round(manager.current_pause_seconds, 1),
         "runtime_s": round(runtime, 1),
         "cost_usd": round(total_cost, 4),
-        "billed_audio_s": round(_billed_seconds, 1),
+        "billed_audio_s": round(billed_sec, 1),
 
         "auto_stop_timeout_min": audio_cfg().get("auto_stop_timeout_min", 10),
         "auto_drift_correction": primary_sess.auto_drift_correction if primary_sess else manager.auto_drift_correction,

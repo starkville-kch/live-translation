@@ -146,3 +146,4 @@ class CloudflareTunnelManager:
 
     def stop(self) -> None:
         self._stop.set()
+        self._service.stop()

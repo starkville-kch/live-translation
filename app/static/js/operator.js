@@ -1763,49 +1763,56 @@ let _languagesCatalog = [];
 let _catalogMap = new Map();
 let _supportedTargets = ['en', 'uk', 'zh'];
 let _selectedTargets = ['en'];
-let _expectedSource = 'ko';
+let _expectedSource = 'ko+en';
 
 async function loadLanguageConfiguration() {
   try {
     const res = await fetch('/api/languages');
     if (!res.ok) return;
     const data = await res.json();
-    _expectedSource = data.expected_source || 'ko';
+    _expectedSource = data.expected_source || 'ko+en';
     _languagesCatalog = data.available || [];
     _catalogMap = new Map(_languagesCatalog.map(l => [l.code, l]));
     _supportedTargets = data.supported_targets || ['en'];
     _selectedTargets = data.selected_targets || ['en'];
 
-    // Populate Source Language dropdown (Korean and English prioritized on top)
+    // Populate Source Language dropdown with fixed supported options
     const srcSelect = document.getElementById('lang-source-select');
     if (srcSelect) {
+      const isEn = getOperatorUiLanguage() === 'en';
+      const sourceOptions = [
+        { code: 'ko+en', ko: 'Korean + English (한국어+영어 - 기본값)', en: 'Korean + English (Default)' },
+        { code: 'ko', ko: '한국어 (Korean only)', en: 'Korean (only)' },
+        { code: 'en', ko: 'English (영어만)', en: 'English (only)' },
+        { code: 'any', ko: 'Any (자동 감지 / Auto-detect)', en: 'Any (Auto-detect)' }
+      ];
+
       srcSelect.innerHTML = '';
-      const priorityCodes = ['ko', 'en'];
-      const topLangs = priorityCodes.map(code => _catalogMap.get(code)).filter(Boolean);
-      const otherLangs = _languagesCatalog
-        .filter(l => !priorityCodes.includes(l.code))
-        .sort((a, b) => a.name.localeCompare(b.name));
-
-      const sortedForSource = [...topLangs, ...otherLangs];
-
-      sortedForSource.forEach(l => {
-        const opt = document.createElement('option');
-        opt.value = l.code;
-        opt.textContent = l.native_name === l.name ? l.name : `${l.native_name} (${l.name})`;
-        if (l.code === _expectedSource) opt.selected = true;
-        srcSelect.appendChild(opt);
+      sourceOptions.forEach(opt => {
+        const el = document.createElement('option');
+        el.value = opt.code;
+        el.textContent = isEn ? opt.en : opt.ko;
+        if (opt.code === _expectedSource) el.selected = true;
+        srcSelect.appendChild(el);
       });
 
+      if (!sourceOptions.some(o => o.code === _expectedSource)) {
+        _expectedSource = 'ko+en';
+        srcSelect.value = 'ko+en';
+      }
 
       srcSelect.onchange = () => {
         _expectedSource = srcSelect.value;
-        const newSrcInfo = _catalogMap.get(_expectedSource);
-        const newSrcName = newSrcInfo ? newSrcInfo.name : _expectedSource.toUpperCase();
-        const hadInSelected = _selectedTargets.includes(_expectedSource);
+        const isSingleEn = _expectedSource === 'en';
+        const isSingleKo = _expectedSource === 'ko';
+        const hadInSelected = (isSingleEn && _selectedTargets.includes('en')) || (isSingleKo && _selectedTargets.includes('ko'));
 
-        // DO NOT mutate _supportedTargets!
-        // Only remove new source language from today's active selected targets:
-        _selectedTargets = _selectedTargets.filter(t => t !== _expectedSource);
+        if (isSingleEn) {
+          _selectedTargets = _selectedTargets.filter(t => t !== 'en');
+        } else if (isSingleKo) {
+          _selectedTargets = _selectedTargets.filter(t => t !== 'ko');
+        }
+
         if (_selectedTargets.length === 0) {
           const remainingSupported = _supportedTargets.filter(t => t !== _expectedSource);
           if (remainingSupported.length > 0) {
@@ -1816,9 +1823,10 @@ async function loadLanguageConfiguration() {
         renderSelectedTargets();
 
         if (hadInSelected) {
+          const removedCode = isSingleEn ? 'English' : 'Korean';
           showLanguageNotice(
-            `원문 언어가 ${newSrcInfo ? newSrcInfo.native_name : newSrcName}(으)로 변경되었습니다. 오늘의 통역 대상에서 제외되었습니다.`,
-            `Source changed to ${newSrcName}. It was removed from today's target languages.`
+            `원문 언어가 ${removedCode}(으)로 변경되었습니다. 오늘의 통역 대상에서 제외되었습니다.`,
+            `Source changed to ${removedCode}. It was removed from today's target languages.`
           );
         }
       };

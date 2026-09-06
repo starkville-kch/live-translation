@@ -30,8 +30,9 @@ from typing import Callable, NamedTuple
 from google import genai
 from google.genai import types
 
-from app.config import gemini_api_key, gemini_cfg
+from app.config import gemini_api_key, gemini_cfg, translation_cfg
 from app.events import operator_events
+from app.languages import parse_source_language_codes
 from app.logger import session_log, server_log
 from app.model_resolver import model_resolver
 
@@ -43,7 +44,12 @@ SYSTEM_PROMPT = (
     "clause's meaning is already clear — begin translating as soon as possible "
     "and revise if needed. Do not add commentary, labels, speaker names, or "
     "explanations. Do not translate filler words or false starts literally; "
-    "smooth them naturally. If audio is silent or unintelligible, output nothing."
+    "translate the intended meaning cleanly into natural, idiomatic English. "
+    "Use appropriate English vocabulary for biblical and theological concepts. "
+    "When a Scripture verse is cited, translate the text accurately rather than "
+    "paraphrasing loosely. If the speaker pauses briefly, do not invent text — "
+    "wait for speech to resume. If Korean speech resumes after a pause, continue "
+    "translating without repeating earlier sentences."
 )
 
 MAX_RECONNECT_ATTEMPTS = 3
@@ -67,6 +73,7 @@ class SessionState:
     last_update: float = field(default_factory=time.monotonic)
 
 
+
 class TranscriptEntry(NamedTuple):
     timestamp: float   # time.monotonic() of turn start
     source: str
@@ -88,7 +95,7 @@ def evaluate_drift_score(
     input_text: str,
     output_lang: str | None,
     output_text: str,
-    expected_source: str = "ko",
+    expected_source: str | list[str] | tuple[str, ...] = "ko+en",
     target_language: str = "en",
 ) -> int:
     """Evaluate language drift score for a completed turn.
@@ -99,15 +106,19 @@ def evaluate_drift_score(
         2: strong drift (output language does not match target language).
     """
     score = 0
-    clean_src = (expected_source or "ko").strip().lower()
     clean_tgt = (target_language or "en").strip().lower()
+    src_codes = parse_source_language_codes(expected_source) or ("ko", "en")
 
     # 1. Primary input check via Gemini's language_code
-    if input_lang:
+    if "any" in src_codes:
+        # Unconstrained input: do not flag input language code or script
+        pass
+    elif input_lang:
         in_clean = input_lang.strip().lower()
-        if not (in_clean.startswith(clean_src) or in_clean.startswith(clean_tgt)):
+        matches_expected = any(in_clean.startswith(s) for s in src_codes) or in_clean.startswith(clean_tgt)
+        if not matches_expected:
             score += 1
-    elif input_text and clean_src == "ko":
+    elif input_text and "ko" in src_codes:
         # Fallback script heuristic if language_code is missing for Korean source:
         # Flag Japanese Hiragana (0x3040-0x309F) / Katakana (0x30A0-0x30FF) or Thai (0x0E00-0x0E7F)
         for ch in input_text:
@@ -141,10 +152,12 @@ class GeminiSession:
         on_audio_chunk: Callable[[bytes], None] | None = None,
         glossary=None,  # GlossaryCorrector | None
         target_language_code: str = "en",
-        expected_source_language: str = "ko",
+        expected_source_language: str = "ko+en",
+        drift_window: int | None = None,
+        drift_threshold: int | None = None,
     ):
         self.target_language_code: str = (target_language_code or "en").lower().strip()
-        self.expected_source_language: str = (expected_source_language or "ko").lower().strip()
+        self.expected_source_language: str = (expected_source_language or "ko+en").lower().strip()
         self.tag: str = f"Gemini:{self.target_language_code}"
         self._on_caption = on_caption
         self._on_state = on_state_change
@@ -171,7 +184,10 @@ class GeminiSession:
         self._dropped_audio_chunks: int = 0
         self._auto_drift_correction: bool = bool(gemini_cfg().get("auto_drift_correction", False))
 
-        self._drift_history: collections.deque = collections.deque(maxlen=3)
+        t_cfg = translation_cfg()
+        self._drift_window: int = drift_window if drift_window is not None else int(t_cfg.get("drift_window", 2))
+        self._drift_threshold: int = drift_threshold if drift_threshold is not None else int(t_cfg.get("drift_threshold", 3))
+        self._drift_history: collections.deque = collections.deque(maxlen=self._drift_window)
         self._consecutive_clean_turns: int = 0
         self._last_watchdog_reset_at: float = 0.0
         self._turn_id: int = 0
@@ -259,7 +275,7 @@ class GeminiSession:
         in_lang = self._turn_in_lang
         out_lang = self._turn_out_lang
 
-        if self._glossary and src and self.expected_source_language == "ko" and self.target_language_code == "en":
+        if self._glossary and src and ("ko" in parse_source_language_codes(self.expected_source_language)) and self.target_language_code == "en":
             tgt = self._glossary.correct(src, tgt)
 
         self._transcript.append(TranscriptEntry(
@@ -335,26 +351,30 @@ class GeminiSession:
         total_drift = sum(self._drift_history)
         if total_drift > 0:
             session_log.info(
-                "[%s] [Drift] confirmation=%d/3",
+                "[%s] [Drift] confirmation=%d/%d",
                 self.tag,
                 total_drift,
+                self._drift_threshold,
             )
 
         # Drift auto-recovery:
-        # 1. Total drift score >= 3 (sustained across turns)
-        # 2. Only active when expected_source_language == "ko"
+        # 1. Total drift score >= self._drift_threshold (sustained across turns)
+        # 2. Active when expected_source_language is ko, any, or all
         # 3. Only active when auto_drift_correction is True
         # 4. Debounced by 15.0 seconds
-        if total_drift >= 3:
+        if total_drift >= self._drift_threshold:
             now = time.monotonic()
-            if self.expected_source_language == "ko" and self._auto_drift_correction:
+            src_codes = parse_source_language_codes(self.expected_source_language)
+            is_auto_drift_eligible = ("ko" in src_codes or "any" in src_codes)
+            if is_auto_drift_eligible and self._auto_drift_correction:
                 if (now - self._last_watchdog_reset_at) >= 15.0:
                     self._last_watchdog_reset_at = now
                     session_log.info("[%s] [Drift] recovered via clean session reset", self.tag)
                     server_log.warning(
-                        "[%s] Auto drift recovery: score=%d >= 3. Resetting session cleanly.",
+                        "[%s] Auto drift recovery: score=%d >= %d. Resetting session cleanly.",
                         self.tag,
                         total_drift,
+                        self._drift_threshold,
                     )
                     operator_events.add(
                         "warning",
@@ -363,9 +383,10 @@ class GeminiSession:
                     asyncio.create_task(self.reset_clean(reason="Language drift watchdog"))
             else:
                 session_log.info(
-                    "[%s] [Drift] Score=%d >= 3 (auto recovery disabled: expected_source=%s, auto_drift_correction=%s)",
+                    "[%s] [Drift] Score=%d >= %d (auto recovery disabled: expected_source=%s, auto_drift_correction=%s)",
                     self.tag,
                     total_drift,
+                    self._drift_threshold,
                     self.expected_source_language,
                     self._auto_drift_correction,
                 )

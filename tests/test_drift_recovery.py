@@ -82,13 +82,18 @@ def test_consecutive_genuine_drift_triggers_recovery():
 
         initial_epoch = session.session_epoch
 
-        # 3 distinct Japanese turns
-        for i in range(3):
-            session._current_source = f"日本語テキスト {i}"
-            session._current_target = f"Japanese text {i}"
-            session._turn_in_lang = "ja"
-            session._turn_out_lang = "en"
-            session._commit_current_turn()
+        # 2 distinct drifted turns: Turn 1 (+1 input), Turn 2 (+2 output drift) -> total 3 in 2-turn window
+        session._current_source = "日本語テキスト 0"
+        session._current_target = "Japanese text 0"
+        session._turn_in_lang = "ja"
+        session._turn_out_lang = "en"
+        session._commit_current_turn()
+
+        session._current_source = "日本語テキスト 1"
+        session._current_target = "日本語訳 1"
+        session._turn_in_lang = "ja"
+        session._turn_out_lang = "ja"
+        session._commit_current_turn()
 
         # Yield control to let async task reset_clean run
         await asyncio.sleep(0.05)

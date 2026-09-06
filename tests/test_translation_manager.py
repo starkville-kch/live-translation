@@ -304,3 +304,174 @@ def test_manager_directional_failure_isolation_and_source_preview():
 
     asyncio.run(_run())
 
+
+def test_runtime_seconds_excludes_pause_time():
+    async def _run():
+        mock_audio = MagicMock(spec=AudioCapture)
+        mock_audio.start = MagicMock()
+        mock_audio.stop = MagicMock()
+        mock_audio.pause = MagicMock()
+        mock_audio.resume = MagicMock()
+        mock_audio.drain = MagicMock()
+
+        async def _mock_chunks():
+            if False:
+                yield b""
+
+        mock_audio.chunks = _mock_chunks
+
+        mgr = TranslationManager(audio_capture=mock_audio)
+
+        # Mock time.monotonic to control elapsed time precisely
+        fake_time = [1000.0]
+
+        def _mock_monotonic():
+            return fake_time[0]
+
+        with patch("time.monotonic", side_effect=_mock_monotonic), \
+             patch.object(GeminiSession, "start", new_callable=AsyncMock), \
+             patch.object(GeminiSession, "pause_clean", new_callable=AsyncMock), \
+             patch.object(GeminiSession, "resume_clean", new_callable=AsyncMock):
+
+            await mgr.start(active_targets=["en"], expected_source_language="ko")
+            assert mgr.runtime_seconds == 0.0
+
+            # Run for 10 seconds
+            fake_time[0] += 10.0
+            assert abs(mgr.runtime_seconds - 10.0) < 1e-3
+
+            # Pause for 30 seconds
+            await mgr.pause_clean()
+            fake_time[0] += 15.0
+            # While paused, runtime is frozen at 10.0
+            assert abs(mgr.runtime_seconds - 10.0) < 1e-3
+
+            fake_time[0] += 15.0
+            assert abs(mgr.runtime_seconds - 10.0) < 1e-3
+
+            # Resume
+            await mgr.resume_clean()
+            # Immediately upon resume, runtime is still 10.0
+            assert abs(mgr.runtime_seconds - 10.0) < 1e-3
+
+            # Run for 20 more seconds
+            fake_time[0] += 20.0
+            # Total active runtime should be 10 + 20 = 30 seconds
+            assert abs(mgr.runtime_seconds - 30.0) < 1e-3
+
+            # Second pause of 100 seconds
+            await mgr.pause_clean()
+            fake_time[0] += 100.0
+            assert abs(mgr.runtime_seconds - 30.0) < 1e-3
+
+            # Resume and run for 5 more seconds
+            await mgr.resume_clean()
+            fake_time[0] += 5.0
+            assert abs(mgr.runtime_seconds - 35.0) < 1e-3
+
+            await mgr.stop()
+            assert mgr.runtime_seconds == 0.0
+
+    asyncio.run(_run())
+
+
+def test_billed_seconds_single_accumulation_per_chunk_across_fanout():
+    """Verify that manager.billed_seconds increments strictly once per source audio chunk,
+    never multiplied inside the fan-out loop, regardless of the number of active targets.
+    """
+    async def _run():
+        mock_audio = MagicMock(spec=AudioCapture)
+        mock_audio.start = MagicMock()
+        mock_audio.stop = MagicMock()
+
+        # Generate 10 chunks of 100ms PCM audio
+        chunk = b"\x00" * 3200
+
+        async def _mock_chunks():
+            for _ in range(10):
+                yield chunk
+
+        mock_audio.chunks = _mock_chunks
+        mgr = TranslationManager(audio_capture=mock_audio)
+
+        with patch.object(GeminiSession, "start", new_callable=AsyncMock):
+            # Start with 3 active targets
+            await mgr.start(active_targets=["en", "uk", "zh"], expected_source_language="ko")
+            assert len(mgr.sessions) == 3
+
+            # Allow audio pipe to process all 10 chunks
+            await asyncio.sleep(0.05)
+
+            # 10 chunks * 100ms = 1.0 second billed audio, NOT 3.0 seconds
+            assert abs(mgr.billed_seconds - 1.0) < 1e-3
+
+            # Each session received 10 chunks in its queue
+            for target in ["en", "uk", "zh"]:
+                assert mgr.sessions[target]._audio_queue.qsize() == 10
+
+            await mgr.stop()
+
+    asyncio.run(_run())
+
+
+def test_pause_duration_properties():
+    """Verify current_pause_seconds and paused_duration_seconds properties on TranslationManager."""
+    async def _run():
+        mock_audio = MagicMock(spec=AudioCapture)
+        mock_audio.start = MagicMock()
+        mock_audio.stop = MagicMock()
+        mock_audio.pause = MagicMock()
+        mock_audio.resume = MagicMock()
+        mock_audio.drain = MagicMock()
+
+        async def _mock_chunks():
+            if False:
+                yield b""
+
+        mock_audio.chunks = _mock_chunks
+        mgr = TranslationManager(audio_capture=mock_audio)
+
+        fake_time = [500.0]
+
+        def _mock_monotonic():
+            return fake_time[0]
+
+        with patch("time.monotonic", side_effect=_mock_monotonic), \
+             patch.object(GeminiSession, "start", new_callable=AsyncMock), \
+             patch.object(GeminiSession, "pause_clean", new_callable=AsyncMock), \
+             patch.object(GeminiSession, "resume_clean", new_callable=AsyncMock):
+
+            await mgr.start(active_targets=["en"], expected_source_language="ko")
+            assert mgr.current_pause_seconds == 0.0
+            assert mgr.paused_duration_seconds == 0.0
+
+            # Advance 5s and pause
+            fake_time[0] += 5.0
+            await mgr.pause_clean()
+
+            # Advance 12s while paused
+            fake_time[0] += 12.0
+            assert abs(mgr.current_pause_seconds - 12.0) < 1e-3
+            assert abs(mgr.paused_duration_seconds - 12.0) < 1e-3
+
+            # Resume
+            await mgr.resume_clean()
+            assert mgr.current_pause_seconds == 0.0
+            assert abs(mgr.paused_duration_seconds - 12.0) < 1e-3
+
+            # Run for 8s
+            fake_time[0] += 8.0
+            assert mgr.current_pause_seconds == 0.0
+            assert abs(mgr.paused_duration_seconds - 12.0) < 1e-3
+
+            # Second pause of 6s
+            await mgr.pause_clean()
+            fake_time[0] += 6.0
+            assert abs(mgr.current_pause_seconds - 6.0) < 1e-3
+            assert abs(mgr.paused_duration_seconds - 18.0) < 1e-3
+
+            await mgr.stop()
+
+    asyncio.run(_run())
+
+

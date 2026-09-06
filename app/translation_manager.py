@@ -23,7 +23,11 @@ from app.audio import AudioCapture
 from app.broadcast import CaptionBroadcaster, CaptionEvent
 from app.config import gemini_cfg
 from app.gemini_session import GeminiSession, SessionState
-from app.languages import is_valid_language_code
+from app.languages import (
+    is_valid_language_code,
+    is_valid_source_language_code,
+    parse_source_language_codes,
+)
 from app.logger import server_log
 
 
@@ -37,7 +41,7 @@ class TranslationManager:
         on_session_state: Optional[Callable[[str, SessionState], None]] = None,
         glossary=None,
         default_target: str = "en",
-        default_source: str = "ko",
+        default_source: str = "ko+en",
     ):
         self.audio: AudioCapture = audio_capture or AudioCapture()
         self._on_caption = on_caption
@@ -67,6 +71,7 @@ class TranslationManager:
         self._billed_seconds: float = 0.0
         self._start_time: Optional[float] = None
         self._pause_start: Optional[float] = None
+        self._paused_duration_s: float = 0.0
 
     @property
     def is_running(self) -> bool:
@@ -81,9 +86,21 @@ class TranslationManager:
         return self._billed_seconds
 
     @property
+    def current_pause_seconds(self) -> float:
+        if self._is_paused and self._pause_start is not None:
+            return max(0.0, time.monotonic() - self._pause_start)
+        return 0.0
+
+    @property
+    def paused_duration_seconds(self) -> float:
+        return self._paused_duration_s + self.current_pause_seconds
+
+    @property
     def runtime_seconds(self) -> float:
         if self._is_running and self._start_time is not None:
-            return max(0.0, time.monotonic() - self._start_time)
+            now = time.monotonic()
+            current_pause = max(0.0, now - self._pause_start) if (self._is_paused and self._pause_start is not None) else 0.0
+            return max(0.0, now - self._start_time - self._paused_duration_s - current_pause)
         return 0.0
 
 
@@ -94,9 +111,10 @@ class TranslationManager:
     @property
     def primary_broadcaster(self) -> CaptionBroadcaster:
         tgt = self.primary_target
+        src_codes = parse_source_language_codes(self.expected_source_language)
         if tgt not in self.broadcasters:
             self.broadcasters[tgt] = CaptionBroadcaster(
-                glossary=self._glossary if (self.expected_source_language == "ko" and tgt == "en") else None,
+                glossary=self._glossary if ("ko" in src_codes and tgt == "en") else None,
                 source_lang=self.expected_source_language,
                 target_lang=tgt,
             )
@@ -113,9 +131,10 @@ class TranslationManager:
             s.clear_drift_state()
 
     def _create_session_for_target(self, target: str, source: str) -> GeminiSession:
+        src_codes = parse_source_language_codes(source)
         if target not in self.broadcasters:
             self.broadcasters[target] = CaptionBroadcaster(
-                glossary=self._glossary if (source == "ko" and target == "en") else None,
+                glossary=self._glossary if ("ko" in src_codes and target == "en") else None,
                 source_lang=source,
                 target_lang=target,
             )
@@ -148,7 +167,7 @@ class TranslationManager:
             on_state_change=_state_cb,
             on_source_transcript=_source_cb,
             on_audio_chunk=_audio_cb,
-            glossary=self._glossary if (source == "ko" and target == "en") else None,
+            glossary=self._glossary if ("ko" in src_codes and target == "en") else None,
             target_language_code=target,
             expected_source_language=source,
         )
@@ -196,7 +215,7 @@ class TranslationManager:
         self,
         device_index: Optional[int] = None,
         active_targets: Optional[List[str]] = None,
-        expected_source_language: str = "ko",
+        expected_source_language: str = "ko+en",
     ) -> None:
         async with self._lock:
             if self._is_running:
@@ -217,11 +236,12 @@ class TranslationManager:
             if not clean_targets:
                 raise ValueError("At least one valid active target language must be specified.")
 
-            clean_src = (expected_source_language or "ko").lower().strip()
-            if not is_valid_language_code(clean_src):
+            clean_src = (expected_source_language or "ko+en").lower().strip()
+            if not is_valid_source_language_code(clean_src):
                 raise ValueError(f"Invalid expected source language code: {expected_source_language}")
 
-            if clean_src in clean_targets:
+            src_codes = parse_source_language_codes(clean_src)
+            if len(src_codes) == 1 and src_codes[0] != "any" and src_codes[0] in clean_targets:
                 raise ValueError(f"Expected source language '{clean_src}' cannot be in active target languages.")
 
             self.active_targets = clean_targets
@@ -231,13 +251,14 @@ class TranslationManager:
             self._billed_seconds = 0.0
             self._start_time = time.monotonic()
             self._pause_start = None
+            self._paused_duration_s = 0.0
 
             # Create / reset broadcasters and sessions for all active targets
             self.sessions.clear()
             for target in self.active_targets:
                 if target not in self.broadcasters:
                     self.broadcasters[target] = CaptionBroadcaster(
-                        glossary=self._glossary if (clean_src == "ko" and target == "en") else None,
+                        glossary=self._glossary if ("ko" in src_codes and target == "en") else None,
                         source_lang=clean_src,
                         target_lang=target,
                     )
@@ -295,7 +316,9 @@ class TranslationManager:
             if resume_coros:
                 await asyncio.gather(*resume_coros, return_exceptions=True)
             self._is_paused = False
-            self._pause_start = None
+            if self._pause_start is not None:
+                self._paused_duration_s += max(0.0, time.monotonic() - self._pause_start)
+                self._pause_start = None
             server_log.info("[TranslationManager] All target sessions resumed cleanly.")
 
     async def stop(self) -> None:

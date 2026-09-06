@@ -16,7 +16,7 @@ from app.gemini_session import (
 def test_default_session_parameters():
     session = GeminiSession(on_caption=MagicMock())
     assert session.target_language_code == "en"
-    assert session.expected_source_language == "ko"
+    assert session.expected_source_language == "ko+en"
     assert session.tag == "Gemini:en"
 
 
@@ -122,3 +122,102 @@ def test_instantiate_non_korean_non_english_session_without_hardcoding():
     assert session._current_target == ""
     assert session._current_ko == ""  # alias
     assert session._current_en == ""  # alias
+
+
+def test_evaluate_drift_score_any_source():
+    # When expected_source is 'any', any input language is allowed without penalty
+    for in_lang, in_txt in [("ko", "은혜"), ("en", "grace"), ("es", "gracia"), ("ja", "恵み")]:
+        score = evaluate_drift_score(
+            input_lang=in_lang,
+            input_text=in_txt,
+            output_lang="uk",
+            output_text="Благодать",
+            expected_source="any",
+            target_language="uk",
+        )
+        assert score == 0, f"Expected 0 for input {in_lang}, got {score}"
+
+    # If output does not match target, still flagged as +2
+    score_wrong = evaluate_drift_score(
+        input_lang="ko",
+        input_text="은혜",
+        output_lang="es",
+        output_text="gracia",
+        expected_source="any",
+        target_language="uk",
+    )
+    assert score_wrong == 2
+
+
+def test_evaluate_drift_score_en_to_zh_chinese_output():
+    # Chinese characters output must not be falsely flagged as drift
+    score = evaluate_drift_score(
+        input_lang="en",
+        input_text="Grace and peace",
+        output_lang="zh",
+        output_text="恩典与平安",
+        expected_source="en",
+        target_language="zh",
+    )
+    assert score == 0
+
+
+def test_gemini_session_drift_window_and_threshold():
+    session = GeminiSession(
+        on_caption=MagicMock(),
+        target_language_code="zh",
+        expected_source_language="any",
+        drift_window=2,
+        drift_threshold=3,
+    )
+    assert session._drift_window == 2
+    assert session._drift_threshold == 3
+    assert session._drift_history.maxlen == 2
+
+
+def test_evaluate_drift_score_ko_plus_en_bilingual():
+    """Verify 'ko+en' accepts both Korean and English turns with 0 drift, but flags 3rd languages."""
+    # Korean input -> valid
+    score_ko = evaluate_drift_score(
+        input_lang="ko",
+        input_text="하나님의 은혜",
+        output_lang="en",
+        output_text="God's grace",
+        expected_source="ko+en",
+        target_language="en",
+    )
+    assert score_ko == 0
+
+    # English input (e.g. prayer / announcements) -> valid
+    score_en = evaluate_drift_score(
+        input_lang="en",
+        input_text="Let us pray together",
+        output_lang="en",
+        output_text="Let us pray together",
+        expected_source="ko+en",
+        target_language="en",
+    )
+    assert score_en == 0
+
+    # Japanese input -> flagged as drift (+1)
+    score_ja = evaluate_drift_score(
+        input_lang="ja",
+        input_text="おはようございます",
+        output_lang="en",
+        output_text="Good morning",
+        expected_source="ko+en",
+        target_language="en",
+    )
+    assert score_ja == 1
+
+    # Fallback script heuristic: Japanese text when input_lang is None -> flagged (+1)
+    score_script = evaluate_drift_score(
+        input_lang=None,
+        input_text="カタカナ",
+        output_lang="en",
+        output_text="Katakana",
+        expected_source="ko+en",
+        target_language="en",
+    )
+    assert score_script == 1
+

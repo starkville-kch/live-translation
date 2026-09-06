@@ -370,23 +370,29 @@ def translation_cfg() -> dict:
     raw = _cfg.get("translation")
     if not isinstance(raw, dict):
         return {
-            "expected_source_language": "ko",
+            "expected_source_language": "ko+en",
             "supported_targets": ["en", "uk", "zh"],
             "default_active_targets": ["en"],
+            "drift_threshold": 3,
+            "drift_window": 2,
         }
-    src = str(raw.get("expected_source_language", "ko")).lower().strip() or "ko"
+    src = str(raw.get("expected_source_language", "ko+en")).lower().strip() or "ko+en"
     supported = [str(t).lower().strip() for t in raw.get("supported_targets", ["en", "uk", "zh"]) if str(t).strip()]
     if not supported:
         supported = ["en"]
     active = [str(t).lower().strip() for t in raw.get("default_active_targets", ["en"]) if str(t).strip()]
     if not active:
         active = [supported[0]]
-    # Ensure active is a subset of supported and does not contain the source language
+    # Ensure active is a subset of supported and does not strictly equal the single source language
     active = [t for t in active if t in supported and t != src] or [t for t in supported if t != src][:1] or ["en"]
+    drift_threshold = int(raw.get("drift_threshold", 3))
+    drift_window = int(raw.get("drift_window", 2))
     return {
         "expected_source_language": src,
         "supported_targets": list(dict.fromkeys(supported)),
         "default_active_targets": list(dict.fromkeys(active)),
+        "drift_threshold": drift_threshold,
+        "drift_window": drift_window,
     }
 
 
@@ -396,10 +402,10 @@ def validate_translation_settings(
     default_active_targets: list[str],
 ) -> None:
     """Validate translation language configuration against the catalog."""
-    from app.languages import is_valid_language_code
+    from app.languages import is_valid_language_code, is_valid_source_language_code
 
     src = (expected_source_language or "").lower().strip()
-    if not src or not is_valid_language_code(src):
+    if not src or not is_valid_source_language_code(src):
         raise ValueError(f"Invalid expected source language code: {expected_source_language}")
 
     if not supported_targets:

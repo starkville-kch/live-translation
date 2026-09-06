@@ -324,13 +324,18 @@ def test_auto_drift_correction_off_does_not_reset():
     session._auto_drift_correction = False
     session.reset_clean = AsyncMock()
 
-    # 3 consecutive ja turns (+1, +1, +1 = 3)
-    for i in range(3):
-        session._current_ko = f"日本語テキスト {i}"
-        session._current_en = f"Japanese text {i}"
-        session._turn_in_lang = "ja"
-        session._turn_out_lang = "en"
-        session._commit_current_turn()
+    # 2 consecutive turns reaching drift threshold (+1 input, +2 output = 3)
+    session._current_ko = "日本語テキスト 0"
+    session._current_en = "Japanese text 0"
+    session._turn_in_lang = "ja"
+    session._turn_out_lang = "en"
+    session._commit_current_turn()
+
+    session._current_ko = "日本語テキスト 1"
+    session._current_en = "日本語テキスト 1"
+    session._turn_in_lang = "ja"
+    session._turn_out_lang = "ja"
+    session._commit_current_turn()
 
     # Reset was NOT triggered automatically because option is OFF
     session.reset_clean.assert_not_called()
@@ -345,13 +350,18 @@ def test_auto_drift_correction_on_triggers_clean_reset():
 
         initial_epoch = session.session_epoch
 
-        # 3 consecutive ja turns (+1, +1, +1 = 3)
-        for i in range(3):
-            session._current_ko = f"日本語テキスト {i}"
-            session._current_en = f"Japanese text {i}"
-            session._turn_in_lang = "ja"
-            session._turn_out_lang = "en"
-            session._commit_current_turn()
+        # 2 consecutive turns reaching drift threshold (+1 input, +2 output = 3)
+        session._current_ko = "日本語テキスト 0"
+        session._current_en = "Japanese text 0"
+        session._turn_in_lang = "ja"
+        session._turn_out_lang = "en"
+        session._commit_current_turn()
+
+        session._current_ko = "日本語テキスト 1"
+        session._current_en = "日本語テキスト 1"
+        session._turn_in_lang = "ja"
+        session._turn_out_lang = "ja"
+        session._commit_current_turn()
 
         # Allow spawned reset_clean task to run
         await asyncio.sleep(0.1)
