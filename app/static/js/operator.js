@@ -1083,8 +1083,6 @@ async function pollStatus() {
   } catch (err) {
       const ssAudio = document.getElementById('ss-audio');
       if (ssAudio) ssAudio.className = 'modern-badge status-red';
-      const ssGemini = document.getElementById('ss-gemini');
-      if (ssGemini) ssGemini.className = 'modern-badge status-red';
       const ssTrans = document.getElementById('ss-translation');
       if (ssTrans) ssTrans.className = 'modern-badge status-red';
       return;
@@ -1315,14 +1313,8 @@ async function pollStatus() {
     }
     const audioMap = {connected:'status-green', no_signal:'status-yellow', disconnected:'status-red', stopped:'status-blue'};
     ssSet('ss-audio', audioMap[st.audio.status] || 'status-blue');
-    const geminiMap = {connected:'status-green', reconnecting:'status-yellow', connecting:'status-yellow', failed:'status-red', stopped:'status-blue'};
-    if (st.paused) {
-      ssSet('ss-gemini', 'status-yellow');
-    } else {
-      ssSet('ss-gemini', geminiMap[st.session.status] || 'status-blue');
-    }
     if (st.state === 'running' && st.session.status === 'connected' && !st.paused) ssSet('ss-translation', 'status-green');
-    else if (st.state === 'starting' || st.paused) ssSet('ss-translation', 'status-yellow');
+    else if (st.state === 'starting' || st.paused || st.session.status === 'reconnecting' || st.session.status === 'connecting') ssSet('ss-translation', 'status-yellow');
     else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'status-red');
     else ssSet('ss-translation', 'status-blue');
 

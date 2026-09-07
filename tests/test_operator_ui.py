@@ -48,10 +48,10 @@ def test_operator_html_structure_and_accessibility():
     assert ".service-status-pill.status-running .status-dot" in css
     assert "pulse-dot" not in css
 
-    # 6. Check Top Navigation Bar: ss-internet is removed, other status pills present
+    # 6. Check Top Navigation Bar: ss-internet and ss-gemini are removed, other status pills present
     assert 'id="ss-internet"' not in html
+    assert 'id="ss-gemini"' not in html
     assert 'id="ss-audio"' in html
-    assert 'id="ss-gemini"' in html
     assert 'id="ss-translation"' in html
 
     # 7. Check Status Monitor Card: Gemini session row is removed, audio input is single-line with ellipsis
