@@ -90,7 +90,8 @@ def test_operator_html_structure_and_accessibility():
     assert 'id="qr-tab-public"' in html
     assert 'id="qr-tab-local"' in html
     assert 'id="qr-img"' in html
-    assert 'id="qr-alt-img"' in html
+    assert 'id="qr-public-url"' in html
+    assert 'id="stat-level-bar"' in html
     assert 'id="dual-qr-modal"' in html
     assert 'id="modal-qr-public-img"' in html
     assert 'id="modal-qr-local-img"' in html

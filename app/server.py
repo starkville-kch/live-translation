@@ -92,7 +92,14 @@ from app.config import (
 from app.events import operator_events
 from app.gemini_session import SessionStatus
 from app.glossary import GlossaryCorrector
-from app.languages import get_available_languages, get_language, is_valid_language_code
+from app.languages import (
+    format_source_language_display,
+    get_available_languages,
+    get_language,
+    is_valid_language_code,
+    normalize_source_language_code,
+    parse_source_language_codes,
+)
 from app.logger import server_log
 from app.model_resolver import model_resolver, verify_model_compatibility
 from app.operator_auth import (
@@ -481,8 +488,7 @@ def _write_session_log() -> Optional[str]:
                 "targets": targets_dict,
             })
 
-        src_info = get_language(manager.expected_source_language)
-        src_name = src_info.name if src_info else manager.expected_source_language.upper()
+        src_name = format_source_language_display(manager.expected_source_language)
 
         tgt_names = []
         for tgt in active_tgts:
@@ -494,6 +500,7 @@ def _write_session_log() -> Optional[str]:
             "session_id": ts,
             "spoken_language": manager.expected_source_language,
             "expected_source_language": manager.expected_source_language,
+            "spoken_language_display": src_name,
             "active_targets": active_tgts,
             "started_at": session_start_dt.isoformat(),
             "ended_at": session_end_dt.isoformat(),
@@ -1046,7 +1053,8 @@ async def start_service(request: Request = None, body: dict = None, from_auto_re
             else:
                 active_targets = t_cfg.get("default_active_targets", ["en"])
 
-            expected_src = body.get("expected_source_language") or t_cfg["expected_source_language"]
+            raw_src = body.get("expected_source_language") or body.get("source") or t_cfg["expected_source_language"]
+            expected_src = normalize_source_language_code(raw_src)
 
             await manager.start(
                 device_index=device_index,
@@ -1275,8 +1283,9 @@ async def reconnect_public_link(request: Request = None):
 @app.get("/api/languages")
 async def get_languages():
     cfg = translation_cfg()
+    exp_src = manager.expected_source_language if manager.is_running else cfg["expected_source_language"]
+    src_codes = list(parse_source_language_codes(exp_src))
     return {
-        "expected_source": cfg["expected_source_language"],
         "available": [
             {
                 "code": lang.code,
@@ -1286,6 +1295,11 @@ async def get_languages():
             }
             for lang in get_available_languages()
         ],
+        "expected_source": exp_src,
+        "expected_source_language": exp_src,
+        "selected_sources": src_codes,
+        "is_auto_detect": "any" in src_codes,
+        "spoken_language_display": format_source_language_display(exp_src),
         "supported_targets": cfg["supported_targets"],
         "selected_targets": cfg["default_active_targets"],
         "active_targets": list(manager.active_targets) if manager.is_running else cfg["default_active_targets"],
@@ -1297,8 +1311,14 @@ async def get_translation_targets(request: Request = None):
     if auth_err := _check_auth(request):
         return auth_err
     cfg = translation_cfg()
+    exp_src = manager.expected_source_language if manager.is_running else cfg["expected_source_language"]
+    src_codes = list(parse_source_language_codes(exp_src))
     return {
-        "expected_source_language": cfg["expected_source_language"],
+        "expected_source": exp_src,
+        "expected_source_language": exp_src,
+        "selected_sources": src_codes,
+        "is_auto_detect": "any" in src_codes,
+        "spoken_language_display": format_source_language_display(exp_src),
         "supported_targets": cfg["supported_targets"],
         "selected_targets": cfg["default_active_targets"],
         "active_targets": list(manager.active_targets) if manager.is_running else cfg["default_active_targets"],
@@ -1324,15 +1344,17 @@ async def update_translation_targets(request: Request, body: dict):
 
     cfg = translation_cfg()
     raw_targets = body.get("targets") or body.get("default_active_targets") or cfg["default_active_targets"]
-    raw_src = body.get("expected_source_language") or cfg["expected_source_language"]
+    raw_src = body.get("expected_source_language") or body.get("source") or cfg["expected_source_language"]
+    canonical_src = normalize_source_language_code(raw_src)
     raw_supported = body.get("supported_targets") or cfg["supported_targets"]
 
     try:
         new_cfg = save_translation_settings(
-            expected_source_language=raw_src,
+            expected_source_language=canonical_src,
             supported_targets=raw_supported,
             default_active_targets=raw_targets,
         )
+        new_cfg["spoken_language_display"] = format_source_language_display(canonical_src)
         operator_events.add("config", f"Translation targets updated: {new_cfg['default_active_targets']}")
         return {"ok": True, "translation": new_cfg}
     except ValueError as e:
@@ -1392,8 +1414,13 @@ async def get_status():
     for tgt, s_info in session_states.items():
         s_info["estimated_cost"] = round(per_target_cost, 4)
 
+    cur_src = manager.expected_source_language if manager.is_running else t_cfg["expected_source_language"]
+    cur_src_codes = list(parse_source_language_codes(cur_src))
     translation_info = {
-        "expected_source": manager.expected_source_language if manager.is_running else t_cfg["expected_source_language"],
+        "expected_source": cur_src,
+        "selected_sources": cur_src_codes,
+        "is_auto_detect": "any" in cur_src_codes,
+        "spoken_language_display": format_source_language_display(cur_src),
         "selected_targets": t_cfg["default_active_targets"],
         "active_targets": active_tgts,
         "primary_target": manager.primary_target,

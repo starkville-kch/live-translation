@@ -376,15 +376,26 @@ def translation_cfg() -> dict:
             "drift_threshold": 3,
             "drift_window": 2,
         }
-    src = str(raw.get("expected_source_language", "ko+en")).lower().strip() or "ko+en"
-    supported = [str(t).lower().strip() for t in raw.get("supported_targets", ["en", "uk", "zh"]) if str(t).strip()]
+    from app.languages import normalize_source_language_code, parse_source_language_codes
+    src = normalize_source_language_code(raw.get("expected_source_language", "ko+en"))
+    src_codes = parse_source_language_codes(src)
+    single_src = src_codes[0] if (len(src_codes) == 1 and src_codes[0] != "any") else None
+
+    supported = [str(t).lower().strip() for t in raw.get("supported_targets", ["en", "ko", "zh"]) if str(t).strip()]
+    if "en" not in supported:
+        supported.insert(0, "en")
+    elif supported[0] != "en":
+        supported.remove("en")
+        supported.insert(0, "en")
+    if "ko" not in supported:
+        supported.insert(1, "ko")
     if not supported:
-        supported = ["en"]
+        supported = ["en", "ko"]
     active = [str(t).lower().strip() for t in raw.get("default_active_targets", ["en"]) if str(t).strip()]
     if not active:
         active = [supported[0]]
     # Ensure active is a subset of supported and does not strictly equal the single source language
-    active = [t for t in active if t in supported and t != src] or [t for t in supported if t != src][:1] or ["en"]
+    active = [t for t in active if t in supported and (single_src is None or t != single_src)] or [t for t in supported if (single_src is None or t != single_src)][:1] or ["en"]
     drift_threshold = int(raw.get("drift_threshold", 3))
     drift_window = int(raw.get("drift_window", 2))
     return {
@@ -402,11 +413,19 @@ def validate_translation_settings(
     default_active_targets: list[str],
 ) -> None:
     """Validate translation language configuration against the catalog."""
-    from app.languages import is_valid_language_code, is_valid_source_language_code
+    from app.languages import (
+        is_valid_language_code,
+        is_valid_source_language_code,
+        normalize_source_language_code,
+        parse_source_language_codes,
+    )
 
-    src = (expected_source_language or "").lower().strip()
-    if not src or not is_valid_source_language_code(src):
+    src = normalize_source_language_code(expected_source_language)
+    if not is_valid_source_language_code(src):
         raise ValueError(f"Invalid expected source language code: {expected_source_language}")
+
+    src_codes = parse_source_language_codes(src)
+    single_src = src_codes[0] if (len(src_codes) == 1 and src_codes[0] != "any") else None
 
     if not supported_targets:
         raise ValueError("At least one supported target language must be specified.")
@@ -426,7 +445,7 @@ def validate_translation_settings(
     clean_active = []
     for t in default_active_targets:
         code = str(t).lower().strip()
-        if code == src:
+        if single_src is not None and code == single_src:
             raise ValueError(f"Source language '{src}' cannot be in default active targets.")
         if code not in clean_supported:
             raise ValueError(f"Default active target '{code}' is not in supported targets list {clean_supported}.")
@@ -442,14 +461,16 @@ def save_translation_settings(
     config_path: Path | None = None,
 ) -> dict:
     """Validate and atomically persist translation settings back to config.yaml."""
-    validate_translation_settings(expected_source_language, supported_targets, default_active_targets)
+    from app.languages import normalize_source_language_code
+    canonical_src = normalize_source_language_code(expected_source_language)
+    validate_translation_settings(canonical_src, supported_targets, default_active_targets)
 
     target_path = _ensure_config_file(config_path)
     with open(target_path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
     data["translation"] = {
-        "expected_source_language": expected_source_language.lower().strip(),
+        "expected_source_language": canonical_src,
         "supported_targets": [t.lower().strip() for t in supported_targets],
         "default_active_targets": [t.lower().strip() for t in default_active_targets],
     }

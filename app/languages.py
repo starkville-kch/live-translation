@@ -149,6 +149,74 @@ def is_valid_source_language_code(code: str | list[str] | tuple[str, ...]) -> bo
     return all(is_valid_language_code(p) for p in parsed)
 
 
+def _source_sort_key(code: str) -> tuple[int, str]:
+    """Canonical sort key for composite source languages.
+    
+    Ensures Korean (rank 0) and English (rank 1) appear first (matching church default 'ko+en'),
+    followed by any other language codes alphabetically (rank 2).
+    """
+    c = code.lower().strip()
+    if c == "ko":
+        return (0, c)
+    if c == "en":
+        return (1, c)
+    return (2, c)
+
+
+def normalize_source_language_code(source: str | list[str] | tuple[str, ...]) -> str:
+    """Normalize arbitrary source representation into a canonical, order-sorted composite string.
+    
+    Examples:
+        - "any" -> "any"
+        - ["en", "ko"] -> "ko+en"
+        - ["ko", "en"] -> "ko+en"
+        - "en+ko" -> "ko+en"
+        - "ko, en" -> "ko+en"
+        - ["es", "en"] -> "en+es"
+        - "ko" -> "ko"
+    """
+    parsed = parse_source_language_codes(source)
+    if not parsed:
+        return "ko+en"
+    if "any" in parsed:
+        return "any"
+    sorted_codes = sorted(parsed, key=_source_sort_key)
+    return "+".join(sorted_codes)
+
+
+def format_source_language_display(code: str | list[str] | tuple[str, ...], include_native: bool = True) -> str:
+    """Format canonical source language code for human display across UI, logs, and telemetry.
+    
+    Examples:
+        - "any" -> "Auto-detect (자동 감지)" (or "Auto-detect" if not include_native)
+        - "ko+en" -> "Korean + English (한국어 + 영어)" (or "Korean + English")
+        - "en+ko" -> "Korean + English (한국어 + 영어)" (canonical order)
+        - "ko" -> "Korean (한국어)" (or "Korean")
+    """
+    parsed = parse_source_language_codes(code)
+    if not parsed or "any" in parsed:
+        return "Auto-detect (자동 감지)" if include_native else "Auto-detect"
+    
+    sorted_codes = sorted(parsed, key=_source_sort_key)
+    names = []
+    native_names = []
+    for c in sorted_codes:
+        info = get_language(c)
+        if info:
+            names.append(info.name)
+            native_names.append(info.native_name or info.name)
+        else:
+            names.append(c.upper())
+            native_names.append(c.upper())
+            
+    base = " + ".join(names)
+    if include_native:
+        native = " + ".join(native_names)
+        if native and native != base:
+            return f"{base} ({native})"
+    return base
+
+
 def get_available_languages() -> List[LanguageInfo]:
     return load_language_catalog().languages
 

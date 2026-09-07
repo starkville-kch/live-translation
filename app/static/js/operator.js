@@ -392,6 +392,8 @@ function setOperatorUiLanguage(lang, syncToServer = false) {
   }
   updateDriftUI(autoDriftCorrectionEnabled);
   renderAudioButton();
+  if (typeof updateSourceUI === 'function') updateSourceUI();
+  if (typeof renderSelectedTargets === 'function') renderSelectedTargets();
 }
 
 
@@ -1125,6 +1127,11 @@ async function pollStatus() {
       lvlLbl.textContent = st.audio.level > 0 ? '레벨: ' + Math.round(st.audio.level) + '%' : '입력 레벨 — 신호 없음';
     }
 
+    const statLvlBar = document.getElementById('stat-level-bar');
+    if (statLvlBar) statLvlBar.style.width = st.audio.level + '%';
+    const statLvlVal = document.getElementById('stat-level-val');
+    if (statLvlVal) statLvlVal.textContent = Math.round(st.audio.level) + '%';
+
     const auEl = document.getElementById('stat-audio');
     if (auEl) {
       auEl.textContent = st.audio.status + (st.audio.device ? ' — ' + st.audio.device : '');
@@ -1759,83 +1766,200 @@ function connectSSE() {
 // ============================================================
 // TRANSLATION LANGUAGES (PHASE 6)
 // ============================================================
+// ============================================================
+// TRANSLATION LANGUAGES (PHASE 6)
+// ============================================================
 let _languagesCatalog = [];
 let _catalogMap = new Map();
-let _supportedTargets = ['en', 'uk', 'zh'];
+let _supportedTargets = ['en', 'ko', 'zh'];
 let _selectedTargets = ['en'];
+let _selectedSources = ['ko', 'en'];
+let _isAutoDetectSource = false;
 let _expectedSource = 'ko+en';
+let _spokenLanguageDisplay = 'Korean + English';
+let _sourceControlsInitialized = false;
 
 async function loadLanguageConfiguration() {
   try {
     const res = await fetch('/api/languages');
     if (!res.ok) return;
     const data = await res.json();
-    _expectedSource = data.expected_source || 'ko+en';
+    _expectedSource = data.expected_source_language || data.expected_source || 'ko+en';
     _languagesCatalog = data.available || [];
     _catalogMap = new Map(_languagesCatalog.map(l => [l.code, l]));
-    _supportedTargets = data.supported_targets || ['en'];
-    _selectedTargets = data.selected_targets || ['en'];
-
-    // Populate Source Language dropdown with fixed supported options
-    const srcSelect = document.getElementById('lang-source-select');
-    if (srcSelect) {
-      const isEn = getOperatorUiLanguage() === 'en';
-      const sourceOptions = [
-        { code: 'ko+en', ko: 'Korean + English (한국어+영어 - 기본값)', en: 'Korean + English (Default)' },
-        { code: 'ko', ko: '한국어 (Korean only)', en: 'Korean (only)' },
-        { code: 'en', ko: 'English (영어만)', en: 'English (only)' },
-        { code: 'any', ko: 'Any (자동 감지 / Auto-detect)', en: 'Any (Auto-detect)' }
-      ];
-
-      srcSelect.innerHTML = '';
-      sourceOptions.forEach(opt => {
-        const el = document.createElement('option');
-        el.value = opt.code;
-        el.textContent = isEn ? opt.en : opt.ko;
-        if (opt.code === _expectedSource) el.selected = true;
-        srcSelect.appendChild(el);
-      });
-
-      if (!sourceOptions.some(o => o.code === _expectedSource)) {
-        _expectedSource = 'ko+en';
-        srcSelect.value = 'ko+en';
-      }
-
-      srcSelect.onchange = () => {
-        _expectedSource = srcSelect.value;
-        const isSingleEn = _expectedSource === 'en';
-        const isSingleKo = _expectedSource === 'ko';
-        const hadInSelected = (isSingleEn && _selectedTargets.includes('en')) || (isSingleKo && _selectedTargets.includes('ko'));
-
-        if (isSingleEn) {
-          _selectedTargets = _selectedTargets.filter(t => t !== 'en');
-        } else if (isSingleKo) {
-          _selectedTargets = _selectedTargets.filter(t => t !== 'ko');
-        }
-
-        if (_selectedTargets.length === 0) {
-          const remainingSupported = _supportedTargets.filter(t => t !== _expectedSource);
-          if (remainingSupported.length > 0) {
-            _selectedTargets = [remainingSupported[0]];
-          }
-        }
-        saveSelectedTargets();
-        renderSelectedTargets();
-
-        if (hadInSelected) {
-          const removedCode = isSingleEn ? 'English' : 'Korean';
-          showLanguageNotice(
-            `원문 언어가 ${removedCode}(으)로 변경되었습니다. 오늘의 통역 대상에서 제외되었습니다.`,
-            `Source changed to ${removedCode}. It was removed from today's target languages.`
-          );
-        }
-      };
+    _supportedTargets = data.supported_targets || ['en', 'ko', 'zh'];
+    if (!_supportedTargets.includes('en')) {
+      _supportedTargets.unshift('en');
     }
+    if (!_supportedTargets.includes('ko')) {
+      _supportedTargets.splice(1, 0, 'ko');
+    }
+    _selectedTargets = data.selected_targets || ['en'];
+    _isAutoDetectSource = Boolean(data.is_auto_detect || _expectedSource === 'any');
+    if (Array.isArray(data.selected_sources) && data.selected_sources.length > 0) {
+      _selectedSources = data.selected_sources.filter(c => c !== 'any');
+    } else {
+      _selectedSources = _expectedSource === 'any' ? ['ko', 'en'] : _expectedSource.split('+');
+    }
+    if (_selectedSources.length === 0) _selectedSources = ['ko', 'en'];
+    _spokenLanguageDisplay = data.spoken_language_display || '';
 
+    setupSourceControls();
+    renderSourcesConfigList();
     renderSelectedTargets();
+    updateSourceUI();
   } catch (e) {
     console.error('Failed to load language configuration:', e);
   }
+}
+
+function setupSourceControls() {
+  if (_sourceControlsInitialized) return;
+  _sourceControlsInitialized = true;
+
+  const btnAutodetect = document.getElementById('btn-source-autodetect');
+  if (btnAutodetect) {
+    btnAutodetect.addEventListener('click', () => {
+      if (_serviceRunning) return;
+      _isAutoDetectSource = !_isAutoDetectSource;
+      handleSourceChange();
+    });
+  }
+}
+
+function handleSourceChange() {
+  if (_isAutoDetectSource) {
+    _expectedSource = 'any';
+  } else {
+    // Canonical sort: ko first, en second, then others alphabetically
+    const sortKey = (c) => (c === 'ko' ? '0_ko' : (c === 'en' ? '1_en' : '2_' + c));
+    _selectedSources.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    _expectedSource = _selectedSources.join('+');
+  }
+
+  // Conflict rule: ONLY single non-autodetect source can conflict with target languages
+  if (!_isAutoDetectSource && _selectedSources.length === 1) {
+    const singleCode = _selectedSources[0];
+    const hadInSelected = _selectedTargets.includes(singleCode);
+    if (hadInSelected) {
+      _selectedTargets = _selectedTargets.filter(t => t !== singleCode);
+      if (_selectedTargets.length === 0) {
+        const remainingSupported = _supportedTargets.filter(t => t !== singleCode);
+        if (remainingSupported.length > 0) {
+          _selectedTargets = [remainingSupported[0]];
+        }
+      }
+      const langName = _catalogMap.get(singleCode)?.name || singleCode.toUpperCase();
+      showLanguageNotice(
+        `발화 언어가 ${langName} 단독으로 설정되어 오늘의 통역 대상에서 제외되었습니다.`,
+        `Source set to ${langName} only. It was removed from today's target languages.`
+      );
+    }
+  }
+
+  updateSourceUI();
+  saveSelectedTargets();
+  renderSelectedTargets();
+}
+
+function updateSourceUI() {
+  const isEn = getOperatorUiLanguage() === 'en';
+  const btnAutodetect = document.getElementById('btn-source-autodetect');
+  const banner = document.getElementById('lang-sources-autodetect-banner');
+  const listWrap = document.getElementById('lang-sources-list-wrap');
+  const statusBadge = document.getElementById('lang-source-status-badge');
+
+  if (btnAutodetect) {
+    btnAutodetect.classList.toggle('active', _isAutoDetectSource);
+    btnAutodetect.disabled = _serviceRunning;
+  }
+
+  if (banner) {
+    banner.style.display = _isAutoDetectSource ? 'flex' : 'none';
+  }
+
+  if (listWrap) {
+    listWrap.classList.toggle('dimmed', _isAutoDetectSource);
+  }
+
+  // Update source status badge symmetrically: "# of sources" or "Auto-detect"
+  if (statusBadge) {
+    if (_isAutoDetectSource) {
+      statusBadge.textContent = 'Auto-detect';
+      statusBadge.title = isEn ? 'Auto-detect (All languages)' : '모든 발화 언어 자동 감지';
+    } else {
+      const count = _selectedSources.length;
+      statusBadge.textContent = `${count} ${count === 1 ? 'source' : 'sources'}`;
+      statusBadge.title = _spokenLanguageDisplay || _selectedSources.join(' + ');
+    }
+  }
+
+  // Sync checkboxes in sources list
+  const sourceCheckboxes = document.querySelectorAll('#lang-sources-config-list input[type="checkbox"]');
+  sourceCheckboxes.forEach(chk => {
+    chk.disabled = _serviceRunning || _isAutoDetectSource;
+    const isChecked = !_isAutoDetectSource && _selectedSources.includes(chk.value);
+    chk.checked = isChecked;
+    const parentLabel = chk.closest('.lang-target-item');
+    if (parentLabel) {
+      parentLabel.classList.toggle('checked', isChecked);
+    }
+  });
+}
+
+function renderSourcesConfigList() {
+  const listEl = document.getElementById('lang-sources-config-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  // Spoken language choices: strictly Korean and English to save vertical space
+  const sourceCodes = ['ko', 'en'];
+
+  const orderedLangs = sourceCodes.map(code => _catalogMap.get(code) || {
+    code: code,
+    name: code === 'ko' ? 'Korean' : 'English',
+    native_name: code === 'ko' ? '한국어' : 'English'
+  });
+
+  orderedLangs.forEach(lang => {
+    const isChecked = !_isAutoDetectSource && _selectedSources.includes(lang.code);
+    const item = document.createElement('label');
+    item.className = `lang-target-item${isChecked ? ' checked' : ''}`;
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = lang.code;
+    chk.checked = isChecked;
+    chk.disabled = _serviceRunning || _isAutoDetectSource;
+
+    chk.addEventListener('change', () => {
+      if (_serviceRunning) return;
+      if (chk.checked) {
+        if (!_selectedSources.includes(lang.code)) {
+          _selectedSources.push(lang.code);
+        }
+      } else {
+        if (_selectedSources.length <= 1) {
+          chk.checked = true;
+          return; // maintain at least one source
+        }
+        _selectedSources = _selectedSources.filter(c => c !== lang.code);
+      }
+      _isAutoDetectSource = false;
+      handleSourceChange();
+    });
+
+    const displayName = (lang.native_name && lang.native_name !== lang.name)
+      ? `${lang.native_name} (${lang.name})`
+      : lang.name;
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'lang-target-label';
+    labelSpan.textContent = displayName;
+
+    item.appendChild(chk);
+    item.appendChild(labelSpan);
+    listEl.appendChild(item);
+  });
 }
 
 let _langNoticeTimer = null;
@@ -1851,32 +1975,61 @@ function showLanguageNotice(koMsg, enMsg) {
   }, 4500);
 }
 
-
 function renderSelectedTargets() {
   const listEl = document.getElementById('lang-targets-config-list');
   if (!listEl) return;
   listEl.innerHTML = '';
   const isEn = getOperatorUiLanguage() === 'en';
 
-  // Order: selected targets first in current order, followed by remaining supported targets
-  const availableSupported = _supportedTargets.filter(c => c !== _expectedSource);
-  const orderedCodes = [];
-  _selectedTargets.forEach(c => {
-    if (availableSupported.includes(c) && !orderedCodes.includes(c)) {
-      orderedCodes.push(c);
-    }
-  });
-  availableSupported.forEach(c => {
-    if (!orderedCodes.includes(c)) {
-      orderedCodes.push(c);
-    }
-  });
+  // Symmetrical Target Conflict Rule:
+  // A target is blocked ONLY if the church selects exclusively that single language as source.
+  // When Auto-detect is on, or when multiple sources are selected (e.g. ko+en), NO targets are blocked.
+  const singleConflictingSource = (!_isAutoDetectSource && _selectedSources.length === 1)
+    ? _selectedSources[0]
+    : null;
 
-  const primaryTarget = _selectedTargets[0] || orderedCodes[0];
+  // Canonical ordering: English on the top, Korean second, then others
+  const targetCodes = [..._supportedTargets];
+  if (!targetCodes.includes('en')) targetCodes.unshift('en');
+  if (!targetCodes.includes('ko')) targetCodes.splice(1, 0, 'ko');
+  const targetSortKey = (c) => (c === 'en' ? '0_en' : (c === 'ko' ? '1_ko' : '2_' + c));
+  const orderedCodes = targetCodes.sort((a, b) => targetSortKey(a).localeCompare(targetSortKey(b)));
+
+  const primaryTarget = _selectedTargets.find(c => c !== singleConflictingSource)
+    || orderedCodes.find(c => c !== singleConflictingSource)
+    || orderedCodes[0];
 
   orderedCodes.forEach(code => {
+    const isConflicting = (code === singleConflictingSource);
     const info = _catalogMap.get(code);
     const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
+
+    if (isConflicting) {
+      const item = document.createElement('label');
+      item.className = 'lang-target-item disabled conflict';
+      item.title = isEn ? 'Cannot translate into the current spoken language' : '단독 발화 언어로 설정되어 있어 통역 대상으로 선택할 수 없습니다.';
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.value = code;
+      chk.checked = false;
+      chk.disabled = true;
+
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'lang-target-label';
+      labelSpan.textContent = displayName;
+
+      const conflictBadge = document.createElement('span');
+      conflictBadge.className = 'conflict-target-badge';
+      conflictBadge.innerHTML = `<span data-lang="ko">원문 언어</span><span data-lang="en">Spoken</span>`;
+
+      item.appendChild(chk);
+      item.appendChild(labelSpan);
+      item.appendChild(conflictBadge);
+      listEl.appendChild(item);
+      return;
+    }
+
     const isChecked = _selectedTargets.includes(code);
     const isPrimary = isChecked && (code === primaryTarget);
 
@@ -1940,7 +2093,6 @@ function renderSelectedTargets() {
   updateMonitorTargetUI(_selectedTargets, primaryTarget || 'en');
 }
 
-
 function updateLanguageCountAndHint() {
   const count = _selectedTargets.length;
   const countBadge = document.getElementById('lang-target-count-badge');
@@ -1960,11 +2112,12 @@ function updateLanguageCountAndHint() {
 
 async function saveSelectedTargets() {
   try {
+    const expSrc = _isAutoDetectSource ? 'any' : _selectedSources.join('+');
     const res = await fetch('/api/translation/targets', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        expected_source_language: _expectedSource,
+        expected_source_language: expSrc,
         supported_targets: _supportedTargets,
         targets: _selectedTargets
       })
@@ -1975,10 +2128,14 @@ async function saveSelectedTargets() {
     }
     const data = await res.json();
     if (data.ok && data.translation) {
-      _expectedSource = data.translation.expected_source_language || _expectedSource;
+      _expectedSource = data.translation.expected_source_language || expSrc;
       _selectedTargets = data.translation.default_active_targets || _selectedTargets;
       _supportedTargets = data.translation.supported_targets || _supportedTargets;
+      if (data.translation.spoken_language_display) {
+        _spokenLanguageDisplay = data.translation.spoken_language_display;
+      }
       updateLanguageCountAndHint();
+      updateSourceUI();
     }
   } catch (e) {
     console.error('Failed to save translation targets:', e);
@@ -1990,19 +2147,41 @@ function updateLanguageTargets(st) {
   const isLocked = isRunning;
   const isEn = getOperatorUiLanguage() === 'en';
 
-
   const badgeEl = document.getElementById('lang-panel-badge');
-  const srcSelect = document.getElementById('lang-source-select');
   const configList = document.getElementById('lang-targets-config-list');
   const activeList = document.getElementById('lang-targets-active-list');
   const btnManage = document.getElementById('btn-open-manage-langs');
   const hintEl = document.getElementById('lang-targets-hint');
   const countBadge = document.getElementById('lang-target-count-badge');
+  const sourceStatusBadge = document.getElementById('lang-source-status-badge');
+  const btnAutodetect = document.getElementById('btn-source-autodetect');
+  const presetButtons = document.querySelectorAll('.btn-source-preset');
+  const sourceCheckboxes = document.querySelectorAll('#lang-sources-config-list input[type="checkbox"]');
 
-  if (srcSelect) {
-    srcSelect.disabled = isLocked;
+  if (btnAutodetect) btnAutodetect.disabled = isLocked;
+  presetButtons.forEach(b => b.disabled = isLocked);
+  sourceCheckboxes.forEach(c => c.disabled = isLocked || _isAutoDetectSource);
+  if (btnManage) btnManage.disabled = isLocked;
+
+  const translation = st && st.translation ? st.translation : null;
+  if (translation && translation.spoken_language_display) {
+    _spokenLanguageDisplay = translation.spoken_language_display;
   }
-
+  if (sourceStatusBadge) {
+    const isAutoDetect = translation ? Boolean(translation.is_auto_detect) : _isAutoDetectSource;
+    const srcCodes = translation ? (translation.selected_sources || []) : _selectedSources;
+    if (isAutoDetect) {
+      sourceStatusBadge.textContent = 'Auto-detect';
+    } else {
+      const count = srcCodes.length || _selectedSources.length;
+      sourceStatusBadge.textContent = isLocked
+        ? `${count} active`
+        : `${count} ${count === 1 ? 'source' : 'sources'}`;
+    }
+    if (_spokenLanguageDisplay) {
+      sourceStatusBadge.title = _spokenLanguageDisplay;
+    }
+  }
 
   if (isLocked) {
     if (badgeEl) {
@@ -2011,7 +2190,6 @@ function updateLanguageTargets(st) {
     }
     if (configList) configList.style.display = 'none';
     if (activeList) activeList.style.display = 'flex';
-    if (btnManage) btnManage.disabled = true;
 
     if (hintEl) {
       hintEl.innerHTML = isEn
@@ -2019,7 +2197,6 @@ function updateLanguageTargets(st) {
         : '<span>통역 대상을 변경하려면 서비스를 종료하세요.</span>';
     }
 
-    const translation = st && st.translation ? st.translation : null;
     const activeTargets = translation ? (translation.active_targets || []) : _selectedTargets;
     const primaryTarget = translation ? (translation.primary_target || 'en') : 'en';
     const sessionsMap = translation ? (translation.sessions || {}) : {};
@@ -2092,7 +2269,6 @@ function updateLanguageTargets(st) {
     }
     if (configList) configList.style.display = 'flex';
     if (activeList) activeList.style.display = 'none';
-    if (btnManage) btnManage.disabled = false;
 
     updateLanguageCountAndHint();
     updateMonitorTargetUI(_selectedTargets, (st && st.translation && st.translation.primary_target) || 'en');
@@ -2187,21 +2363,24 @@ if (btnSaveManage) {
     const newSupported = Array.from(_modalSelectedSupported);
     if (newSupported.length === 0) return;
 
+    const singleConflicting = (!_isAutoDetectSource && _selectedSources.length === 1) ? _selectedSources[0] : null;
     const newlyAdded = newSupported.filter(code => !_supportedTargets.includes(code));
-    let newSelected = _selectedTargets.filter(t => newSupported.includes(t) && t !== _expectedSource);
+    let newSelected = _selectedTargets.filter(t => newSupported.includes(t) && t !== singleConflicting);
     newlyAdded.forEach(code => {
-      if (code !== _expectedSource && !newSelected.includes(code)) newSelected.push(code);
+      if (code !== singleConflicting && !newSelected.includes(code)) newSelected.push(code);
     });
     if (newSelected.length === 0) {
-      const avail = newSupported.filter(t => t !== _expectedSource);
+      const avail = newSupported.filter(t => t !== singleConflicting);
       if (avail.length > 0) newSelected = [avail[0]];
     }
 
     try {
+      const expSrc = _isAutoDetectSource ? 'any' : _selectedSources.join('+');
       const res = await fetch('/api/translation/targets', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          expected_source_language: expSrc,
           supported_targets: newSupported,
           targets: newSelected
         })

@@ -20,6 +20,15 @@ def reset_manager_state():
         asyncio.run(manager.stop())
         yield
         asyncio.run(manager.stop())
+        try:
+            from app.config import save_translation_settings
+            save_translation_settings(
+                expected_source_language="ko+en",
+                supported_targets=["ko", "en", "zh"],
+                default_active_targets=["en"],
+            )
+        except Exception:
+            pass
 
 
 def test_operator_html_language_panel_structure():
@@ -30,8 +39,8 @@ def test_operator_html_language_panel_structure():
 
     # 1. Right-rail language targets card with selectable source
     assert 'id="card-languages"' in html
-    assert 'id="lang-panel-badge"' in html
-    assert 'id="lang-source-select"' in html
+    assert 'id="btn-source-autodetect"' in html
+    assert 'id="lang-sources-config-list"' in html
     assert 'id="lang-targets-config-list"' in html
     assert 'id="lang-targets-active-list"' in html
     assert 'id="btn-open-manage-langs"' in html

@@ -221,3 +221,50 @@ def test_evaluate_drift_score_ko_plus_en_bilingual():
     )
     assert score_script == 1
 
+
+def test_evaluate_drift_score_es_plus_en_multilingual():
+    """Verify 'es+en' accepts Spanish and English input with 0 drift, but flags Japanese (+1)."""
+    # Spanish input -> 0
+    assert evaluate_drift_score(
+        input_lang="es",
+        input_text="Dios les bendiga",
+        output_lang="en",
+        output_text="God bless you",
+        expected_source="es+en",
+        target_language="en",
+    ) == 0
+
+    # English input -> 0
+    assert evaluate_drift_score(
+        input_lang="en",
+        input_text="Amen",
+        output_lang="en",
+        output_text="Amen",
+        expected_source="es+en",
+        target_language="en",
+    ) == 0
+
+    # Japanese input -> +1
+    assert evaluate_drift_score(
+        input_lang="ja",
+        input_text="ありがとう",
+        output_lang="en",
+        output_text="Thank you",
+        expected_source="es+en",
+        target_language="en",
+    ) == 1
+
+
+def test_evaluate_drift_score_any_autodetect():
+    """Verify 'any' continuous auto-detect mode accepts any input language without input drift penalty."""
+    for lang, sample in [("ko", "안녕하세요"), ("es", "Hola"), ("uk", "Привіт"), ("ja", "こんにちは"), ("zh", "你好")]:
+        assert evaluate_drift_score(
+            input_lang=lang,
+            input_text=sample,
+            output_lang="en",
+            output_text="Hello",
+            expected_source="any",
+            target_language="en",
+        ) == 0
+
+

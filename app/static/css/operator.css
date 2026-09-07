@@ -1563,4 +1563,95 @@ html[lang="ko"] .preview-en::before {
   white-space: nowrap;
 }
 
+/* ── Multi-Source Language Selection & Auto-detect ── */
+.source-presets-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.btn-source-preset {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--color-warm-200);
+  background: #ffffff;
+  color: var(--color-navy-800);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.btn-source-preset:hover {
+  border-color: var(--color-gold-400);
+  background: var(--color-gold-100);
+}
+.btn-source-preset.active {
+  background: var(--color-navy-800);
+  color: #ffffff;
+  border-color: var(--color-navy-800);
+}
+.btn-auto-detect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-gold-400);
+  background: #ffffff;
+  color: var(--color-navy-900);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.btn-auto-detect:hover {
+  background: var(--color-gold-100);
+  border-color: var(--color-gold-500);
+}
+.btn-auto-detect.active {
+  background: linear-gradient(135deg, #1e3a8a 0%, #1e293b 100%);
+  color: #ffffff;
+  border-color: #3b82f6;
+  box-shadow: 0 2px 6px rgba(30, 58, 138, 0.25);
+}
+.btn-auto-detect.active .autodetect-sparkle {
+  color: #fbbf24;
+}
+.autodetect-sparkle {
+  color: var(--color-gold-500);
+  font-size: 13px;
+}
+.lang-sources-autodetect-banner {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1e40af;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lang-sources-list-wrap.dimmed {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.conflict-target-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #991b1b;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 

@@ -14,19 +14,41 @@
   </h2>
 
   <div class="card-body">
-    <!-- Spoken Language Selection -->
+    <!-- Spoken Language Selection (Multi-Source + Auto-detect) -->
     <div class="lang-section">
-      <div class="lang-section-title">
-        <span data-lang="ko">발화 언어</span>
-        <span data-lang="en">Spoken Language</span>
+      <div class="lang-section-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+        <span class="tooltip tooltip-left">
+          <span>발화 언어 (Spoken Language)</span>
+          <span class="tooltiptext" data-lang="ko">설교자/발화자가 사용하는 언어입니다. 복수 선택 또는 자동 감지가 가능합니다.</span>
+          <span class="tooltiptext" data-lang="en">Languages spoken by the preacher/speaker. Select multiple or engage Auto-detect.</span>
+        </span>
+        <span id="lang-source-status-badge" class="lang-count-badge">2 sources</span>
       </div>
-      <div class="lang-source-box">
-        <select id="lang-source-select" class="lang-source-select" aria-label="Select spoken language">
-          <option value="ko+en" {% if not translation_cfg or translation_cfg.get('expected_source_language') == 'ko+en' %}selected{% endif %}>Korean + English (한국어+영어 - 기본값)</option>
-          <option value="ko" {% if translation_cfg and translation_cfg.get('expected_source_language') == 'ko' %}selected{% endif %}>한국어 (Korean only)</option>
-          <option value="en" {% if translation_cfg and translation_cfg.get('expected_source_language') == 'en' %}selected{% endif %}>English (영어만)</option>
-          <option value="any" {% if translation_cfg and translation_cfg.get('expected_source_language') == 'any' %}selected{% endif %}>Any (자동 감지 / Auto-detect)</option>
-        </select>
+
+      <div class="lang-hint-text" style="margin-bottom: 8px; color: var(--color-navy-700); font-weight: 500;">
+        <span data-lang="ko">※ 복수 선택 가능 (Multiple selections allowed)</span>
+        <span data-lang="en">※ Multiple selections allowed</span>
+      </div>
+
+      <!-- Auto-detect Toggle Button -->
+      <button type="button" id="btn-source-autodetect" class="btn-auto-detect" title="Continuous unconstrained language detection">
+        <span class="autodetect-sparkle">✦</span>
+        <span data-lang="ko">Auto-detect (자동 감지 모드)</span>
+        <span data-lang="en">Auto-detect (All Languages)</span>
+      </button>
+
+      <!-- Auto-detect Active Banner -->
+      <div id="lang-sources-autodetect-banner" class="lang-sources-autodetect-banner" style="display: none;">
+        <span class="autodetect-sparkle">✦</span>
+        <span data-lang="ko">자동 감지 활성화: 모든 발화 언어를 자유롭게 수용합니다.</span>
+        <span data-lang="en">Auto-detect active: speech in any language accepted continuously.</span>
+      </div>
+
+      <!-- Source Checkbox List (Stopped Mode: Symmetrical to Targets List) -->
+      <div id="lang-sources-list-wrap" class="lang-sources-list-wrap">
+        <div id="lang-sources-config-list" class="lang-targets-list">
+          <!-- Populated dynamically by operator.js -->
+        </div>
       </div>
     </div>
 
@@ -44,28 +66,33 @@
       <div id="lang-targets-config-list" class="lang-targets-list">
         {% if translation_cfg and translation_cfg.get('supported_targets') %}
           {% for code in translation_cfg.get('supported_targets') %}
-            {% if code != translation_cfg.get('expected_source_language', 'ko') %}
-              {% set is_checked = code in translation_cfg.get('default_active_targets', ['en']) %}
-              {% set is_primary = loop.first or (code == translation_cfg.get('default_active_targets', ['en'])[0]) %}
-              <label class="lang-target-item{% if is_checked %} checked{% endif %}{% if is_primary and is_checked %} primary{% endif %}">
-                <input type="checkbox" value="{{ code }}" {% if is_checked %}checked{% endif %} data-code="{{ code }}">
-                <span class="lang-target-label">
-                  {%- if code == 'en' %}English
-                  {%- elif code == 'uk' %}Українська (Ukrainian)
-                  {%- elif code == 'zh' %}中文 (Chinese)
-                  {%- elif code == 'es' %}Español (Spanish)
-                  {%- elif code == 'ja' %}日本語 (Japanese)
-                  {%- else %}{{ code | upper }}
-                  {%- endif -%}
+            {% set is_conflict = (code == translation_cfg.get('expected_source_language')) and (translation_cfg.get('expected_source_language') != 'any') %}
+            {% set is_checked = (not is_conflict) and (code in translation_cfg.get('default_active_targets', ['en'])) %}
+            {% set is_primary = is_checked and (code == translation_cfg.get('default_active_targets', ['en'])[0]) %}
+            <label class="lang-target-item{% if is_checked %} checked{% endif %}{% if is_primary %} primary{% endif %}{% if is_conflict %} disabled conflict{% endif %}">
+              <input type="checkbox" value="{{ code }}" {% if is_checked %}checked{% endif %} {% if is_conflict %}disabled{% endif %} data-code="{{ code }}">
+              <span class="lang-target-label">
+                {%- if code == 'ko' %}한국어 (Korean)
+                {%- elif code == 'en' %}English
+                {%- elif code == 'zh' %}中文 (Chinese)
+                {%- elif code == 'uk' %}Українська (Ukrainian)
+                {%- elif code == 'es' %}Español (Spanish)
+                {%- elif code == 'ja' %}日本語 (Japanese)
+                {%- else %}{{ code | upper }}
+                {%- endif -%}
+              </span>
+              {% if is_conflict %}
+                <span class="conflict-target-badge">
+                  <span data-lang="ko">원문 언어</span>
+                  <span data-lang="en">Spoken</span>
                 </span>
-                {% if is_primary and is_checked %}
-                  <span class="primary-target-badge">
-                    <span data-lang="ko">★ 주 언어</span>
-                    <span data-lang="en">★ Primary</span>
-                  </span>
-                {% endif %}
-              </label>
-            {% endif %}
+              {% elif is_primary and is_checked %}
+                <span class="primary-target-badge">
+                  <span data-lang="ko">★ 주 언어</span>
+                  <span data-lang="en">★ Primary</span>
+                </span>
+              {% endif %}
+            </label>
           {% endfor %}
         {% else %}
           <label class="lang-target-item checked primary">
@@ -75,6 +102,18 @@
               <span data-lang="ko">★ 주 언어</span>
               <span data-lang="en">★ Primary</span>
             </span>
+          </label>
+          <label class="lang-target-item disabled conflict">
+            <input type="checkbox" value="ko" disabled data-code="ko">
+            <span class="lang-target-label">한국어 (Korean)</span>
+            <span class="conflict-target-badge">
+              <span data-lang="ko">원문 언어</span>
+              <span data-lang="en">Spoken</span>
+            </span>
+          </label>
+          <label class="lang-target-item">
+            <input type="checkbox" value="zh" data-code="zh">
+            <span class="lang-target-label">中文 (Chinese)</span>
           </label>
         {% endif %}
       </div>

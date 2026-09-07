@@ -96,7 +96,7 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
         md_text = md_file.read_text(encoding="utf-8")
         assert "# Translation Transcript" in md_text
         assert "Spoken language: Korean" in md_text
-        assert "**Spoken — Korean**" in md_text
+        assert "**Spoken — Korean" in md_text
         assert "**English**" in md_text
         assert "**Українська (Ukrainian)**" in md_text
         assert "Hello everyone" in md_text

@@ -144,3 +144,82 @@ def test_all_keyword_rejected():
             default_active_targets=["en"],
         )
 
+
+def test_arbitrary_composite_sources_persistence(tmp_path: Path):
+    """Verify arbitrary combinations like es+en, uk+en are valid and persist cleanly in canonical order."""
+    temp_yaml = tmp_path / "config.yaml"
+    temp_yaml.write_text("translation:\n  expected_source_language: ko\n", encoding="utf-8")
+
+    # 1. Spanish + English source with English and Ukrainian targets (canonically sorted to en+es)
+    res_es = save_translation_settings(
+        expected_source_language="es+en",
+        supported_targets=["en", "uk", "zh"],
+        default_active_targets=["en", "uk"],
+        config_path=temp_yaml,
+    )
+    assert res_es["expected_source_language"] == "en+es"
+    assert res_es["default_active_targets"] == ["en", "uk"]
+
+    # 2. List input normalized to composite string (canonically sorted to en+uk)
+    res_list = save_translation_settings(
+        expected_source_language=["uk", "en"],
+        supported_targets=["en", "es"],
+        default_active_targets=["en"],
+        config_path=temp_yaml,
+    )
+    assert res_list["expected_source_language"] == "en+uk"
+    assert res_list["default_active_targets"] == ["en"]
+
+
+def test_composite_sources_roundtrip_persistence_and_order_canonicalization(tmp_path: Path):
+    """Verify that saving arbitrary composite sources round-trips from disk identically regardless of input order."""
+    temp_yaml = tmp_path / "config.yaml"
+    temp_yaml.write_text("translation:\n  expected_source_language: ko\n", encoding="utf-8")
+
+    # Case A: en+ko vs ko+en -> both save and round-trip load as canonical 'ko+en'
+    res_a = save_translation_settings(
+        expected_source_language=["en", "ko"],
+        supported_targets=["en", "uk"],
+        default_active_targets=["en"],
+        config_path=temp_yaml,
+    )
+    assert res_a["expected_source_language"] == "ko+en"
+    disk_a = yaml.safe_load(temp_yaml.read_text(encoding="utf-8"))["translation"]
+    assert disk_a["expected_source_language"] == "ko+en"
+
+    res_b = save_translation_settings(
+        expected_source_language="en+ko",
+        supported_targets=["en", "uk"],
+        default_active_targets=["en"],
+        config_path=temp_yaml,
+    )
+    assert res_b["expected_source_language"] == "ko+en"
+    disk_b = yaml.safe_load(temp_yaml.read_text(encoding="utf-8"))["translation"]
+    assert disk_b["expected_source_language"] == "ko+en"
+
+    # Case B: es+en vs en+es -> both save and round-trip load as canonical 'en+es'
+    res_c = save_translation_settings(
+        expected_source_language=["es", "en"],
+        supported_targets=["en", "es", "uk"],
+        default_active_targets=["uk"],
+        config_path=temp_yaml,
+    )
+    assert res_c["expected_source_language"] == "en+es"
+    disk_c = yaml.safe_load(temp_yaml.read_text(encoding="utf-8"))["translation"]
+    assert disk_c["expected_source_language"] == "en+es"
+
+    # Case C: 'any' auto-detect round-trip
+    res_d = save_translation_settings(
+        expected_source_language="any",
+        supported_targets=["en", "uk"],
+        default_active_targets=["en", "uk"],
+        config_path=temp_yaml,
+    )
+    assert res_d["expected_source_language"] == "any"
+    assert res_d["default_active_targets"] == ["en", "uk"]
+    disk_d = yaml.safe_load(temp_yaml.read_text(encoding="utf-8"))["translation"]
+    assert disk_d["expected_source_language"] == "any"
+    assert disk_d["default_active_targets"] == ["en", "uk"]
+
+
+

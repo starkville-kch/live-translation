@@ -1,14 +1,23 @@
 <!-- Status: Audio Input, Model, Auto Recovery & Network Telemetry -->
-<!-- Row 1: Audio Input -->
+<!-- Row 1: Audio Input & Live Level Meter -->
 <div class="stat-row">
   <span class="stat-row-label tooltip">
     <span data-lang="ko">오디오 입력</span>
     <span data-lang="en">Audio Input</span>
     <span class="tooltiptext" data-lang="ko">Windows PC의 마이크/오디오 신호가 서버에 정상 수신되고 있는지 나타냅니다.</span>
-    <span class="tooltiptext" data-lang="en">Indicates if the mic audio is being captured properly.</span>
+    <span data-lang="en">Indicates if the mic audio is being captured properly.</span>
   </span>
-  <div class="stat-row-content">
+  <div class="stat-row-content" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;">
     <span id="stat-audio">—</span>
+    <div class="stat-level-wrap" title="실시간 입력 레벨 (Input Level)" style="display: inline-flex; align-items: center; gap: 6px; flex: 0 0 160px; min-width: 130px; margin-left: auto;">
+      <span class="stat-level-lbl" style="font-size: 11px; color: var(--color-text-muted); white-space: nowrap;">
+        <span data-lang="ko">레벨:</span><span data-lang="en">Level:</span>
+      </span>
+      <div class="meter-wrap" style="flex: 1; height: 8px; margin: 0; background: var(--color-warm-100); border-radius: 4px; overflow: hidden;">
+        <div class="meter-bar" id="stat-level-bar" style="height: 100%; width: 0%; transition: width 0.1s ease; background: linear-gradient(90deg, #10b981 0%, #f59e0b 70%, #ef4444 100%);"></div>
+      </div>
+      <span id="stat-level-val" style="font-size: 11px; font-weight: 700; color: var(--color-navy-900); min-width: 28px; text-align: right; font-family: 'Consolas', monospace;">0%</span>
+    </div>
   </div>
 </div>
 

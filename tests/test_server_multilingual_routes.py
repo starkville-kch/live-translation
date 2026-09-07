@@ -8,17 +8,27 @@ from fastapi.testclient import TestClient
 
 from app.audio import AudioCapture
 from app.broadcast import CaptionEvent
+from app.config import translation_cfg, save_translation_settings
 from app.gemini_session import GeminiSession
 from app.server import app, manager, _state
 
 
 @pytest.fixture(autouse=True)
 def reset_server_state():
+    orig_cfg = dict(translation_cfg())
     with patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
         asyncio.run(manager.stop())
         yield
         asyncio.run(manager.stop())
+        try:
+            save_translation_settings(
+                expected_source_language=orig_cfg["expected_source_language"],
+                supported_targets=orig_cfg["supported_targets"],
+                default_active_targets=orig_cfg["default_active_targets"],
+            )
+        except Exception:
+            pass
 
 
 def test_api_languages_discovery():
@@ -270,6 +280,35 @@ def test_status_cost_and_runtime_calculation():
         data_stopped = res_status_stopped.json()
         assert data_stopped["cost_usd"] == round(2 * 120.0 * _COST_PER_AUDIO_SEC, 4)
         assert data_stopped["translation"]["active_targets"] == ["en", "zh"]
+
+
+def test_boundary_normalization_and_spoken_display(tmp_path):
+    """Verify list inputs in /api/translation/targets and /api/start are normalized to composite strings and status displays them."""
+    client = TestClient(app)
+
+    # 1. Update targets with array source ["es", "en"] -> canonically sorted to en+es
+    res = client.put(
+        "/api/translation/targets",
+        json={
+            "expected_source_language": ["es", "en"],
+            "targets": ["uk"],
+            "supported_targets": ["en", "uk", "zh"]
+        }
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["translation"]["expected_source_language"] == "en+es"
+    assert "spoken_language_display" in data["translation"]
+
+    # 2. Verify /api/status displays canonical spoken_language_display
+    res_status = client.get("/api/status")
+    assert res_status.status_code == 200
+    st = res_status.json()
+    assert st["translation"]["expected_source"] == "en+es"
+    assert st["translation"]["spoken_language_display"] == "English + Spanish (English + Español)"
+    assert st["translation"]["is_auto_detect"] is False
+
 
 
 
