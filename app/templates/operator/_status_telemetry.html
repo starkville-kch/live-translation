@@ -18,6 +18,12 @@
       </div>
       <span id="stat-level-val" style="font-size: 11px; font-weight: 700; color: var(--color-navy-900); min-width: 28px; text-align: right; font-family: 'Consolas', monospace;">0%</span>
     </div>
+    <span id="stat-audio-class" class="tooltip" style="font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; background: var(--color-warm-100); color: var(--color-text-muted); white-space: nowrap;">
+      <span data-lang="ko">— 판별 중</span>
+      <span data-lang="en">— Detecting</span>
+      <span class="tooltiptext" data-lang="ko">음성/음악 자동 판별(참고용). 번역을 멈추거나 제어하지 않습니다.</span>
+      <span class="tooltiptext" data-lang="en">Automatic speech/music indicator (informational only). Does not pause or control translation.</span>
+    </span>
   </div>
 </div>
 
@@ -90,7 +96,7 @@
 <div class="telemetry-panel" style="margin-top: 10px; background: #ffffff; border: 1px solid var(--color-warm-200); border-radius: 8px; overflow: hidden;">
   <div id="telemetry-toggle" onclick="toggleTelemetryDetail()" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; background: #f8fafc; user-select: none;">
     <span class="stat-card-label tooltip" style="font-size: 11px; font-weight: 700; color: var(--color-navy-900); text-transform: uppercase; margin-bottom: 0; display: inline-flex; align-items: center; gap: 4px;">
-      <span data-lang="ko">📊 네트워크 & 지연 세부 분석 (Telemetry Details)</span>
+      <span data-lang="ko">📊 네트워크 & 지연 세부 분석</span>
       <span data-lang="en">📊 Network & Latency Telemetry Details</span>
       <span class="tooltiptext" data-lang="ko">구글 제미나이 AI 처리 지연 및 현장 Wi-Fi / 공용 HTTPS 접속 경로별 RTT 상세 데이터입니다. 클릭하여 펼치거나 접을 수 있습니다.</span>
       <span class="tooltiptext" data-lang="en">Detailed Gemini AI turn-onset processing latency and RTT breakdown for Local Wi-Fi and Public HTTPS. Click to toggle.</span>
@@ -101,7 +107,7 @@
   <div id="telemetry-body" style="display: none; padding: 10px 12px; border-top: 1px solid var(--color-warm-200);">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px dashed var(--color-warm-200); padding-bottom: 6px;">
       <span class="stat-card-label tooltip" style="font-size: 11px; font-weight: 700; color: var(--color-navy-900); text-transform: uppercase; margin-bottom: 0;">
-        <span data-lang="ko">Gemini 처리 지연 (AI Turn-Onset)</span>
+        <span data-lang="ko">Gemini 처리 지연</span>
         <span data-lang="en">Gemini Processing Latency (Turn-Onset)</span>
         <span class="tooltiptext" data-lang="ko">입력된 음성이 서버를 거쳐 구글 제미나이 AI로부터 첫 번역 결과가 수신될 때까지의 순수 AI 생성 소요 시간입니다.</span>
         <span class="tooltiptext" data-lang="en">Time required for Gemini AI to generate the first translated token from speech onset.</span>

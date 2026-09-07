@@ -5,10 +5,11 @@
       <span data-lang="ko">통역 언어</span>
       <span data-lang="en">Translation Languages</span>
       <span class="tooltiptext" data-lang="ko">예배 통역 원문 언어와 다국어 통역 대상 언어를 설정합니다. 서비스 시작 후에는 대상 언어 설정이 잠깁니다.</span>
-      <span class="tooltiptext" data-lang="en">Configure source and multi-target translation languages. Locked once translation starts.</span>
+      <span class="tooltiptext" data-lang="en">Configure source and multi-target translation languages. Locked once
+        translation starts.</span>
     </span>
     <span id="lang-panel-badge" class="lang-panel-badge ready">
-      <span data-lang="ko">대기 (Ready)</span>
+      <span data-lang="ko">대기</span>
       <span data-lang="en">Ready</span>
     </span>
   </h2>
@@ -16,24 +17,28 @@
   <div class="card-body">
     <!-- Spoken Language Selection (Multi-Source + Auto-detect) -->
     <div class="lang-section">
-      <div class="lang-section-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+      <div class="lang-section-title"
+        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
         <span class="tooltip tooltip-left">
-          <span>발화 언어 (Spoken Language)</span>
+          <span data-lang="ko">발화 언어 (입력)</span>
+          <span data-lang="en">Spoken Language</span>
           <span class="tooltiptext" data-lang="ko">설교자/발화자가 사용하는 언어입니다. 복수 선택 또는 자동 감지가 가능합니다.</span>
-          <span class="tooltiptext" data-lang="en">Languages spoken by the preacher/speaker. Select multiple or engage Auto-detect.</span>
+          <span class="tooltiptext" data-lang="en">Languages spoken by the preacher/speaker. Select multiple or engage
+            Auto-detect.</span>
         </span>
         <span id="lang-source-status-badge" class="lang-count-badge">2 sources</span>
       </div>
 
       <div class="lang-hint-text" style="margin-bottom: 8px; color: var(--color-navy-700); font-weight: 500;">
-        <span data-lang="ko">※ 복수 선택 가능 (Multiple selections allowed)</span>
+        <span data-lang="ko">※ 복수 선택 가능</span>
         <span data-lang="en">※ Multiple selections allowed</span>
       </div>
 
       <!-- Auto-detect Toggle Button -->
-      <button type="button" id="btn-source-autodetect" class="btn-auto-detect" title="Continuous unconstrained language detection">
+      <button type="button" id="btn-source-autodetect" class="btn-auto-detect"
+        title="Continuous unconstrained language detection">
         <span class="autodetect-sparkle">✦</span>
-        <span data-lang="ko">Auto-detect (자동 감지 모드)</span>
+        <span data-lang="ko">자동 감지 모드</span>
         <span data-lang="en">Auto-detect (All Languages)</span>
       </button>
 
@@ -56,7 +61,7 @@
     <div class="lang-section" style="margin-top: 12px;">
       <div class="lang-section-title" style="display: flex; justify-content: space-between; align-items: center;">
         <span>
-          <span data-lang="ko">오늘의 통역 언어</span>
+          <span data-lang="ko">통역 언어 (출력)</span>
           <span data-lang="en">Today's Translation Languages</span>
         </span>
         <span id="lang-target-count-badge" class="lang-count-badge">1 active</span>
@@ -65,56 +70,59 @@
       <!-- Stopped mode: Checkbox list of supported targets -->
       <div id="lang-targets-config-list" class="lang-targets-list">
         {% if translation_cfg and translation_cfg.get('supported_targets') %}
-          {% for code in translation_cfg.get('supported_targets') %}
-            {% set is_conflict = (code == translation_cfg.get('expected_source_language')) and (translation_cfg.get('expected_source_language') != 'any') %}
-            {% set is_checked = (not is_conflict) and (code in translation_cfg.get('default_active_targets', ['en'])) %}
-            {% set is_primary = is_checked and (code == translation_cfg.get('default_active_targets', ['en'])[0]) %}
-            <label class="lang-target-item{% if is_checked %} checked{% endif %}{% if is_primary %} primary{% endif %}{% if is_conflict %} disabled conflict{% endif %}">
-              <input type="checkbox" value="{{ code }}" {% if is_checked %}checked{% endif %} {% if is_conflict %}disabled{% endif %} data-code="{{ code }}">
-              <span class="lang-target-label">
-                {%- if code == 'ko' %}한국어 (Korean)
-                {%- elif code == 'en' %}English
-                {%- elif code == 'zh' %}中文 (Chinese)
-                {%- elif code == 'uk' %}Українська (Ukrainian)
-                {%- elif code == 'es' %}Español (Spanish)
-                {%- elif code == 'ja' %}日本語 (Japanese)
-                {%- else %}{{ code | upper }}
-                {%- endif -%}
-              </span>
-              {% if is_conflict %}
-                <span class="conflict-target-badge">
-                  <span data-lang="ko">원문 언어</span>
-                  <span data-lang="en">Spoken</span>
-                </span>
-              {% elif is_primary and is_checked %}
-                <span class="primary-target-badge">
-                  <span data-lang="ko">★ 주 언어</span>
-                  <span data-lang="en">★ Primary</span>
-                </span>
-              {% endif %}
-            </label>
-          {% endfor %}
+        {% for code in translation_cfg.get('supported_targets') %}
+        {% set is_conflict = (code == translation_cfg.get('expected_source_language')) and
+        (translation_cfg.get('expected_source_language') != 'any') %}
+        {% set is_checked = (not is_conflict) and (code in translation_cfg.get('default_active_targets', ['en'])) %}
+        {% set is_primary = is_checked and (code == translation_cfg.get('default_active_targets', ['en'])[0]) %}
+        <label
+          class="lang-target-item{% if is_checked %} checked{% endif %}{% if is_primary %} primary{% endif %}{% if is_conflict %} disabled conflict{% endif %}">
+          <input type="checkbox" value="{{ code }}" {% if is_checked %}checked{% endif %} {% if is_conflict %}disabled{%
+            endif %} data-code="{{ code }}">
+          <span class="lang-target-label">
+            {%- if code == 'ko' %}한국어 (Korean)
+            {%- elif code == 'en' %}English
+            {%- elif code == 'zh' %}中文 (Chinese)
+            {%- elif code == 'uk' %}Українська (Ukrainian)
+            {%- elif code == 'es' %}Español (Spanish)
+            {%- elif code == 'ja' %}日本語 (Japanese)
+            {%- else %}{{ code | upper }}
+            {%- endif -%}
+          </span>
+          {% if is_conflict %}
+          <span class="conflict-target-badge">
+            <span data-lang="ko">원문 언어</span>
+            <span data-lang="en">Spoken</span>
+          </span>
+          {% elif is_primary and is_checked %}
+          <span class="primary-target-badge">
+            <span data-lang="ko">★ 주 언어</span>
+            <span data-lang="en">★ Primary</span>
+          </span>
+          {% endif %}
+        </label>
+        {% endfor %}
         {% else %}
-          <label class="lang-target-item checked primary">
-            <input type="checkbox" value="en" checked data-code="en">
-            <span class="lang-target-label">English</span>
-            <span class="primary-target-badge">
-              <span data-lang="ko">★ 주 언어</span>
-              <span data-lang="en">★ Primary</span>
-            </span>
-          </label>
-          <label class="lang-target-item disabled conflict">
-            <input type="checkbox" value="ko" disabled data-code="ko">
-            <span class="lang-target-label">한국어 (Korean)</span>
-            <span class="conflict-target-badge">
-              <span data-lang="ko">원문 언어</span>
-              <span data-lang="en">Spoken</span>
-            </span>
-          </label>
-          <label class="lang-target-item">
-            <input type="checkbox" value="zh" data-code="zh">
-            <span class="lang-target-label">中文 (Chinese)</span>
-          </label>
+        <label class="lang-target-item checked primary">
+          <input type="checkbox" value="en" checked data-code="en">
+          <span class="lang-target-label">English</span>
+          <span class="primary-target-badge">
+            <span data-lang="ko">★ 주 언어</span>
+            <span data-lang="en">★ Primary</span>
+          </span>
+        </label>
+        <label class="lang-target-item disabled conflict">
+          <input type="checkbox" value="ko" disabled data-code="ko">
+          <span class="lang-target-label">한국어 (Korean)</span>
+          <span class="conflict-target-badge">
+            <span data-lang="ko">원문 언어</span>
+            <span data-lang="en">Spoken</span>
+          </span>
+        </label>
+        <label class="lang-target-item">
+          <input type="checkbox" value="zh" data-code="zh">
+          <span class="lang-target-label">中文 (Chinese)</span>
+        </label>
         {% endif %}
       </div>
 
@@ -131,10 +139,13 @@
 
     <!-- Manage Languages Button -->
     <div style="margin-top: 12px; border-top: 1px solid var(--color-warm-200); padding-top: 10px;">
-      <button type="button" id="btn-open-manage-langs" class="secondary" style="width: 100%; padding: 6px 10px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 6px;">
-        <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      <button type="button" id="btn-open-manage-langs" class="secondary"
+        style="width: 100%; padding: 6px 10px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 6px;">
+        <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
         <span data-lang="ko">언어 관리</span>
         <span data-lang="en">Manage Languages</span>

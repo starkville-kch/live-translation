@@ -20,6 +20,7 @@ import time
 from typing import Callable, Dict, List, Optional
 
 from app.audio import AudioCapture
+from app.audio_classifier import AudioClassifier
 from app.broadcast import CaptionBroadcaster, CaptionEvent
 from app.config import gemini_cfg
 from app.gemini_session import GeminiSession, SessionState
@@ -72,6 +73,14 @@ class TranslationManager:
         self._start_time: Optional[float] = None
         self._pause_start: Optional[float] = None
         self._paused_duration_s: float = 0.0
+
+        # Observer-only audio classifier (speech/music heuristic) — never gates
+        # or alters translation; see app/audio_classifier.py.
+        self.classifier: Optional[AudioClassifier] = None
+        self.classifier_transitions: List[dict] = []
+        self._classifier_queue: asyncio.Queue = asyncio.Queue(maxsize=20)
+        self._classifier_task: Optional[asyncio.Task] = None
+        self._classifier_last_label: Optional[str] = None
 
     @property
     def is_running(self) -> bool:
@@ -206,10 +215,51 @@ class TranslationManager:
                                 e,
                             )
 
+                    # Tee a copy to the observer-only classifier queue. Never
+                    # awaits and never blocks the primary fan-out above; a full
+                    # queue drops the oldest chunk, same as session backpressure.
+                    try:
+                        self._classifier_queue.put_nowait(chunk)
+                    except asyncio.QueueFull:
+                        try:
+                            self._classifier_queue.get_nowait()
+                            self._classifier_queue.put_nowait(chunk)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
         except asyncio.CancelledError:
             pass
         except Exception as e:
             server_log.error("[TranslationManager] Audio pipe error: %s", e)
+
+    async def _classifier_pipe(self) -> None:
+        """Isolated consumer: classifies teed chunks off the primary audio path.
+
+        A slow, erroring, or stalled classifier never affects audio delivery —
+        `AudioClassifier.process_chunk` never raises, and any unexpected error
+        here is caught and logged, not propagated.
+        """
+        try:
+            while True:
+                chunk = await self._classifier_queue.get()
+                try:
+                    if self.classifier is not None:
+                        self.classifier.process_chunk(chunk)
+                        label = self.classifier.state.label
+                        if label != self._classifier_last_label:
+                            self._classifier_last_label = label
+                            elapsed = (
+                                round(time.monotonic() - self._start_time, 1)
+                                if self._start_time is not None
+                                else 0.0
+                            )
+                            self.classifier_transitions.append({"t": elapsed, "label": label})
+                except Exception as e:
+                    server_log.debug("[AudioClassifier] classifier pipe error: %s", e)
+        except asyncio.CancelledError:
+            pass
 
     async def start(
         self,
@@ -278,6 +328,18 @@ class TranslationManager:
             # Start single AudioCapture and fan-out pipe
             self.audio.start(device_index=device_index)
             self._pipe_task = asyncio.create_task(self._audio_pipe())
+
+            # Observer-only classifier: isolated task, own queue, no pipeline coupling.
+            self.classifier = AudioClassifier()
+            self.classifier_transitions = []
+            self._classifier_last_label = None
+            while not self._classifier_queue.empty():
+                try:
+                    self._classifier_queue.get_nowait()
+                except Exception:
+                    break
+            self._classifier_task = asyncio.create_task(self._classifier_pipe())
+
             server_log.info(
                 "[TranslationManager] Started translation: src='%s' targets=%s",
                 self.expected_source_language,
@@ -336,6 +398,15 @@ class TranslationManager:
                     pass
             self._pipe_task = None
 
+            if self._classifier_task and not self._classifier_task.done():
+                self._classifier_task.cancel()
+                try:
+                    await self._classifier_task
+                except asyncio.CancelledError:
+                    pass
+            self._classifier_task = None
+            self.classifier = None
+
             # Stop AudioCapture
             self.audio.stop()
 
@@ -388,6 +459,16 @@ class TranslationManager:
             level_rms = getattr(ast, "level_rms", 0.0)
             device_name = getattr(ast, "device_name", "")
 
+        if self.classifier is not None:
+            cls_state = self.classifier.state
+            audio_class = {
+                "label": cls_state.label,
+                "confidence": round(cls_state.confidence, 2),
+                "since_s": cls_state.since_s,
+            }
+        else:
+            audio_class = {"label": "uncertain", "confidence": 0.0, "since_s": 0.0}
+
         return {
             "is_running": self._is_running,
             "is_paused": self._is_paused,
@@ -399,5 +480,6 @@ class TranslationManager:
                 "level_rms": level_rms,
                 "device_name": device_name,
             },
+            "audio_class": audio_class,
         }
 

@@ -652,7 +652,7 @@
     </thead>
     <tbody>
       <tr>
-        <td><code>http://skc.local/admin</code><br><small style="color:var(--color-text-secondary);">(또는 <code>http://localhost/admin</code>)</small></td>
+        <td><code>http://skc.local:8080/admin</code><br><small style="color:var(--color-text-secondary);">(또는 <code>http://localhost:8080/admin</code>)</small></td>
         <td>
           <span data-lang="ko">운영 봉사자 (Operator)</span>
           <span data-lang="en">Volunteer Operator</span>
@@ -663,7 +663,7 @@
         </td>
       </tr>
       <tr>
-        <td><code>http://skc.local</code><br><small style="color:var(--color-text-secondary);">(또는 <code>http://&lt;교회IP&gt;</code>)</small></td>
+        <td><code>http://skc.local:8080</code><br><small style="color:var(--color-text-secondary);">(또는 <code>http://&lt;교회IP&gt;:8080</code>)</small></td>
         <td>
           <span data-lang="ko">예배 참석자 (Attendees)</span>
           <span data-lang="en">Worship Attendees</span>
@@ -727,22 +727,22 @@
   <h3 data-lang="ko">5. 공용 인터넷 접속(Cloudflared)이 멈추거나 서비스 시작 오류가 발생하는 경우</h3>
   <h3 data-lang="en">5. Cloudflare Tunnel is down or "Service cannot be started" error</h3>
   <p data-lang="ko">
-    <strong>• 상태 점검 방법:</strong> 프로그램 폴더의 <code>check_skc_live.bat</code>를 더블클릭하거나 PowerShell에서 <code>Get-Service Cloudflared</code>를 실행하여 상태를 확인합니다. <code>Status: Stopped</code>이거나 공용 주소가 503 오류를 반환하면 터널 서비스가 중단된 상태입니다.<br>
-    <strong>• 오류 원인 (실행 파일 경로 의존성):</strong> Windows 서비스는 <code>cloudflared.exe</code>의 <strong>절대 파일 경로</strong>를 레지스트리에 영구 등록하여 실행합니다. 따라서 <code>cloudflared.exe</code>가 위치한 폴더를 이동하거나 이름을 변경하면 Windows가 실행 파일을 찾지 못해 <em>"Cannot start service Cloudflared on computer '.'"</em> 오류가 발생합니다.<br>
-    <strong>• 타 교회 및 신규 설치 (자동 다운로드):</strong> 다른 교회나 새 컴퓨터에서 공용 HTTPS 서비스를 시작할 때, <code>SKC_setup.exe</code>(설정 마법사)의 <strong>[⬇️ Download cloudflared.exe]</strong> 버튼을 누르거나 <code>install_cloudflare_tunnel.bat</code>를 실행하면 프로그램 폴더로 최신 공식 바이너리를 자동 다운로드하고 토큰 키를 입력받아 즉시 Windows 서비스를 등록합니다.<br>
-    <strong>• 원클릭 자동 해결 및 토큰 갱신:</strong> 프로그램 루트의 <code>fix_cloudflared_service.bat</code>를 더블클릭(UAC '예' 허용)하거나 <code>fix_cloudflared_service.bat &lt;토큰키&gt;</code> 형태로 실행하면, 현재 폴더의 <code>cloudflared.exe</code>를 자동 감지(없으면 자동 다운로드)하여 서비스를 재등록하고 즉시 정상 시작합니다.<br>
+    <strong>• 상태 점검 방법:</strong> 운영자 콘솔 상단의 <strong>[공용 HTTPS]</strong> 상태 배지로 실시간 확인합니다 (초록: 정상, 노랑: 재연결 중, 빨강/회색: 오프라인). 별도의 배치 파일이나 PowerShell 명령이 필요하지 않습니다.<br>
+    <strong>• 자동 내장 실행:</strong> <code>SKC_Live_Translation.exe</code>는 시작할 때마다 <code>.env</code>에 저장된 토큰으로 <code>cloudflared.exe</code>를 자동으로 내장 실행(백그라운드 프로세스)합니다. 별도의 Windows 서비스 설치가 필요 없으며, 프로그램을 재시작하면 대부분의 연결 문제가 자동으로 복구됩니다.<br>
+    <strong>• 토큰이 없거나 만료된 경우:</strong> <code>SKC_setup.exe</code>(설정 마법사)를 실행하여 <strong>[Tunnel Token]</strong> 입력란에 새 토큰을 붙여넣고 저장하면 <code>.env</code>에 자동으로 반영됩니다.<br>
+    <strong>• 타 교회 및 신규 설치 (자동 다운로드):</strong> 다른 교회나 새 컴퓨터에서 공용 HTTPS 서비스를 시작할 때, <code>SKC_setup.exe</code>의 <strong>[⬇️ Download cloudflared.exe]</strong> 버튼을 누르면 프로그램 폴더로 최신 공식 바이너리를 자동 다운로드합니다.<br>
     <strong>• Cloudflare 터널 토큰(Token) 확인 및 재발급 주소:</strong><br>
-    Cloudflare Zero Trust 대시보드 (<a href="https://one.dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://one.dash.cloudflare.com</a> 또는 <a href="https://dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://dash.cloudflare.com</a>) 접속 ➔ <strong>Networks</strong> ➔ <strong>Tunnels</strong> ➔ 해당 터널 선택 ➔ <strong>Configure</strong> ➔ <strong>Install connector (Windows)</strong> 명령어에서 <code>--token &lt;TOKEN_KEY&gt;</code> 값을 확인하실 수 있습니다 (로컬 토큰 파일: <code>C:\ProgramData\cloudflared\token</code>).<br>
-    <strong>• 현장 Wi-Fi 백업:</strong> Cloudflare 터널이 중단된 상황에서도 관리자 콘솔의 <strong>[현장 Wi-Fi (Local Wi-Fi)]</strong> QR 코드(<code>http://skc.local:8080/live</code>)는 외부 인터넷과 무관하게 100% 정상 작동합니다.
+    Cloudflare Zero Trust 대시보드 (<a href="https://one.dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://one.dash.cloudflare.com</a> 또는 <a href="https://dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://dash.cloudflare.com</a>) 접속 ➔ <strong>Networks</strong> ➔ <strong>Tunnels</strong> ➔ 해당 터널 선택 ➔ <strong>Configure</strong> ➔ <strong>Install connector (Windows)</strong> 명령어에서 <code>--token &lt;TOKEN_KEY&gt;</code> 값을 확인하실 수 있습니다.<br>
+    <strong>• 현장 Wi-Fi 백업:</strong> Cloudflare 터널이 중단된 상황에서도 관리자 콘솔의 <strong>[현장 Wi-Fi (Local Wi-Fi)]</strong> QR 코드(<code>http://skc.local:8080</code>)는 외부 인터넷과 무관하게 100% 정상 작동합니다.
   </p>
   <p data-lang="en">
-    <strong>• How to Check:</strong> Double-click <code>check_skc_live.bat</code> or run <code>Get-Service Cloudflared</code> in PowerShell. If it shows <code>Status: Stopped</code> or the public URL returns HTTP 503, the tunnel service is down.<br>
-    <strong>• Root Cause (Fixed Binary Path):</strong> Windows Services register the <strong>exact, hardcoded absolute path</strong> of <code>cloudflared.exe</code> in the Windows Registry. Moving or renaming the folder causes Windows Service Manager to fail with <em>"Cannot start service Cloudflared on computer '.'"</em> because the executable cannot be found at the registered path.<br>
-    <strong>• For Other Churches & Fresh Installs (Auto-Download):</strong> When setting up on a new PC or for another church, click <strong>[⬇️ Download cloudflared.exe]</strong> in <code>SKC_setup.exe</code> or run <code>install_cloudflare_tunnel.bat</code>. It automatically downloads the official Cloudflare binary directly into the software directory, requests your Tunnel Token, and registers the Windows service.<br>
-    <strong>• 1-Click Fix & Token Update:</strong> Double-click <code>fix_cloudflared_service.bat</code> (or pass token via CLI: <code>fix_cloudflared_service.bat &lt;TOKEN&gt;</code>). It auto-downloads <code>cloudflared.exe</code> if missing, updates the Windows service path to this folder, and starts the service.<br>
+    <strong>• How to Check:</strong> Watch the <strong>[Public HTTPS]</strong> status badge at the top of the operator console (green: ready, yellow: reconnecting, red/gray: offline). No batch file or PowerShell command is needed.<br>
+    <strong>• Automatic Embedded Process:</strong> <code>SKC_Live_Translation.exe</code> automatically launches <code>cloudflared.exe</code> as an embedded background process on every startup, using the token stored in <code>.env</code>. No separate Windows Service install is required, and restarting the program resolves most connection issues.<br>
+    <strong>• Missing or Expired Token:</strong> Run <code>SKC_setup.exe</code> (setup wizard), paste the new token into the <strong>[Tunnel Token]</strong> field, and save — it's written to <code>.env</code> automatically.<br>
+    <strong>• For Other Churches & Fresh Installs (Auto-Download):</strong> When setting up on a new PC or for another church, click <strong>[⬇️ Download cloudflared.exe]</strong> in <code>SKC_setup.exe</code> to automatically download the official binary into the software folder.<br>
     <strong>• Cloudflare Dashboard URL to retrieve/reissue Tunnel Token:</strong><br>
-    Visit Cloudflare Zero Trust (<a href="https://one.dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://one.dash.cloudflare.com</a> or <a href="https://dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://dash.cloudflare.com</a>) ➔ <strong>Networks</strong> ➔ <strong>Tunnels</strong> ➔ Select your tunnel ➔ <strong>Configure</strong> ➔ Under <strong>Install connector (Windows)</strong>, copy the token string following <code>--token &lt;TOKEN_KEY&gt;</code> (Stored locally at <code>C:\ProgramData\cloudflared\token</code>).<br>
-    <strong>• Local Wi-Fi Backup:</strong> Even when Cloudflare is offline, the <strong>Local Wi-Fi</strong> QR code (<code>http://skc.local:8080/live</code>) on the operator console continues to work with zero public internet dependency.
+    Visit Cloudflare Zero Trust (<a href="https://one.dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://one.dash.cloudflare.com</a> or <a href="https://dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://dash.cloudflare.com</a>) ➔ <strong>Networks</strong> ➔ <strong>Tunnels</strong> ➔ Select your tunnel ➔ <strong>Configure</strong> ➔ Under <strong>Install connector (Windows)</strong>, copy the token string following <code>--token &lt;TOKEN_KEY&gt;</code>.<br>
+    <strong>• Local Wi-Fi Backup:</strong> Even when Cloudflare is offline, the <strong>Local Wi-Fi</strong> QR code (<code>http://skc.local:8080</code>) on the operator console continues to work with zero public internet dependency.
   </p>
 
   <div class="warn">

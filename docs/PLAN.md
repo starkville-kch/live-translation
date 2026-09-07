@@ -120,6 +120,7 @@ Windows PC (본 애플리케이션)
 | `app/events.py` | `OperatorEventLog` — 스레드 안전 링 버퍼(50개), 7개 카테고리, `since(last_id)` API |
 | `app/logger.py` | 회전 파일 + 콘솔 로거 |
 | `app/audio.py` | PyAudio 캡처, PCM16 리샘플링, RMS 미터링, 연결 해제 감지 |
+| `app/audio_classifier.py` | 관찰 전용 speech/music 휴리스틱 분류기 (NumPy only, 파이프라인 미결합, `/api/status`·세션 로그 참고용) |
 | `app/translation_manager.py` | 다중 타겟 번역 매니저 — 세션 팬아웃, 장애 격리, 세션 수명주기 오케스트레이션 |
 | `app/languages.py` | 지원 언어 카탈로그 (70+ 언어, 네이티브 명칭, 유효성 검증) |
 | `app/gemini_session.py` | Gemini Live 세션, 모델 자동 선택, 재연결, GoAway 처리 |

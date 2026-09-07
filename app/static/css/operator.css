@@ -1600,20 +1600,27 @@ html[lang="ko"] .preview-en::before {
   gap: 6px;
   font-size: 12px;
   font-weight: 700;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--color-gold-400);
-  background: #ffffff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 2px solid var(--color-gold-500);
+  background: var(--color-gold-100);
   color: var(--color-navy-900);
   cursor: pointer;
   transition: all 0.15s ease;
   width: 100%;
   justify-content: center;
   margin-bottom: 8px;
+  box-shadow: 0 1px 3px rgba(184, 146, 62, 0.3);
 }
 .btn-auto-detect:hover {
-  background: var(--color-gold-100);
+  background: var(--color-gold-400);
   border-color: var(--color-gold-500);
+  box-shadow: 0 3px 8px rgba(184, 146, 62, 0.4);
+  transform: translateY(-1px);
+}
+.btn-auto-detect:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(184, 146, 62, 0.3);
 }
 .btn-auto-detect.active {
   background: linear-gradient(135deg, #1e3a8a 0%, #1e293b 100%);
@@ -1621,12 +1628,22 @@ html[lang="ko"] .preview-en::before {
   border-color: #3b82f6;
   box-shadow: 0 2px 6px rgba(30, 58, 138, 0.25);
 }
+.btn-auto-detect.active:hover {
+  box-shadow: 0 3px 10px rgba(30, 58, 138, 0.35);
+  transform: translateY(-1px);
+}
 .btn-auto-detect.active .autodetect-sparkle {
   color: #fbbf24;
+  animation: none;
 }
 .autodetect-sparkle {
   color: var(--color-gold-500);
-  font-size: 13px;
+  font-size: 14px;
+  animation: autodetect-sparkle-pulse 2.2s ease-in-out infinite;
+}
+@keyframes autodetect-sparkle-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
 }
 .lang-sources-autodetect-banner {
   font-size: 11px;

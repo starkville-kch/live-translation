@@ -172,24 +172,28 @@ def test_korean_resumes_normally_after_recovery():
     asyncio.run(_run())
 
 
-def test_auto_drift_disabled_for_non_korean_speech():
-    """Auto drift recovery must be disabled when expected_source_language is not Korean (e.g. English)."""
-    session = GeminiSession(
-        on_caption=lambda c: None,
-        expected_source_language="en",  # English spoken source
-        target_language_code="uk",
-    )
-    session._auto_drift_correction = True
-    session.reset_clean = AsyncMock()
+def test_auto_drift_works_for_non_korean_speech():
+    """Auto drift recovery is source-language-agnostic: it must trigger for any
+    expected_source_language (e.g. English), since evaluate_drift_score() keys
+    off the output language code vs. target_language_code, not the source."""
+    async def _run():
+        session = GeminiSession(
+            on_caption=lambda c: None,
+            expected_source_language="en",  # English spoken source
+            target_language_code="uk",
+        )
+        session._auto_drift_correction = True
+        session.reset_clean = AsyncMock()
 
-    # 3 turns with unexpected language input
-    for i in range(3):
-        session._current_source = f"Some French text {i}"
-        session._current_target = f"Quelque chose {i}"
-        session._turn_in_lang = "fr"
-        session._turn_out_lang = "fr"
-        session._commit_current_turn()
+        # 3 turns with unexpected output language (not the "uk" target)
+        for i in range(3):
+            session._current_source = f"Some French text {i}"
+            session._current_target = f"Quelque chose {i}"
+            session._turn_in_lang = "fr"
+            session._turn_out_lang = "fr"
+            session._commit_current_turn()
 
-    # Score will accumulate, but auto recovery must NOT trigger reset_clean because expected_source != 'ko'
-    session.reset_clean.assert_not_called()
-    assert "비정상 언어 감지" in session.state.last_event
+        await asyncio.sleep(0.05)
+        session.reset_clean.assert_called_once()
+
+    asyncio.run(_run())

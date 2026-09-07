@@ -5,6 +5,25 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.3] - 2026-09-06
+
+### Added
+- **Observer-Only Speech/Music Heuristic Classifier (`app/audio_classifier.py`)**:
+  - Passive NumPy-only classifier labels the live audio stream `speech` / `music` / `uncertain` for operator awareness — never gates, pauses, or alters translation.
+  - Isolated from `_audio_pipe`: a bounded `put_nowait`-only tee queue and dedicated `_classifier_pipe` task in `TranslationManager`; a classifier failure is caught and logged, never propagated into audio handling or billing.
+  - Rule stack anchored on `beat_strength` (60–140 BPM autocorrelation of a short onset envelope, one FFT per window shared across all spectral features), corroborated by `spectral_flatness` / `rolloff` / `env_var`; ~15–20s sustained raw-label agreement (tracked in audio time) required before the published label flips.
+  - Exposed read-only via `/api/status` (`audio_class`) and as a compact `audio_class_transitions` track in `session.json`; operator console shows a small read-only badge next to the audio input level meter.
+- **QR Network-Type Badge (`app/server.py`)**: `_build_qr()` now draws a navy circular badge with a white glyph at the bottom-right of the center logo — a globe for Public HTTPS QR codes, ascending signal bars for Local Wi-Fi ones — so the two are visually distinguishable at a glance. Drawn entirely with PIL primitives (no new font/asset dependency) and kept fully inside the existing quiet-zone buffer so it never touches real QR modules.
+
+### Fixed
+- **Language Drift Auto-Recovery Restricted to Korean Sources**: `GeminiSession._evaluate_turn_drift` gated automatic clean-session recovery to `expected_source_language` containing `ko`/`any`, even though `evaluate_drift_score()` already scores drift from the output language vs. `target_language_code` regardless of source. Removed the gate — auto recovery (when enabled) now works for any source-language configuration.
+
+### Changed
+- **Decluttered Korean Operator Console (`app/templates/operator/*.html`, `app/static/js/operator.js`)**: Removed redundant English glosses from Korean-language labels/status text/button text (e.g. `입력 장치 설정 (Input Device)` → `입력 장치 설정`, `● 번역 중 (RUNNING)` → `● 번역 중`) — English-language UI (`data-lang="en"` / `isEn` branches) is unaffected. Also fixed one untagged bilingual span (`발화 언어 (Spoken Language)`) that was always shown regardless of the selected UI language.
+- **More Prominent Auto-detect Button (`app/static/css/operator.css`, `app/templates/operator/_language_targets.html`)**: The `✦ 자동 감지 모드` (Auto-detect) toggle looked like flat text rather than a clickable control. Gave it a tinted background, thicker border, shadow, hover-lift, and a subtle pulsing sparkle icon (stops pulsing once toggled on) to signal interactivity.
+- **Shortened Local Wi-Fi Share URL (`app/server.py`)**: `_get_live_urls()` now returns the local/fallback URL without the `/live` path suffix (e.g. `http://skc.local:8080` instead of `http://skc.local:8080/live`) — root `/` already redirects to `/live`, so this is functionally identical but matches the shorter church-internal-network standard everywhere it's shown: the attendee access card, the printable Dual QR modal, and `how_to_use.html`.
+- **`how_to_use.html` Cloudflare Troubleshooting Rewrite**: Removed references to `check_skc_live.bat` / `install_cloudflare_tunnel.bat` / `fix_cloudflared_service.bat`, which were archived to `.agent/scratch/` when the embedded on-demand tunnel shipped and no longer exist in the distributed program folder. Replaced with the current workflow: watch the `[공용 HTTPS]` status badge on the operator console, `SKC_setup.exe`'s `[Tunnel Token]` field for a missing/expired token, and its `[⬇️ Download cloudflared.exe]` button for fresh installs. Also fixed the system-access URL table, which was still missing `:8080`.
+
 ## [3.1.2] - 2026-09-05
 
 ### Added

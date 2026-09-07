@@ -359,14 +359,14 @@ class GeminiSession:
 
         # Drift auto-recovery:
         # 1. Total drift score >= self._drift_threshold (sustained across turns)
-        # 2. Active when expected_source_language is ko, any, or all
-        # 3. Only active when auto_drift_correction is True
-        # 4. Debounced by 15.0 seconds
+        # 2. Only active when auto_drift_correction is True
+        # 3. Debounced by 15.0 seconds
+        # Source-language-agnostic: evaluate_drift_score() already checks the
+        # output language against target_language_code regardless of the
+        # expected source, so recovery applies to any source combination.
         if total_drift >= self._drift_threshold:
             now = time.monotonic()
-            src_codes = parse_source_language_codes(self.expected_source_language)
-            is_auto_drift_eligible = ("ko" in src_codes or "any" in src_codes)
-            if is_auto_drift_eligible and self._auto_drift_correction:
+            if self._auto_drift_correction:
                 if (now - self._last_watchdog_reset_at) >= 15.0:
                     self._last_watchdog_reset_at = now
                     session_log.info("[%s] [Drift] recovered via clean session reset", self.tag)

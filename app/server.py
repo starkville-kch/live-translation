@@ -266,15 +266,18 @@ def _get_live_urls() -> tuple[str, str, str]:
     else:
         host = ip_addr
 
+    # Root "/" redirects to "/live" (see root_redirect()), so the shortest
+    # shareable/QR form omits the path — matches the church-internal-network
+    # standard of "http://skc.local:8080".
     if port == 80:
-        local_url = f"http://{host}/live"
-        fallback_url = f"http://{ip_addr}/live"
+        local_url = f"http://{host}"
+        fallback_url = f"http://{ip_addr}"
     elif port == 443:
-        local_url = f"https://{host}/live"
-        fallback_url = f"https://{ip_addr}/live"
+        local_url = f"https://{host}"
+        fallback_url = f"https://{ip_addr}"
     else:
-        local_url = f"http://{host}:{port}/live"
-        fallback_url = f"http://{ip_addr}:{port}/live"
+        local_url = f"http://{host}:{port}"
+        fallback_url = f"http://{ip_addr}:{port}"
 
     pub_url = cfg.get("public_url")
     if pub_url:
@@ -297,7 +300,31 @@ def _get_active_attendee_share_url() -> tuple[str, str]:
 
 
 
-def _build_qr(url: str) -> bytes:
+def _draw_globe_badge_icon(draw, cx: float, cy: float, r: float, color: tuple) -> None:
+    """Simple globe glyph (meridian + equator) for the Public HTTPS badge."""
+    lw = max(1, int(r * 0.2))
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=lw)
+    draw.ellipse([cx - r * 0.45, cy - r, cx + r * 0.45, cy + r], outline=color, width=lw)
+    draw.line([cx - r, cy, cx + r, cy], fill=color, width=lw)
+
+
+def _draw_signal_badge_icon(draw, cx: float, cy: float, r: float, color: tuple) -> None:
+    """Simple ascending signal-bars glyph for the Local Wi-Fi badge."""
+    bar_w = max(2, r * 0.34)
+    gap = bar_w * 0.45
+    heights = [r * 0.7, r * 1.15, r * 1.6]
+    total_w = bar_w * 3 + gap * 2
+    x0 = cx - total_w / 2
+    base_y = cy + r * 0.55
+    for i, h in enumerate(heights):
+        x1 = x0 + i * (bar_w + gap)
+        x2 = x1 + bar_w
+        y1 = base_y - h
+        radius = min(bar_w * 0.4, h * 0.4)
+        draw.rounded_rectangle([x1, y1, x2, base_y], radius=radius, fill=color)
+
+
+def _build_qr(url: str, network: str = "public") -> bytes:
     from PIL import Image, ImageDraw
     from qrcode.image.styledpil import StyledPilImage
     from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
@@ -387,6 +414,34 @@ def _build_qr(url: str) -> bytes:
         )
 
         img.paste(logo, (cx - logo_w // 2, cy - logo_h // 2), logo)
+
+        # Network-type badge: circle at the bottom-right corner of the logo
+        # buffer distinguishing the Public HTTPS QR (globe) from the Local
+        # Wi-Fi QR (signal bars). Navy fill + white glyph for contrast
+        # against the gold finder patterns. Placed tangent to the buffer's
+        # own edge so the badge (incl. its white ring) never touches real
+        # QR modules, while still overlapping the navy logo box corner for
+        # the familiar "notification badge" look.
+        badge_r = max(11, int(logo_w * 0.20))
+        ring_w = max(2, int(badge_r * 0.18))
+        badge_r_total = badge_r + ring_w
+        badge_cx = cx + buf_half_w - badge_r_total
+        badge_cy = cy + buf_half_h - badge_r_total
+        draw.ellipse(
+            [badge_cx - badge_r - ring_w, badge_cy - badge_r - ring_w,
+             badge_cx + badge_r + ring_w, badge_cy + badge_r + ring_w],
+            fill=(255, 255, 255, 255),
+        )
+        draw.ellipse(
+            [badge_cx - badge_r, badge_cy - badge_r, badge_cx + badge_r, badge_cy + badge_r],
+            fill=(*NAVY, 255),
+        )
+        icon_r = badge_r * 0.6
+        WHITE = (255, 255, 255)
+        if network == "lan":
+            _draw_signal_badge_icon(draw, badge_cx, badge_cy, icon_r, WHITE)
+        else:
+            _draw_globe_badge_icon(draw, badge_cx, badge_cy, icon_r, WHITE)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -516,6 +571,7 @@ def _write_session_log() -> Optional[str]:
                 tgt: manager.broadcasters[tgt].caption_count
                 for tgt in active_tgts if tgt in manager.broadcasters
             },
+            "audio_class_transitions": list(manager.classifier_transitions),
         }
         (session_dir / "session.json").write_text(json.dumps(session_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -1465,6 +1521,7 @@ async def get_status():
             "level": round(a.level_rms, 1),
             "device": a.device_name,
         },
+        "audio_class": mgr_state.get("audio_class", {"label": "uncertain", "confidence": 0.0, "since_s": 0.0}),
         "session": {
             "status": primary_sess_state.status if primary_sess_state else SessionStatus.STOPPED,
             "reconnect_count": primary_sess_state.reconnect_count if primary_sess_state else 0,
@@ -1582,14 +1639,18 @@ async def qr_png(type: str = "primary"):
 
     if type == "local":
         target_url = local_url
+        network = "lan"
     elif type in ("fallback", "ip"):
         target_url = fallback_url
+        network = "lan"
     elif type == "public":
         target_url = public_url
+        network = "public"
     else:
         target_url = active_url
+        network = "public" if target_url == public_url else "lan"
 
-    qr_bytes = _build_qr(target_url)
+    qr_bytes = _build_qr(target_url, network=network)
     return Response(
         content=qr_bytes,
         media_type="image/png",

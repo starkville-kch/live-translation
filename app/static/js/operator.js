@@ -285,34 +285,21 @@ function updateDriftUI(enabled) {
 
   const isEn = getOperatorUiLanguage() === 'en';
   const descEl = document.getElementById('stat-drift-status');
-  const isKoreanSource = (_expectedSource === 'ko');
 
   if (radioDriftAuto) {
-    radioDriftAuto.disabled = !isKoreanSource;
-    if (!isKoreanSource) radioDriftAuto.checked = false;
-  }
-
-  if (!isKoreanSource) {
-    if (radioDriftManual) radioDriftManual.checked = true;
-    if (descEl) {
-      descEl.textContent = isEn
-        ? 'Auto language recovery is currently available for Korean speech.'
-        : '자동 언어 복구는 현재 한국어 발화에만 지원됩니다.';
-      descEl.style.color = 'var(--color-text-muted)';
-    }
-    return;
+    radioDriftAuto.disabled = false;
   }
 
   if (enabled) {
     if (radioDriftAuto) radioDriftAuto.checked = true;
     if (descEl) {
-      descEl.textContent = isEn ? 'Auto recovery on unexpected language drift' : '잘못된 언어 감지 시 세션 자동 리셋 (Clean Reset)';
+      descEl.textContent = isEn ? 'Auto recovery on unexpected language drift' : '잘못된 언어 감지 시 세션 자동 리셋';
       descEl.style.color = 'var(--color-navy-900)';
     }
   } else {
     if (radioDriftManual) radioDriftManual.checked = true;
     if (descEl) {
-      descEl.textContent = isEn ? 'Manual recovery on unexpected drift (Pause → Resume)' : '잘못된 언어 감지 시 수동 교정 (Pause → Resume)';
+      descEl.textContent = isEn ? 'Manual recovery on unexpected drift (Pause → Resume)' : '잘못된 언어 감지 시 수동 교정 (일시정지 → 다시 시작)';
       descEl.style.color = 'var(--color-text-muted)';
     }
   }
@@ -333,10 +320,6 @@ if (radioDriftManual) {
 }
 if (radioDriftAuto) {
   radioDriftAuto.addEventListener('change', () => {
-    if (_expectedSource !== 'ko') {
-      radioDriftManual.checked = true;
-      return;
-    }
     if (radioDriftAuto.checked) {
       autoDriftCorrectionEnabled = true;
       updateDriftUI(true);
@@ -410,17 +393,17 @@ function updateControlBar(st) {
 
   if (!isRunning && stateStr === 'stopped') {
     serviceStatusPill.className = 'service-status-pill status-stopped';
-    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '○ Standby (STOPPED)' : '○ 대기 중 (STOPPED)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '○ Standby (STOPPED)' : '○ 대기 중'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-start';
-      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Start Translation</span>' : '<span>▶ 번역 시작 (Start)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Start Translation</span>' : '<span>▶ 번역 시작</span>';
       btnPrimaryAction.disabled = false;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = true;
     }
 
@@ -431,17 +414,17 @@ function updateControlBar(st) {
   }
   else if (stateStr === 'starting') {
     serviceStatusPill.className = 'service-status-pill status-transient';
-    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Connecting Translation…' : '⟳ 번역 연결 중... (Starting…)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Connecting Translation…' : '⟳ 번역 연결 중...'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-start';
-      btnPrimaryAction.innerHTML = isEn ? '<span>⏳ Connecting…</span>' : '<span>⏳ 연결 중… (Starting)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>⏳ Connecting…</span>' : '<span>⏳ 연결 중…</span>';
       btnPrimaryAction.disabled = true;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
@@ -451,7 +434,7 @@ function updateControlBar(st) {
   }
   else if (stateStr === 'stopping') {
     serviceStatusPill.className = 'service-status-pill status-transient';
-    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Stopping Service…' : '⟳ 번역 종료 중... (Stopping…)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Stopping Service…' : '⟳ 번역 종료 중...'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
@@ -461,7 +444,7 @@ function updateControlBar(st) {
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = true;
     }
 
@@ -469,17 +452,17 @@ function updateControlBar(st) {
   }
   else if (stateStr === 'failed' || sessionStatus === 'failed') {
     serviceStatusPill.className = 'service-status-pill status-failed';
-    if (statusMain) statusMain.innerHTML = `<span class="status-text">${isEn ? '⚠ Translation Error (Failed)' : '⚠ 번역 연결 오류 (Failed)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="status-text">${isEn ? '⚠ Translation Error (Failed)' : '⚠ 번역 연결 오류'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-start';
-      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Retry</span>' : '<span>▶ 다시 시도 (Retry)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Retry</span>' : '<span>▶ 다시 시도</span>';
       btnPrimaryAction.disabled = false;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
@@ -514,12 +497,12 @@ function updateControlBar(st) {
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-resume';
-      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Resume Translation</span>' : '<span>▶ 번역 다시 시작 (Resume)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Resume Translation</span>' : '<span>▶ 번역 다시 시작</span>';
       btnPrimaryAction.disabled = false;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
@@ -532,7 +515,7 @@ function updateControlBar(st) {
   }
   else if (sessionStatus === 'reconnecting' || sessionStatus === 'connecting') {
     serviceStatusPill.className = 'service-status-pill status-transient';
-    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Reconnecting Translation…' : '⟳ 번역 다시 연결 중... (Reconnecting…)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Reconnecting Translation…' : '⟳ 번역 다시 연결 중...'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
@@ -542,7 +525,7 @@ function updateControlBar(st) {
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
@@ -552,17 +535,17 @@ function updateControlBar(st) {
   }
   else {
     serviceStatusPill.className = 'service-status-pill status-running';
-    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '● Live (RUNNING)' : '● 번역 중 (RUNNING)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '● Live (RUNNING)' : '● 번역 중'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-pause';
-      btnPrimaryAction.innerHTML = isEn ? '<span>⏸ Pause Translation</span>' : '<span>⏸ 번역 일시정지 (Pause)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>⏸ Pause Translation</span>' : '<span>⏸ 번역 일시정지</span>';
       btnPrimaryAction.disabled = false;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
@@ -621,7 +604,7 @@ if (btnPrimaryAction) {
       }
     } else if (_paused) {
       btnPrimaryAction.disabled = true;
-      btnPrimaryAction.textContent = '⏳ 재개 중… (Resuming)';
+      btnPrimaryAction.textContent = '⏳ 재개 중…';
       try {
         await fetch('/api/resume', { method: 'POST' });
         _paused = false;
@@ -633,7 +616,7 @@ if (btnPrimaryAction) {
       }
     } else {
       btnPrimaryAction.disabled = true;
-      btnPrimaryAction.textContent = '⏳ 정지 중… (Pausing)';
+      btnPrimaryAction.textContent = '⏳ 정지 중…';
       try {
         await fetch('/api/pause', { method: 'POST' });
         _paused = true;
@@ -678,7 +661,7 @@ if (btnShutdown) {
     if (!ok) return;
 
     btnShutdown.disabled = true;
-    btnShutdown.textContent = '⏳ 종료 중 (Shutting down…)';
+    btnShutdown.textContent = '⏳ 종료 중…';
     try {
       await fetch('/api/shutdown', { method: 'POST' });
       document.body.innerHTML = `
@@ -696,7 +679,7 @@ if (btnShutdown) {
       `;
     } catch {
       btnShutdown.disabled = false;
-      btnShutdown.textContent = '🔴 프로그램 완전 종료 (Exit System)';
+      btnShutdown.textContent = '🔴 프로그램 완전 종료';
     }
   });
 }
@@ -790,7 +773,7 @@ function updateModalQrUrls() {
   const locImgEl = document.getElementById('modal-qr-local-img');
 
   const pubLink = lastPublicUrl || 'https://live.starkvillekoreanchurch.org';
-  const locLink = lastLocalUrl || 'http://skc.local:8080/live';
+  const locLink = lastLocalUrl || 'http://skc.local:8080';
 
   if (pubUrlEl) {
     pubUrlEl.textContent = pubLink;
@@ -868,7 +851,7 @@ function switchQrMode(mode) {
 
   if (mode === 'public') {
     if (pillIcon) pillIcon.textContent = '🌐';
-    if (pillKo) pillKo.textContent = '공용 인터넷 QR (Public HTTPS)';
+    if (pillKo) pillKo.textContent = '공용 인터넷 QR';
     if (pillEn) pillEn.textContent = 'Public HTTPS QR';
 
     if (qrImgEl) {
@@ -908,14 +891,14 @@ function switchQrMode(mode) {
     if (altKo) altKo.textContent = '🏛️ 현장 Wi-Fi 백업:';
     if (altEn) altEn.textContent = '🏛️ Local Wi-Fi Fallback:';
     if (qrLocUrlEl) {
-      const locLink = lastLocalUrl || 'http://skc.local:8080/live';
+      const locLink = lastLocalUrl || 'http://skc.local:8080';
       qrLocUrlEl.textContent = locLink;
       qrLocUrlEl.href = locLink;
     }
   } else {
     // Local mode
     if (pillIcon) pillIcon.textContent = '🏛️';
-    if (pillKo) pillKo.textContent = '현장 Wi-Fi QR (Local Wi-Fi)';
+    if (pillKo) pillKo.textContent = '현장 Wi-Fi QR';
     if (pillEn) pillEn.textContent = 'Local Wi-Fi QR';
 
     if (qrImgEl) {
@@ -928,7 +911,7 @@ function switchQrMode(mode) {
       qrPubStatusEl.style.color = 'var(--color-success)';
     }
 
-    const locLink = lastLocalUrl || 'http://skc.local:8080/live';
+    const locLink = lastLocalUrl || 'http://skc.local:8080';
     if (qrPubUrlEl) {
       qrPubUrlEl.textContent = locLink;
       qrPubUrlEl.href = locLink;
@@ -959,7 +942,7 @@ function toggleQrMode() {
 }
 
 function copyPublicLink() {
-  const url = currentQrMode === 'local' ? (lastLocalUrl || 'http://skc.local:8080/live') : (lastPublicUrl || 'https://live.starkvillekoreanchurch.org');
+  const url = currentQrMode === 'local' ? (lastLocalUrl || 'http://skc.local:8080') : (lastPublicUrl || 'https://live.starkvillekoreanchurch.org');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url).then(() => {
       const btn = document.getElementById('btn-copy-public-link');
@@ -1136,6 +1119,23 @@ async function pollStatus() {
       auEl.className = 'sg-val ' + (AUDIO_COLOR[st.audio.status] || '');
     }
 
+    const acEl = document.getElementById('stat-audio-class');
+    if (acEl && st.audio_class) {
+      const AUDIO_CLASS_STYLE = {
+        speech: { bg: '#e0f2fe', fg: '#0369a1', ko: '🗣 발화', en: '🗣 Speech' },
+        music: { bg: '#fdf4ff', fg: '#a21caf', ko: '🎵 음악', en: '🎵 Music' },
+        uncertain: { bg: 'var(--color-warm-100)', fg: 'var(--color-text-muted)', ko: '— 판별 중', en: '— Detecting' },
+      };
+      const cls = AUDIO_CLASS_STYLE[st.audio_class.label] || AUDIO_CLASS_STYLE.uncertain;
+      const sinceStr = st.audio_class.since_s > 1 ? ` (${Math.round(st.audio_class.since_s)}s)` : '';
+      acEl.style.background = cls.bg;
+      acEl.style.color = cls.fg;
+      const koSpan = acEl.querySelector('[data-lang="ko"]:not(.tooltiptext)');
+      const enSpan = acEl.querySelector('[data-lang="en"]:not(.tooltiptext)');
+      if (koSpan) koSpan.textContent = cls.ko + sinceStr;
+      if (enSpan) enSpan.textContent = cls.en + sinceStr;
+    }
+
     // Telemetry & Latency Breakdown
     const isEn = getOperatorUiLanguage() === 'en';
     if (st.telemetry) {
@@ -1262,7 +1262,7 @@ async function pollStatus() {
     // Update Attendee Access Card
     lastStatusData = st;
     const publicLiveLink = st.live_url_public || st.public_attendee_url || st.live_url_primary || 'https://live.starkvillekoreanchurch.org';
-    const localLiveLink = st.live_url_local || st.live_url_fallback || 'http://skc.local:8080/live';
+    const localLiveLink = st.live_url_local || st.live_url_fallback || 'http://skc.local:8080';
 
     const urlChanged = (publicLiveLink !== lastPublicUrl || localLiveLink !== lastLocalUrl);
     lastPublicUrl = publicLiveLink;
@@ -2257,7 +2257,7 @@ function updateLanguageTargets(st) {
     // Stopped state
     if (badgeEl) {
       badgeEl.className = 'lang-panel-badge ready';
-      badgeEl.innerHTML = isEn ? '<span>Ready</span>' : '<span>대기 (Ready)</span>';
+      badgeEl.innerHTML = isEn ? '<span>Ready</span>' : '<span>대기</span>';
     }
     if (configList) configList.style.display = 'flex';
     if (activeList) activeList.style.display = 'none';
