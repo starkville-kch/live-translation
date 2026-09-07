@@ -477,7 +477,25 @@ def save_translation_settings(
 
     _atomic_yaml_write(target_path, data)
 
-    global _cfg
-    _cfg = _load(target_path)
-    return translation_cfg()
+    # An explicit config_path means "write here" — it does NOT mean "swap the
+    # process's active config". Only refresh the live global cache when we
+    # actually wrote the live file (default path, or an explicit path that
+    # happens to resolve to it); otherwise a caller-supplied temp path (e.g.
+    # a test) would stomp the global config as a side effect.
+    if config_path is None or target_path.resolve() == _CONFIG_PATH.resolve():
+        global _cfg
+        _cfg = _load(target_path)
+        return translation_cfg()
+
+    # Explicit non-live path: echo back exactly what was persisted, without
+    # translation_cfg()'s live-config normalization (e.g. forcing "ko" into
+    # supported_targets) — that normalization is for the app's active config,
+    # not for a caller-supplied path.
+    return {
+        "expected_source_language": canonical_src,
+        "supported_targets": data["translation"]["supported_targets"],
+        "default_active_targets": data["translation"]["default_active_targets"],
+        "drift_threshold": 3,
+        "drift_window": 2,
+    }
 

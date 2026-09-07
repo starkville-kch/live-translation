@@ -1,11 +1,13 @@
 """
 tests/test_translation_config.py — Unit Tests for Translation Configuration & Backward Compatibility
 """
+import copy
 import tempfile
 from pathlib import Path
 import pytest
 import yaml
 
+import app.config as config_module
 from app.config import (
     translation_cfg,
     save_translation_settings,
@@ -132,6 +134,36 @@ def test_ko_plus_en_source_language_validation_and_persistence(tmp_path: Path):
     assert res["expected_source_language"] == "ko+en"
     assert res["supported_targets"] == ["en", "uk", "zh"]
     assert res["default_active_targets"] == ["en"]
+
+
+def test_explicit_config_path_does_not_mutate_live_global_cfg(tmp_path: Path):
+    """Regression guard for the config-pollution bug: an explicit config_path
+    means 'write here', not 'swap the process's active config'. A save with
+    an explicit path must leave the live global `_cfg` untouched; only a
+    save to the live default path may refresh it."""
+    live_cfg_before = copy.deepcopy(config_module._cfg)
+
+    temp_yaml = tmp_path / "config.yaml"
+    temp_yaml.write_text("translation:\n  expected_source_language: ko\n", encoding="utf-8")
+
+    save_translation_settings(
+        expected_source_language="any",
+        supported_targets=["en", "zh"],
+        default_active_targets=["en", "zh"],
+        config_path=temp_yaml,
+    )
+
+    # Explicit-path save must not have touched the live global config.
+    assert config_module._cfg == live_cfg_before
+
+    # A save with NO explicit path targets the live config and DOES refresh it.
+    save_translation_settings(
+        expected_source_language="ko",
+        supported_targets=["en", "uk", "zh"],
+        default_active_targets=["en"],
+    )
+    assert config_module._cfg["translation"]["expected_source_language"] == "ko"
+    assert config_module._cfg["translation"]["supported_targets"] == ["en", "uk", "zh"]
 
 
 def test_all_keyword_rejected():
