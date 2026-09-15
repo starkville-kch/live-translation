@@ -134,18 +134,11 @@ def test_pause_resume_status_lifecycle():
     server_mod._pause_start = None
 
 
-def test_root_redirect_localhost_and_remote():
-    """Verify root / redirects localhost to /admin, and external/remote hosts to /live."""
+def test_root_redirect_to_live():
+    """Verify root / redirects to /live page for localhost (without port) and external hosts."""
     client = TestClient(app)
 
-    # Localhost accesses
-    for host in ("localhost", "127.0.0.1", "localhost:8080", "127.0.0.1:80"):
-        resp = client.get("/", headers={"host": host}, follow_redirects=False)
-        assert resp.status_code == 307
-        assert resp.headers["location"] == "/admin"
-
-    # Remote / attendee accesses
-    for host in ("skc.local", "192.168.0.170", "skc.local:8080", "192.168.0.170:80"):
+    for host in ("localhost", "127.0.0.1", "localhost:80", "skc.local", "192.168.0.170"):
         resp = client.get("/", headers={"host": host}, follow_redirects=False)
         assert resp.status_code == 307
         assert resp.headers["location"] == "/live"

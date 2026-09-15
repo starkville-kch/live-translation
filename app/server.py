@@ -1036,10 +1036,7 @@ async def operator_page():
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root_redirect(request: Request):
-    host = request.headers.get("host", "").lower()
-    if "localhost" in host or "127.0.0.1" in host:
-        return RedirectResponse(url="/admin", status_code=307)
+async def root_redirect():
     return RedirectResponse(url="/live", status_code=307)
 
 
