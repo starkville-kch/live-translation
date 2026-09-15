@@ -41,7 +41,7 @@ Gemini 3.5 Live Translate Paid Tier combined rate:
 QR code design
 --------------
 Generated via ``_build_qr()`` using the ``qrcode`` + ``Pillow`` libraries:
-  • ERROR_CORRECT_H (30 % recovery) to tolerate the central logo overlay
+  • ERROR_CORRECT_Q (25 % recovery) to tolerate the central logo overlay
   • RoundedModuleDrawer for modern rounded data dots
   • Presbyterian Navy (#1a2a42) data modules
   • Pixel-level gold (#b89445) recoloring of the three 7×7 finder patterns
@@ -343,7 +343,7 @@ def _build_qr(url: str) -> bytes:
 
     qr = qrcode.QRCode(
         version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_Q,  # ~15% recovery is sufficient for a small logo
+        error_correction=qrcode.constants.ERROR_CORRECT_Q,  # ~25% recovery tolerates the central logo overlay
         box_size=14,
         border=2,
     )
@@ -1036,7 +1036,10 @@ async def operator_page():
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root_redirect():
+async def root_redirect(request: Request):
+    host = request.headers.get("host", "").lower()
+    if "localhost" in host or "127.0.0.1" in host:
+        return RedirectResponse(url="/admin", status_code=307)
     return RedirectResponse(url="/live", status_code=307)
 
 
