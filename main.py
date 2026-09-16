@@ -103,7 +103,7 @@ if __name__ == "__main__":
     base_url = _base_url(cfg)
     admin_url = _admin_url(cfg)
     live_url = f"{base_url}/live"
-    browser_url = f"{_format_url('localhost', port)}/admin"
+    browser_url = admin_url
     fallback_url = _format_url("192.168.0.169", port)
 
     if _port_in_use(port):

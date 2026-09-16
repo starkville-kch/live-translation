@@ -18,8 +18,6 @@ setlocal enabledelayedexpansion
 set "CONDA_ROOT=D:\Program_Files\miniconda3"
 set "CONDA_ENV=agent"
 set "PROJECT_DIR=%~dp0"
-set "SERVER_PORT=8080"
-set "OPERATOR_URL=http://localhost:%SERVER_PORT%"
 
 ::  Validate conda root
 if not exist "%CONDA_ROOT%\Scripts\activate.bat" (
