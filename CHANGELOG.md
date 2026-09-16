@@ -5,6 +5,32 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-09-15
+
+### Added
+- **Embedded On-Demand Cloudflare Tunnel & Portable Non-Admin Operation**:
+  - `cloudflared.exe` runs as a managed child subprocess without requiring Windows Service installation or Administrator UAC elevation.
+  - Native `.env` configuration reading `CLOUDFLARE_TUNNEL_TOKEN` directly via `get_tunnel_token()`.
+  - Windows Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) ensuring child tunnel processes are cleanly terminated on server exit without orphaned background tasks.
+- **Observer-Only Audio Classifier (`app/audio_classifier.py`)**:
+  - Passive heuristic audio classifier identifying `speech` / `music` / `uncertain` states in real time.
+  - Read-only visual badge on the operator console without gating or interrupting active live translation.
+- **Dual QR Code Access & Printable Flyer Modal**:
+  - High-resolution modal with printable flyer layout (`@media print`) presenting both Public HTTPS and Local Wi-Fi QR codes side by side.
+  - Segmented 1-click toggle on operator console for switching attendee access cards dynamically.
+- **Multi-Source Spoken Language Auto-Detection**:
+  - Interactive `✦ 자동 감지 모드` toggle with support for dynamic language switching and language drift recovery across all source languages.
+- **Parallel Multi-Process PyInstaller Builder (`build_parallel.py -j 4`)**:
+  - 4-worker concurrent compilation of `SKC_translation.exe` and `SKC_setup.exe` cutting build times by ~40%.
+  - Excluded test suites (`pytest`, `google.genai.tests`) to eliminate packaging warnings and reduce binary footprint.
+
+### Changed
+- **Decluttered Operator Console**: Cleaned redundant English glosses from Korean UI mode and streamlined 3-pill header status badges.
+- **Local Share URL Normalization**: Standardized local URLs to root (`http://skc.local:8080`) matching church flyers and auto-redirecting to `/live`.
+
+### Fixed
+- **Headless Test Robustness**: `SetupApp` Tkinter tests in `tests/test_setup_config.py` made resilient against headless subshell `TclError` exceptions.
+
 ## [3.1.3] - 2026-09-06
 
 ### Added
