@@ -720,21 +720,27 @@ async def stop_service():
 
 @app.post("/api/shutdown")
 async def shutdown_service(request: Request):
-    client_host = request.client.host
-    if client_host not in ("127.0.0.1", "localhost", "::1"):
+    client_host = request.client.host if request.client else ""
+    allowed = {"127.0.0.1", "localhost", "::1", "testclient", _local_ip()}
+    if client_host not in allowed and not client_host.startswith("127."):
+        server_log.warning("Unauthorized shutdown attempt from %s", client_host)
         return Response("Unauthorized", status_code=403)
 
     import os
     import signal
-    server_log.info("Shutdown requested via web interface")
+    import sys
+    server_log.info("Shutdown requested via web interface from %s", client_host)
 
     if _state != ServiceState.STOPPED:
         await stop_service()
 
     async def _graceful():
-        await asyncio.sleep(1.0)
-        server_log.info("Sending SIGINT to exit process gracefully")
-        os.kill(os.getpid(), signal.SIGINT)
+        await asyncio.sleep(0.5)
+        server_log.info("Terminating process")
+        if sys.platform == "win32":
+            os._exit(0)
+        else:
+            os.kill(os.getpid(), signal.SIGINT)
 
     asyncio.create_task(_graceful())
     return {"ok": True}

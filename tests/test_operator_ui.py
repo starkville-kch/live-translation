@@ -143,3 +143,25 @@ def test_root_redirect_to_live():
         assert resp.status_code == 307
         assert resp.headers["location"] == "/live"
 
+
+def test_shutdown_authorization(monkeypatch):
+    # Prevent actual process termination during test
+    monkeypatch.setattr(server_mod.asyncio, "create_task", lambda coro: coro.close())
+
+    # 1. Unauthorized IP returns 403
+    unauth_client = TestClient(app, client=("10.254.1.99", 50000))
+    resp = unauth_client.post("/api/shutdown")
+    assert resp.status_code == 403
+
+    # 2. Localhost returns 200
+    local_client = TestClient(app, client=("127.0.0.1", 50000))
+    resp = local_client.post("/api/shutdown")
+    assert resp.status_code == 200
+
+    # 3. Local LAN IP returns 200
+    lan_ip = server_mod._local_ip()
+    lan_client = TestClient(app, client=(lan_ip, 50000))
+    resp = lan_client.post("/api/shutdown")
+    assert resp.status_code == 200
+
+
