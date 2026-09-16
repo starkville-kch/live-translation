@@ -38,27 +38,16 @@ if errorlevel 1 (
 
 cd /d "%~dp0"
 
-echo [2/4] Building main service binary (SKC_translation.exe)...
-pyinstaller "SKC_translation.spec" --noconfirm ^
-    --workpath "%OUT_DIR%\build\translation" ^
-    --distpath "%OUT_DIR%\dist"
+:: Terminate any running instances so Windows does not lock files in .agent\dist
+taskkill /F /IM SKC_translation.exe >nul 2>&1
+taskkill /F /IM SKC_setup.exe >nul 2>&1
+
+echo [2/2] Running Multi-Threaded Parallel Build with 4 cores (SKC_translation.exe + SKC_setup.exe)...
+python build_parallel.py -j 4
 if errorlevel 1 (
-    echo [ERROR] SKC_translation build failed. See output above.
+    echo [ERROR] Build failed. See output above.
     pause & exit /b 1
 )
-
-echo [3/4] Building setup wizard binary (SKC_setup.exe)...
-pyinstaller "SKC_setup.spec" --noconfirm ^
-    --workpath "%OUT_DIR%\build\setup" ^
-    --distpath "%OUT_DIR%\dist"
-if errorlevel 1 (
-    echo [ERROR] SKC_setup build failed. See output above.
-    pause & exit /b 1
-)
-
-echo [4/4] Preparing package structure...
-if not exist "%OUT_DIR%\dist\branding" mkdir "%OUT_DIR%\dist\branding"
-if not exist "%OUT_DIR%\dist\config.yaml" copy "%~dp0config.yaml" "%OUT_DIR%\dist\config.yaml" >nul
 
 echo.
 echo ================================================================

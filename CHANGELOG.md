@@ -5,6 +5,26 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-09-15
+
+### Fixed
+- **Operator Web Shutdown on Windows (`app/server.py`, `app/templates/operator.html`)**:
+  - Expanded `/api/shutdown` IP authorization to include the host machine's local LAN IP (`_local_ip()`), resolving 403 Forbidden errors when accessing the console via mDNS (`http://<hostname>.local/admin`).
+  - Switched graceful exit on Windows (`sys.platform == "win32"`) to `os._exit(0)` so the background process and console window terminate cleanly and immediately.
+  - Added HTTP status verification and user error alerting in `operator.html` so failed shutdown requests are no longer falsely rendered as successful.
+- **Dynamic Operator URL Resolution (`main.py`, `SKC_start.bat`)**:
+  - Set `browser_url = admin_url` in `main.py`, ensuring automatic browser launch respects `hostname` and `port` from `config.yaml` (e.g. `http://jkc.local/admin` or `http://localhost:<port>/admin`).
+  - Removed stale hardcoded port and URL definitions from `SKC_start.bat`.
+  - Preserved root path (`/`) 307 redirect to `/live` for attendees while operator console explicitly targets `/admin`.
+
+### Changed
+- **PyInstaller Packaging & Warning Cleanup (`SKC_translation.spec`, `SKC_setup.spec`)**:
+  - Filtered out `google.genai.tests` submodules from PyInstaller analysis, eliminating missing `pytest` warnings during build.
+  - Explicitly excluded `pytest`, `_pytest`, and test modules from executable bundles.
+  - Removed unnecessary `collect_data_files` calls for `google.api_core` and `grpc`.
+- **Parallel Multi-Process Build Runner (`build_parallel.py`, `build_exe.bat`)**:
+  - Added `build_parallel.py` multi-worker build executor to compile `SKC_translation.exe` and `SKC_setup.exe` simultaneously across 4 cores (`-j 4`), reducing build time from ~108s to ~68s (~1.6x speedup).
+
 ## [2.5.0] - 2026-08-30
 
 ### Added
