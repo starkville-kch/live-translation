@@ -28,6 +28,7 @@ from app.config import (
     save_church_identity,
     save_public_url,
     update_gemini_api_key,
+    update_operator_password,
     update_tunnel_token,
 )
 from app.cloudflared_service import CloudflaredService
@@ -92,13 +93,14 @@ class SetupApp:
         self.configured_model = gemini_model()
         self.cloudflared_service = CloudflaredService()
 
-        # Check existing key in environment / .env
+        # Check existing key and operator password in environment / .env
         self.existing_key = ""
         try:
             self.existing_key = gemini_api_key()
         except RuntimeError:
             self.existing_key = ""
 
+        self.existing_password = os.environ.get("SKC_OPERATOR_PASSWORD", "").strip()
         self.active_key_to_save = self.existing_key
 
         self._setup_styles()
@@ -268,6 +270,25 @@ class SetupApp:
         self.lbl_logo_path.pack(side="left", fill="x", expand=True, padx=4)
         btn_logo = ttk.Button(f_logo, text="Choose Logo...", command=self._choose_logo)
         btn_logo.pack(side="right")
+
+        # Operator Password
+        f_pass = tk.Frame(p_church, bg=COLOR_CARD_BG)
+        f_pass.pack(fill="x", pady=3)
+        ttk.Label(f_pass, text="Operator Pass:", width=13, anchor="w", style="FieldLabel.TLabel").pack(side="left")
+        self.entry_operator_password = ttk.Entry(f_pass, font=("Consolas", 9), show="•", width=14)
+        self.entry_operator_password.insert(0, self.existing_password)
+        self.entry_operator_password.pack(side="left", padx=(0, 4))
+
+        self.is_pass_visible = False
+
+        def _toggle_pass_visibility():
+            self.is_pass_visible = not self.is_pass_visible
+            self.entry_operator_password.configure(show="" if self.is_pass_visible else "•")
+            btn_show_pass.configure(text="Hide" if self.is_pass_visible else "Show")
+
+        btn_show_pass = ttk.Button(f_pass, text="Show", width=5, command=_toggle_pass_visibility)
+        btn_show_pass.pack(side="left", padx=2)
+        ttk.Label(f_pass, text="(Optional: console login)", style="Muted.TLabel").pack(side="left", padx=4)
 
         # ── CARD 2: Google Gemini API (Top Right) ─────────────────────────────
         card_gemini = tk.Frame(content, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
@@ -864,15 +885,27 @@ class SetupApp:
                 messagebox.showerror(".env Error", f"Failed to save .env file: {e}")
                 return
 
-        # 4. Confirmation and optional launch
+        # 4. Save Operator Password to .env atomically
+        operator_password = ""
+        if hasattr(self, "entry_operator_password"):
+            operator_password = self.entry_operator_password.get().strip()
+            try:
+                update_operator_password(operator_password)
+            except Exception as e:
+                messagebox.showerror(".env Error", f"Failed to save SKC_OPERATOR_PASSWORD to .env: {e}")
+                return
+
+        # 5. Confirmation and optional launch
         port_num = self.current_network.get("port", 8080)
         port_suffix = f":{port_num}" if port_num != 80 else ""
+        pass_status = "Protected (Password set)" if operator_password else "Disabled (No password required)"
         resp = messagebox.askyesno(
             "Setup Complete",
             "Configuration saved successfully!\n\n"
             f"• Church: {church_name} ({short_name})\n"
             f"• Local URL: http://{hostname}.local{port_suffix}\n"
-            f"• API Key: {mask_api_key(active_key)}\n\n"
+            f"• API Key: {mask_api_key(active_key)}\n"
+            f"• Operator Console: {pass_status}\n\n"
             "Would you like to launch Live Translation now?",
         )
 

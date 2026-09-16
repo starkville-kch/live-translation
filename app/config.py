@@ -365,6 +365,11 @@ def update_tunnel_token(new_token: str, env_path: Path | None = None) -> None:
     update_env_var("CLOUDFLARE_TUNNEL_TOKEN", new_token, env_path=env_path)
 
 
+def update_operator_password(new_password: str, env_path: Path | None = None) -> None:
+    """Atomically update or append SKC_OPERATOR_PASSWORD in .env."""
+    update_env_var("SKC_OPERATOR_PASSWORD", new_password, env_path=env_path)
+
+
 def translation_cfg() -> dict:
     """Return the translation configuration with backward-compatibility defaults."""
     raw = _cfg.get("translation")

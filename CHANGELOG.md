@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Segmented 1-click toggle on operator console for switching attendee access cards dynamically.
 - **Multi-Source Spoken Language Auto-Detection**:
   - Interactive `✦ 자동 감지 모드` toggle with support for dynamic language switching and language drift recovery across all source languages.
+- **Operator Password Field in Setup GUI (`setup_gui.py`, `app/config.py`)**:
+  - Added dedicated masked `Operator Pass:` slot in Card 1 with Show/Hide toggle button.
+  - Pre-populates existing `SKC_OPERATOR_PASSWORD` and saves atomically to `.env` via `update_operator_password()`.
+  - Enables church administrators to configure or disable operator console protection without opening `.env` in text editors.
 - **Parallel Multi-Process PyInstaller Builder (`build_parallel.py -j 4`)**:
   - 4-worker concurrent compilation of `SKC_translation.exe` and `SKC_setup.exe` cutting build times by ~40%.
   - Excluded test suites (`pytest`, `google.genai.tests`) to eliminate packaging warnings and reduce binary footprint.

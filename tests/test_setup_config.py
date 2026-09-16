@@ -17,6 +17,7 @@ import yaml
 from app.config import (
     mask_api_key,
     update_gemini_api_key,
+    update_operator_password,
     _atomic_yaml_write,
     DEFAULT_CONFIG,
     get_app_root,
@@ -64,6 +65,24 @@ def test_update_gemini_api_key_new_file():
 
         content = env_path.read_text(encoding="utf-8")
         assert f"GEMINI_API_KEY={new_key}" in content
+
+
+def test_update_operator_password_creates_and_preserves():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        env_path = Path(tmpdir) / ".env"
+        env_path.write_text(
+            "# Existing config\n"
+            "GEMINI_API_KEY=AIzaSy_test_1234\n"
+            "SKC_OPERATOR_PASSWORD=old_pass_99\n",
+            encoding="utf-8",
+        )
+
+        update_operator_password("new_secure_pass_4321", env_path=env_path)
+
+        content = env_path.read_text(encoding="utf-8")
+        assert "SKC_OPERATOR_PASSWORD=new_secure_pass_4321" in content
+        assert "old_pass_99" not in content
+        assert "GEMINI_API_KEY=AIzaSy_test_1234" in content
 
 
 def test_atomic_yaml_write():
