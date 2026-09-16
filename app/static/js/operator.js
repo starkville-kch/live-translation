@@ -15,6 +15,10 @@ let userScrolledUp = false;
 let eventPollTimer = null;
 let lastAutoRestartAttempt = 0;
 let lastQrUrl = null;
+let currentQrMode = 'public';
+let lastPublicUrl = '';
+let lastLocalUrl = '';
+let lastStatusData = null;
 let _cachedDeviceName = "";
 let _isRefreshingDevices = false;
 let isTestingModel = false;
@@ -35,13 +39,15 @@ const previewWrap       = document.getElementById('preview-wrap');
 const logEl             = document.getElementById('log');
 const modal             = document.getElementById('earphone-modal');
 const btnAudio          = document.getElementById('btn-audio');
-const volSlider         = document.getElementById('vol-slider');
-const volLabel          = document.getElementById('vol-label');
-const volWrapper        = document.getElementById('volume-wrapper');
+const previewMonitorTargetWrap  = document.getElementById('preview-monitor-target-wrap');
+const monitorTargetSelect       = document.getElementById('monitor-target-select');
+const audioMonitorLangDisplay   = document.getElementById('audio-monitor-lang-display');
+let _monitorTarget              = 'en';
 const selDevice         = document.getElementById('device-select');
 const btnRefreshDevices = document.getElementById('btn-refresh-devices');
 const radioDriftManual  = document.getElementById('drift-manual');
 const radioDriftAuto    = document.getElementById('drift-auto');
+
 
 const SESSION_COLOR = { connected:'ok', reconnecting:'warn', failed:'err', connecting:'warn', stopped:'' };
 const AUDIO_COLOR   = { connected:'ok', no_signal:'warn', disconnected:'err', stopped:'' };
@@ -86,20 +92,40 @@ async function checkAuth() {
     const res = await fetch('/api/auth/status');
     const data = await res.json();
     const modalEl = document.getElementById('auth-modal');
-    if (data.auth_enabled && !data.authenticated) {
-      if (modalEl) {
-        modalEl.classList.remove('hidden');
-        modalEl.style.display = 'flex';
+    const authControls = document.getElementById('header-auth-controls');
+    if (data.auth_enabled) {
+      if (authControls) authControls.style.display = data.authenticated ? 'inline-flex' : 'none';
+      if (!data.authenticated) {
+        if (modalEl) {
+          modalEl.classList.remove('hidden');
+          modalEl.style.display = 'flex';
+        }
+        const input = document.getElementById('auth-password');
+        if (input) input.focus();
+      } else {
+        if (modalEl) {
+          modalEl.classList.add('hidden');
+          modalEl.style.display = 'none';
+        }
       }
-      const input = document.getElementById('auth-password');
-      if (input) input.focus();
     } else {
+      if (authControls) authControls.style.display = 'none';
       if (modalEl) {
         modalEl.classList.add('hidden');
         modalEl.style.display = 'none';
       }
     }
   } catch {}
+}
+
+const btnOperatorLogout = document.getElementById('btn-operator-logout');
+if (btnOperatorLogout) {
+  btnOperatorLogout.addEventListener('click', async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    checkAuth();
+  });
 }
 
 async function submitAuth() {
@@ -253,18 +279,82 @@ if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
 }
 
 // ============================================================
+// LANGUAGE DRIFT CORRECTION UI
+// ============================================================
+function updateDriftUI(enabled) {
+
+  const isEn = getOperatorUiLanguage() === 'en';
+  const descEl = document.getElementById('stat-drift-status');
+
+  if (radioDriftAuto) {
+    radioDriftAuto.disabled = false;
+  }
+
+  if (enabled) {
+    if (radioDriftAuto) radioDriftAuto.checked = true;
+    if (descEl) {
+      descEl.textContent = isEn ? 'Auto recovery on unexpected language drift' : '잘못된 언어 감지 시 세션 자동 리셋';
+      descEl.style.color = 'var(--color-navy-900)';
+    }
+  } else {
+    if (radioDriftManual) radioDriftManual.checked = true;
+    if (descEl) {
+      descEl.textContent = isEn ? 'Manual recovery on unexpected drift (Pause → Resume)' : '잘못된 언어 감지 시 수동 교정 (일시정지 → 다시 시작)';
+      descEl.style.color = 'var(--color-text-muted)';
+    }
+  }
+}
+
+if (radioDriftManual) {
+  radioDriftManual.addEventListener('change', () => {
+    if (radioDriftManual.checked) {
+      autoDriftCorrectionEnabled = false;
+      updateDriftUI(false);
+      fetch('/api/drift-correction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_drift_correction: false })
+      }).catch(() => {});
+    }
+  });
+}
+if (radioDriftAuto) {
+  radioDriftAuto.addEventListener('change', () => {
+    if (radioDriftAuto.checked) {
+      autoDriftCorrectionEnabled = true;
+      updateDriftUI(true);
+      fetch('/api/drift-correction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_drift_correction: true })
+      }).catch(() => {});
+    }
+  });
+}
+
+// ============================================================
 // UI LANGUAGE SELECTION
 // ============================================================
-let _currentUiLang = localStorage.getItem('skc_ui_lang') || 'ko';
+
+const _serverDefaultUiLang = (document.body && document.body.dataset && document.body.dataset.defaultUiLang) || 'ko';
+let _currentUiLang = localStorage.getItem('skc_ui_lang') || _serverDefaultUiLang;
 
 function getOperatorUiLanguage() {
   return _currentUiLang;
 }
 
-function setOperatorUiLanguage(lang) {
+function setOperatorUiLanguage(lang, syncToServer = false) {
   _currentUiLang = (lang === 'en') ? 'en' : 'ko';
   localStorage.setItem('skc_ui_lang', _currentUiLang);
   document.documentElement.setAttribute('lang', _currentUiLang);
+
+  if (syncToServer) {
+    fetch('/api/config/ui-language', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ default_ui_language: _currentUiLang })
+    }).catch(() => {});
+  }
 
   const btnEn = document.getElementById('btn-ui-en');
   const btnKo = document.getElementById('btn-ui-ko');
@@ -284,7 +374,11 @@ function setOperatorUiLanguage(lang) {
     updateControlBar({ state: _serviceRunning ? (_paused ? 'paused' : 'running') : 'stopped' });
   }
   updateDriftUI(autoDriftCorrectionEnabled);
+  renderAudioButton();
+  if (typeof updateSourceUI === 'function') updateSourceUI();
+  if (typeof renderSelectedTargets === 'function') renderSelectedTargets();
 }
+
 
 function updateControlBar(st) {
   if (!serviceStatusPill) return;
@@ -299,17 +393,17 @@ function updateControlBar(st) {
 
   if (!isRunning && stateStr === 'stopped') {
     serviceStatusPill.className = 'service-status-pill status-stopped';
-    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '○ Standby (STOPPED)' : '○ 대기 중 (STOPPED)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '○ Standby (STOPPED)' : '○ 대기 중'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-start';
-      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Start Translation</span>' : '<span>▶ 번역 시작 (Start)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Start Translation</span>' : '<span>▶ 번역 시작</span>';
       btnPrimaryAction.disabled = false;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = true;
     }
 
@@ -320,17 +414,17 @@ function updateControlBar(st) {
   }
   else if (stateStr === 'starting') {
     serviceStatusPill.className = 'service-status-pill status-transient';
-    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Connecting Translation…' : '⟳ 번역 연결 중... (Starting…)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Connecting Translation…' : '⟳ 번역 연결 중...'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-start';
-      btnPrimaryAction.innerHTML = isEn ? '<span>⏳ Connecting…</span>' : '<span>⏳ 연결 중… (Starting)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>⏳ Connecting…</span>' : '<span>⏳ 연결 중…</span>';
       btnPrimaryAction.disabled = true;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
@@ -340,7 +434,7 @@ function updateControlBar(st) {
   }
   else if (stateStr === 'stopping') {
     serviceStatusPill.className = 'service-status-pill status-transient';
-    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Stopping Service…' : '⟳ 번역 종료 중... (Stopping…)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Stopping Service…' : '⟳ 번역 종료 중...'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
@@ -350,7 +444,7 @@ function updateControlBar(st) {
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = true;
     }
 
@@ -358,21 +452,24 @@ function updateControlBar(st) {
   }
   else if (stateStr === 'failed' || sessionStatus === 'failed') {
     serviceStatusPill.className = 'service-status-pill status-failed';
-    if (statusMain) statusMain.innerHTML = `<span class="status-text">${isEn ? '⚠ Translation Error (Failed)' : '⚠ 번역 연결 오류 (Failed)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="status-text">${isEn ? '⚠ Translation Error (Failed)' : '⚠ 번역 연결 오류'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-start';
-      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Retry</span>' : '<span>▶ 다시 시도 (Retry)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Retry</span>' : '<span>▶ 다시 시도</span>';
       btnPrimaryAction.disabled = false;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
     document.title = ORIGINAL_TITLE;
+    if (_serviceRunning && audioEnabled) {
+      disableAudio();
+    }
     _serviceRunning = false;
     _paused = false;
   }
@@ -400,22 +497,25 @@ function updateControlBar(st) {
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-resume';
-      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Resume Translation</span>' : '<span>▶ 번역 다시 시작 (Resume)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>▶ Resume Translation</span>' : '<span>▶ 번역 다시 시작</span>';
       btnPrimaryAction.disabled = false;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
     document.title = isEn ? `⏸ [${timeStr}] Paused — ${ORIGINAL_TITLE}` : `⏸ [${timeStr}] 일시정지 — ${ORIGINAL_TITLE}`;
+    if (!_paused && audioEnabled) {
+      disableAudio();
+    }
     _serviceRunning = true;
     _paused = true;
   }
   else if (sessionStatus === 'reconnecting' || sessionStatus === 'connecting') {
     serviceStatusPill.className = 'service-status-pill status-transient';
-    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Reconnecting Translation…' : '⟳ 번역 다시 연결 중... (Reconnecting…)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Reconnecting Translation…' : '⟳ 번역 다시 연결 중...'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
@@ -425,7 +525,7 @@ function updateControlBar(st) {
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
@@ -435,17 +535,17 @@ function updateControlBar(st) {
   }
   else {
     serviceStatusPill.className = 'service-status-pill status-running';
-    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '● Live (RUNNING)' : '● 번역 중 (RUNNING)'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '● Live (RUNNING)' : '● 번역 중'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
       btnPrimaryAction.className = 'btn-action btn-pause';
-      btnPrimaryAction.innerHTML = isEn ? '<span>⏸ Pause Translation</span>' : '<span>⏸ 번역 일시정지 (Pause)</span>';
+      btnPrimaryAction.innerHTML = isEn ? '<span>⏸ Pause Translation</span>' : '<span>⏸ 번역 일시정지</span>';
       btnPrimaryAction.disabled = false;
     }
     if (btnStop) {
       btnStop.className = 'btn-action btn-stop';
-      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료 (Stop)</span>';
+      btnStop.innerHTML = isEn ? '<span>■ Stop Service</span>' : '<span>■ 서비스 종료</span>';
       btnStop.disabled = false;
     }
 
@@ -460,14 +560,32 @@ function updateControlBar(st) {
 if (btnPrimaryAction) {
   btnPrimaryAction.addEventListener('click', async () => {
     if (!_serviceRunning) {
+      if (_selectedTargets.length === 0) {
+        const isEn = getOperatorUiLanguage() === 'en';
+        alert(isEn ? 'Please select at least one translation target language.' : '최소 하나 이상의 통역 언어를 선택해야 합니다.');
+        return;
+      }
       updateControlBar({ state: 'starting', service_running: true });
       const idx = parseInt(document.getElementById('device-select').value);
       try {
-        await fetch('/api/start', {
+        const res = await fetch('/api/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_index: idx })
+          body: JSON.stringify({
+            device_index: idx,
+            targets: _selectedTargets,
+            expected_source_language: _expectedSource
+          })
         });
+        if (res.status === 401) {
+          checkAuth();
+          const isEn = getOperatorUiLanguage() === 'en';
+          throw new Error(isEn ? 'Authentication required. Please unlock console.' : '관리자 인증이 필요합니다. 암호를 입력해 주세요.');
+        }
+        const startData = await res.json().catch(() => ({}));
+        if (!res.ok || startData.ok === false) {
+          throw new Error(startData.message || startData.error || 'Failed to start translation');
+        }
         _serviceRunning = true;
         _paused = false;
         _pauseTimerLocal = 0;
@@ -481,11 +599,12 @@ if (btnPrimaryAction) {
       } catch (err) {
         console.error('Failed to start service:', err);
         _serviceRunning = false;
-        updateControlBar({ state: 'failed', service_running: false });
+        updateControlBar({ state: 'stopped', service_running: false });
+        alert(err.message || String(err));
       }
     } else if (_paused) {
       btnPrimaryAction.disabled = true;
-      btnPrimaryAction.textContent = '⏳ 재개 중… (Resuming)';
+      btnPrimaryAction.textContent = '⏳ 재개 중…';
       try {
         await fetch('/api/resume', { method: 'POST' });
         _paused = false;
@@ -497,7 +616,7 @@ if (btnPrimaryAction) {
       }
     } else {
       btnPrimaryAction.disabled = true;
-      btnPrimaryAction.textContent = '⏳ 정지 중… (Pausing)';
+      btnPrimaryAction.textContent = '⏳ 정지 중…';
       try {
         await fetch('/api/pause', { method: 'POST' });
         _paused = true;
@@ -521,11 +640,13 @@ if (btnStop) {
       _paused = false;
       _pauseTimerLocal = 0;
       updateControlBar({ state: 'stopped', service_running: false });
+      updateLanguageTargets({ service_running: false, paused: false });
       if (captionEs) {
         captionEs.close();
         captionEs = null;
       }
     }
+
   });
 }
 
@@ -540,7 +661,7 @@ if (btnShutdown) {
     if (!ok) return;
 
     btnShutdown.disabled = true;
-    btnShutdown.textContent = '⏳ 종료 중 (Shutting down…)';
+    btnShutdown.textContent = '⏳ 종료 중…';
     try {
       await fetch('/api/shutdown', { method: 'POST' });
       document.body.innerHTML = `
@@ -558,7 +679,7 @@ if (btnShutdown) {
       `;
     } catch {
       btnShutdown.disabled = false;
-      btnShutdown.textContent = '🔴 프로그램 완전 종료 (Exit System)';
+      btnShutdown.textContent = '🔴 프로그램 완전 종료';
     }
   });
 }
@@ -641,59 +762,194 @@ if (btnTestModel) {
   });
 }
 
-async function setDriftCorrection(enabled) {
-  try {
-    await fetch('/api/config/auto-drift-correction', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: enabled })
-    });
-    autoDriftCorrectionEnabled = enabled;
-    updateDriftUI(autoDriftCorrectionEnabled);
-  } catch (err) {
-    console.error('Failed to update drift correction:', err);
-    updateDriftUI(autoDriftCorrectionEnabled);
+
+// ============================================================
+// ATTENDEE ACCESS & QR MANAGEMENT
+// ============================================================
+function updateModalQrUrls() {
+  const pubUrlEl = document.getElementById('modal-qr-public-url');
+  const locUrlEl = document.getElementById('modal-qr-local-url');
+  const pubImgEl = document.getElementById('modal-qr-public-img');
+  const locImgEl = document.getElementById('modal-qr-local-img');
+
+  const pubLink = lastPublicUrl || 'https://live.starkvillekoreanchurch.org';
+  const locLink = lastLocalUrl || 'http://skc.local:8080';
+
+  if (pubUrlEl) {
+    pubUrlEl.textContent = pubLink;
+    pubUrlEl.href = pubLink;
+  }
+  if (locUrlEl) {
+    locUrlEl.textContent = locLink;
+    locUrlEl.href = locLink;
+  }
+  if (pubImgEl) {
+    pubImgEl.src = '/api/qr.png?type=public&v=' + Date.now();
+  }
+  if (locImgEl) {
+    locImgEl.src = '/api/qr.png?type=local&v=' + Date.now();
   }
 }
 
-if (radioDriftManual && radioDriftAuto) {
-  radioDriftManual.addEventListener('change', () => setDriftCorrection(false));
-  radioDriftAuto.addEventListener('change', () => setDriftCorrection(true));
+function openDualQrModal() {
+  const m = document.getElementById('dual-qr-modal');
+  if (m) {
+    updateModalQrUrls();
+    m.classList.remove('hidden');
+  }
 }
 
-function updateDriftUI(enabled) {
-  const descEl = document.getElementById('stat-drift-status');
-  const isEn = getOperatorUiLanguage() === 'en';
-  if (enabled) {
-    if (radioDriftAuto) radioDriftAuto.checked = true;
-    if (descEl) {
-      descEl.textContent = isEn ? 'Auto-recovers session on language drift' : '잘못된 언어 감지 시 세션 자동 교정';
-      descEl.style.color = 'var(--color-success-700)';
-      descEl.style.fontWeight = '600';
+function closeDualQrModal() {
+  const m = document.getElementById('dual-qr-modal');
+  if (m) m.classList.add('hidden');
+}
+
+function copyModalUrl(elementId, btn) {
+  const el = document.getElementById(elementId);
+  const url = el ? el.textContent.trim() : '';
+  if (!url) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => {
+      if (btn) {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '✓ Copied!';
+        setTimeout(() => { btn.innerHTML = orig; }, 2000);
+      }
+    }).catch(() => {
+      prompt('Copy link:', url);
+    });
+  } else {
+    prompt('Copy link:', url);
+  }
+}
+
+function switchQrMode(mode) {
+  if (mode !== 'public' && mode !== 'local') mode = 'public';
+  currentQrMode = mode;
+
+  const radioPublic = document.getElementById('qr-tab-public');
+  const radioLocal = document.getElementById('qr-tab-local');
+  if (radioPublic && radioLocal) {
+    radioPublic.checked = (mode === 'public');
+    radioLocal.checked = (mode === 'local');
+  }
+
+  const pillIcon = document.getElementById('qr-pill-icon');
+  const pillKo = document.getElementById('qr-pill-label-ko');
+  const pillEn = document.getElementById('qr-pill-label-en');
+
+  const qrImgEl = document.getElementById('qr-img');
+  const qrPubStatusEl = document.getElementById('qr-public-status');
+  const qrPubUrlEl = document.getElementById('qr-public-url');
+  const qrUsageNote = document.getElementById('qr-usage-note');
+  const btnOpenAtt = document.getElementById('btn-open-attendee');
+
+  const altImgEl = document.getElementById('qr-alt-img');
+  const altKo = document.getElementById('qr-alt-label-ko');
+  const altEn = document.getElementById('qr-alt-label-en');
+  const qrLocUrlEl = document.getElementById('qr-local-url');
+
+  if (mode === 'public') {
+    if (pillIcon) pillIcon.textContent = '🌐';
+    if (pillKo) pillKo.textContent = '공용 인터넷 QR';
+    if (pillEn) pillEn.textContent = 'Public HTTPS QR';
+
+    if (qrImgEl) {
+      qrImgEl.src = '/api/qr.png?type=public&v=' + Date.now();
+      qrImgEl.alt = 'Public HTTPS QR Code';
+    }
+
+    if (qrPubStatusEl) {
+      if (lastStatusData && lastStatusData.tunnel_ready) {
+        qrPubStatusEl.textContent = '✓ Public HTTPS ready';
+        qrPubStatusEl.style.color = 'var(--color-success)';
+      } else if (lastStatusData && lastStatusData.public_https_status === 'reconnecting') {
+        qrPubStatusEl.textContent = '🟡 Public link connecting…';
+        qrPubStatusEl.style.color = 'var(--color-gold-500)';
+      } else {
+        qrPubStatusEl.textContent = '⚠️ Public link offline (Local Wi-Fi ready)';
+        qrPubStatusEl.style.color = 'var(--color-gold-500)';
+      }
+    }
+
+    const pubLink = lastPublicUrl || 'https://live.starkvillekoreanchurch.org';
+    if (qrPubUrlEl) {
+      qrPubUrlEl.textContent = pubLink;
+      qrPubUrlEl.href = pubLink;
+    }
+    if (btnOpenAtt) btnOpenAtt.href = pubLink;
+
+    if (qrUsageNote) {
+      qrUsageNote.innerHTML = '<span data-lang="ko">📱 LTE/5G 및 외부 참석자 스캔</span><span data-lang="en">📱 Cellular Data (LTE/5G) & Remote</span>';
+    }
+
+    if (altImgEl) {
+      altImgEl.src = '/api/qr.png?type=local&v=' + Date.now();
+      altImgEl.alt = 'Local Wi-Fi QR Thumbnail';
+      altImgEl.title = '클릭하여 메인 QR을 현장 Wi-Fi로 전환 / Click to switch to Local Wi-Fi';
+    }
+    if (altKo) altKo.textContent = '🏛️ 현장 Wi-Fi 백업:';
+    if (altEn) altEn.textContent = '🏛️ Local Wi-Fi Fallback:';
+    if (qrLocUrlEl) {
+      const locLink = lastLocalUrl || 'http://skc.local:8080';
+      qrLocUrlEl.textContent = locLink;
+      qrLocUrlEl.href = locLink;
     }
   } else {
-    if (radioDriftManual) radioDriftManual.checked = true;
-    if (descEl) {
-      descEl.textContent = isEn ? 'Manual correction (Pause → Resume)' : '잘못된 언어 감지 시 수동 교정 (Pause → Resume)';
-      descEl.style.color = 'var(--color-text-muted)';
-      descEl.style.fontWeight = '400';
+    // Local mode
+    if (pillIcon) pillIcon.textContent = '🏛️';
+    if (pillKo) pillKo.textContent = '현장 Wi-Fi QR';
+    if (pillEn) pillEn.textContent = 'Local Wi-Fi QR';
+
+    if (qrImgEl) {
+      qrImgEl.src = '/api/qr.png?type=local&v=' + Date.now();
+      qrImgEl.alt = 'Local Wi-Fi QR Code';
+    }
+
+    if (qrPubStatusEl) {
+      qrPubStatusEl.textContent = '✓ Local Wi-Fi ready (교회 내부망)';
+      qrPubStatusEl.style.color = 'var(--color-success)';
+    }
+
+    const locLink = lastLocalUrl || 'http://skc.local:8080';
+    if (qrPubUrlEl) {
+      qrPubUrlEl.textContent = locLink;
+      qrPubUrlEl.href = locLink;
+    }
+    if (btnOpenAtt) btnOpenAtt.href = locLink;
+
+    if (qrUsageNote) {
+      qrUsageNote.innerHTML = '<span data-lang="ko">📶 교회 내부 Wi-Fi 연결 시 즉시 접속 (초저지연)</span><span data-lang="en">📶 Connects over Church Wi-Fi (Ultra-low latency)</span>';
+    }
+
+    if (altImgEl) {
+      altImgEl.src = '/api/qr.png?type=public&v=' + Date.now();
+      altImgEl.alt = 'Public HTTPS QR Thumbnail';
+      altImgEl.title = '클릭하여 메인 QR을 공용 인터넷으로 전환 / Click to switch to Public HTTPS';
+    }
+    if (altKo) altKo.textContent = '🌐 공용 인터넷 백업:';
+    if (altEn) altEn.textContent = '🌐 Public HTTPS Fallback:';
+    if (qrLocUrlEl) {
+      const pubLink = lastPublicUrl || 'https://live.starkvillekoreanchurch.org';
+      qrLocUrlEl.textContent = pubLink;
+      qrLocUrlEl.href = pubLink;
     }
   }
 }
 
-// ============================================================
-// ATTENDEE ACCESS
-// ============================================================
+function toggleQrMode() {
+  switchQrMode(currentQrMode === 'public' ? 'local' : 'public');
+}
+
 function copyPublicLink() {
-  const el = document.getElementById('qr-public-url');
-  const url = el ? el.textContent.trim() : 'https://live.starkvillekoreanchurch.org/live';
+  const url = currentQrMode === 'local' ? (lastLocalUrl || 'http://skc.local:8080') : (lastPublicUrl || 'https://live.starkvillekoreanchurch.org');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url).then(() => {
       const btn = document.getElementById('btn-copy-public-link');
       if (btn) {
         const orig = btn.innerHTML;
         btn.innerHTML = '✓ Copied!';
-        setTimeout(() => btn.innerHTML = orig, 2000);
+        setTimeout(() => { btn.innerHTML = orig; }, 2000);
       }
     }).catch(() => {
       prompt('Copy attendee link:', url);
@@ -702,6 +958,13 @@ function copyPublicLink() {
     prompt('Copy attendee link:', url);
   }
 }
+
+window.switchQrMode = switchQrMode;
+window.toggleQrMode = toggleQrMode;
+window.openDualQrModal = openDualQrModal;
+window.closeDualQrModal = closeDualQrModal;
+window.copyPublicLink = copyPublicLink;
+window.copyModalUrl = copyModalUrl;
 
 // Foldable cards (QR & Log)
 ['qr-toggle', 'log-toggle'].forEach(id => {
@@ -789,17 +1052,20 @@ function startEventPoll() {
 // ============================================================
 function startStatusPoll() {
   if (polling) clearInterval(polling);
-  polling = setInterval(async () => {
-    let st;
-    try {
-      const res = await fetch('/api/status');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      st = await res.json();
-    } catch (err) {
+  pollStatus();
+  polling = setInterval(pollStatus, 1000);
+}
+
+async function pollStatus() {
+  let st;
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    st = await res.json();
+    window._lastStatusSnapshot = st;
+  } catch (err) {
       const ssAudio = document.getElementById('ss-audio');
       if (ssAudio) ssAudio.className = 'modern-badge status-red';
-      const ssGemini = document.getElementById('ss-gemini');
-      if (ssGemini) ssGemini.className = 'modern-badge status-red';
       const ssTrans = document.getElementById('ss-translation');
       if (ssTrans) ssTrans.className = 'modern-badge status-red';
       return;
@@ -842,36 +1108,62 @@ function startStatusPoll() {
       lvlLbl.textContent = st.audio.level > 0 ? '레벨: ' + Math.round(st.audio.level) + '%' : '입력 레벨 — 신호 없음';
     }
 
+    const statLvlBar = document.getElementById('stat-level-bar');
+    if (statLvlBar) statLvlBar.style.width = st.audio.level + '%';
+    const statLvlVal = document.getElementById('stat-level-val');
+    if (statLvlVal) statLvlVal.textContent = Math.round(st.audio.level) + '%';
+
     const auEl = document.getElementById('stat-audio');
     if (auEl) {
       auEl.textContent = st.audio.status + (st.audio.device ? ' — ' + st.audio.device : '');
       auEl.className = 'sg-val ' + (AUDIO_COLOR[st.audio.status] || '');
     }
 
+    const acEl = document.getElementById('stat-audio-class');
+    if (acEl && st.audio_class) {
+      const AUDIO_CLASS_STYLE = {
+        speech: { bg: '#e0f2fe', fg: '#0369a1', ko: '🗣 발화', en: '🗣 Speech' },
+        music: { bg: '#fdf4ff', fg: '#a21caf', ko: '🎵 음악', en: '🎵 Music' },
+        uncertain: { bg: 'var(--color-warm-100)', fg: 'var(--color-text-muted)', ko: '— 판별 중', en: '— Detecting' },
+      };
+      const cls = AUDIO_CLASS_STYLE[st.audio_class.label] || AUDIO_CLASS_STYLE.uncertain;
+      const sinceStr = st.audio_class.since_s > 1 ? ` (${Math.round(st.audio_class.since_s)}s)` : '';
+      acEl.style.background = cls.bg;
+      acEl.style.color = cls.fg;
+      const koSpan = acEl.querySelector('[data-lang="ko"]:not(.tooltiptext)');
+      const enSpan = acEl.querySelector('[data-lang="en"]:not(.tooltiptext)');
+      if (koSpan) koSpan.textContent = cls.ko + sinceStr;
+      if (enSpan) enSpan.textContent = cls.en + sinceStr;
+    }
+
     // Telemetry & Latency Breakdown
+    const isEn = getOperatorUiLanguage() === 'en';
     if (st.telemetry) {
       const t = st.telemetry;
       const gLatEl = document.getElementById('stat-gemini-lat');
-      if (gLatEl) gLatEl.textContent = t.gemini_latency_ms ? t.gemini_latency_ms + ' ms' : '—';
+      if (gLatEl) gLatEl.textContent = (t.gemini_latency_ms !== null && t.gemini_latency_ms !== undefined) ? Math.round(t.gemini_latency_ms) + ' ms' : '—';
 
       const lRttEl = document.getElementById('stat-local-rtt');
-      if (lRttEl) lRttEl.textContent = (t.local_rtt_ms !== null && t.local_rtt_ms !== undefined) ? t.local_rtt_ms + ' ms' : '—';
+      if (lRttEl) lRttEl.textContent = (t.local_rtt_ms !== null && t.local_rtt_ms !== undefined) ? Math.round(t.local_rtt_ms) + ' ms' : '—';
 
       const lEstEl = document.getElementById('stat-local-est-e2e');
       if (lEstEl) lEstEl.textContent = t.est_local_delay_s ? '~' + t.est_local_delay_s + ' s' : '—';
 
       const lListEl = document.getElementById('stat-local-listeners-badge');
-      if (lListEl) lListEl.textContent = (t.local_listeners || 0) + '명';
+      const lCount = t.local_listeners || 0;
+      if (lListEl) lListEl.textContent = isEn ? `${lCount} ${lCount === 1 ? 'listener' : 'listeners'}` : `${lCount}명`;
 
       const pRttEl = document.getElementById('stat-public-rtt');
-      if (pRttEl) pRttEl.textContent = (t.public_rtt_ms !== null && t.public_rtt_ms !== undefined) ? t.public_rtt_ms + ' ms' : '—';
+      if (pRttEl) pRttEl.textContent = (t.public_rtt_ms !== null && t.public_rtt_ms !== undefined) ? Math.round(t.public_rtt_ms) + ' ms' : '—';
 
       const pEstEl = document.getElementById('stat-public-est-e2e');
       if (pEstEl) pEstEl.textContent = t.est_public_delay_s ? '~' + t.est_public_delay_s + ' s' : '—';
 
       const pListEl = document.getElementById('stat-public-listeners-badge');
-      if (pListEl) pListEl.textContent = (t.public_listeners || 0) + '명';
+      const pCount = t.public_listeners || 0;
+      if (pListEl) pListEl.textContent = isEn ? `${pCount} ${pCount === 1 ? 'listener' : 'listeners'}` : `${pCount}명`;
     }
+
 
     // Session metrics
     const attEl = document.getElementById('stat-attendees');
@@ -920,22 +1212,26 @@ function startStatusPoll() {
         sel.disabled = st.service_running || isTestingModel;
         const currentOpts = Array.from(sel.options).map(o => o.value);
         const newModels = m.available_models || [m.fallback_model];
-        if (JSON.stringify(currentOpts) !== JSON.stringify(newModels)) {
+        const isEn = getOperatorUiLanguage() === 'en';
+        const langRendered = sel.getAttribute('data-lang-rendered');
+        const currentLangKey = isEn ? 'en' : 'ko';
+        if (JSON.stringify(currentOpts) !== JSON.stringify(newModels) || langRendered !== currentLangKey || sel.options.length === 0) {
           sel.innerHTML = '';
+          sel.setAttribute('data-lang-rendered', currentLangKey);
           newModels.forEach(name => {
             const opt = document.createElement('option');
             opt.value = name;
             let label = name;
             if (name === m.fallback_model && name === m.preferred_model) {
-              label += ' — 기본 · 권장';
+              label += isEn ? ' — Default · Recommended' : ' — 기본 · 권장';
             } else if (name === m.fallback_model) {
-              label += ' — 기본';
+              label += isEn ? ' — Default' : ' — 기본';
             } else if (name === m.preferred_model) {
-              label += ' — 권장';
+              label += isEn ? ' — Recommended' : ' — 권장';
             } else if (name === m.last_known_good_model) {
-              label += ' — 최근 검증됨';
+              label += isEn ? ' — Last Verified' : ' — 최근 검증됨';
             } else {
-              label += ' — 새 모델 · 확인 중';
+              label += isEn ? ' — New Model' : ' — 새 모델 · 확인 중';
             }
             opt.textContent = label;
             if (name === m.preferred_model || name === m.active_model) opt.selected = true;
@@ -957,38 +1253,43 @@ function startStatusPoll() {
       if (st.church.short_name) {
         document.querySelectorAll('.title-short').forEach(el => el.textContent = st.church.short_name);
       }
+      if (st.church.default_ui_language && !localStorage.getItem('skc_ui_lang')) {
+        setOperatorUiLanguage(st.church.default_ui_language, false);
+      }
     }
+
 
     // Update Attendee Access Card
-    const publicLiveLink = st.live_url_public || st.public_attendee_url || st.live_url_primary || 'https://live.starkvillekoreanchurch.org/live';
-    const localLiveLink = st.live_url_local || st.live_url_fallback || 'http://skc.local:8080/live';
+    lastStatusData = st;
+    const publicLiveLink = st.live_url_public || st.public_attendee_url || st.live_url_primary || 'https://live.starkvillekoreanchurch.org';
+    const localLiveLink = st.live_url_local || st.live_url_fallback || 'http://skc.local:8080';
 
-    const qrPubUrlEl = document.getElementById('qr-public-url');
-    if (qrPubUrlEl) {
-      qrPubUrlEl.textContent = publicLiveLink;
-      qrPubUrlEl.href = publicLiveLink;
-    }
+    const urlChanged = (publicLiveLink !== lastPublicUrl || localLiveLink !== lastLocalUrl);
+    lastPublicUrl = publicLiveLink;
+    lastLocalUrl = localLiveLink;
 
-    const btnOpenAtt = document.getElementById('btn-open-attendee');
-    if (btnOpenAtt) btnOpenAtt.href = publicLiveLink;
-
-    const qrLocUrlEl = document.getElementById('qr-local-url');
-    if (qrLocUrlEl) {
-      qrLocUrlEl.textContent = localLiveLink;
-      qrLocUrlEl.href = localLiveLink;
-    }
-
-    const qrPubStatusEl = document.getElementById('qr-public-status');
-    if (qrPubStatusEl) {
-      if (st.tunnel_ready) {
-        qrPubStatusEl.textContent = '✓ Public HTTPS ready';
-        qrPubStatusEl.style.color = 'var(--color-success)';
-      } else if (st.public_https_status === 'reconnecting') {
-        qrPubStatusEl.textContent = '🟡 Public link connecting…';
-        qrPubStatusEl.style.color = 'var(--color-gold-500)';
-      } else {
-        qrPubStatusEl.textContent = '⚠️ Public link offline (Local Wi-Fi ready)';
-        qrPubStatusEl.style.color = 'var(--color-gold-500)';
+    if (urlChanged || !lastQrUrl) {
+      lastQrUrl = currentQrMode === 'local' ? localLiveLink : publicLiveLink;
+      switchQrMode(currentQrMode);
+    } else {
+      // Dynamic status badge updates
+      const qrPubStatusEl = document.getElementById('qr-public-status');
+      if (qrPubStatusEl) {
+        if (currentQrMode === 'public') {
+          if (st.tunnel_ready) {
+            qrPubStatusEl.textContent = '✓ Public HTTPS ready';
+            qrPubStatusEl.style.color = 'var(--color-success)';
+          } else if (st.public_https_status === 'reconnecting') {
+            qrPubStatusEl.textContent = '🟡 Public link connecting…';
+            qrPubStatusEl.style.color = 'var(--color-gold-500)';
+          } else {
+            qrPubStatusEl.textContent = '⚠️ Public link offline (Local Wi-Fi ready)';
+            qrPubStatusEl.style.color = 'var(--color-gold-500)';
+          }
+        } else {
+          qrPubStatusEl.textContent = '✓ Local Wi-Fi ready (교회 내부망)';
+          qrPubStatusEl.style.color = 'var(--color-success)';
+        }
       }
     }
 
@@ -997,12 +1298,6 @@ function startStatusPoll() {
       const pubRtt = st.telemetry.public_rtt_ms !== undefined ? st.telemetry.public_rtt_ms + 'ms' : '—';
       const locRtt = st.telemetry.local_rtt_ms !== undefined ? st.telemetry.local_rtt_ms + 'ms' : '—';
       qrRttEl.textContent = `RTT: Public ${pubRtt} · Local ${locRtt}`;
-    }
-
-    const qrImgEl = document.getElementById('qr-img');
-    if (qrImgEl && st.live_url_primary && st.live_url_primary !== lastQrUrl) {
-      lastQrUrl = st.live_url_primary;
-      qrImgEl.src = '/api/qr.png?v=' + Date.now();
     }
 
     if (st.service_running) {
@@ -1018,14 +1313,8 @@ function startStatusPoll() {
     }
     const audioMap = {connected:'status-green', no_signal:'status-yellow', disconnected:'status-red', stopped:'status-blue'};
     ssSet('ss-audio', audioMap[st.audio.status] || 'status-blue');
-    const geminiMap = {connected:'status-green', reconnecting:'status-yellow', connecting:'status-yellow', failed:'status-red', stopped:'status-blue'};
-    if (st.paused) {
-      ssSet('ss-gemini', 'status-yellow');
-    } else {
-      ssSet('ss-gemini', geminiMap[st.session.status] || 'status-blue');
-    }
     if (st.state === 'running' && st.session.status === 'connected' && !st.paused) ssSet('ss-translation', 'status-green');
-    else if (st.state === 'starting' || st.paused) ssSet('ss-translation', 'status-yellow');
+    else if (st.state === 'starting' || st.paused || st.session.status === 'reconnecting' || st.session.status === 'connecting') ssSet('ss-translation', 'status-yellow');
     else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'status-red');
     else ssSet('ss-translation', 'status-blue');
 
@@ -1041,8 +1330,9 @@ function startStatusPoll() {
     _serviceRunning = Boolean(st.service_running);
     _paused = Boolean(st.paused);
     updateControlBar(st);
-  }, 1000);
+    updateLanguageTargets(st);
 }
+
 
 // ============================================================
 // AUDIO ENGINE & PLAYBACK
@@ -1060,8 +1350,7 @@ function ensureAudioCtx() {
         audioCtx = new AudioContextClass();
       }
       gainNode = audioCtx.createGain();
-      const volEl = document.getElementById('vol-slider');
-      gainNode.gain.value = volEl ? parseFloat(volEl.value) : 0.8;
+      gainNode.gain.value = 1.0;
       gainNode.connect(audioCtx.destination);
       nextPlayAt = audioCtx.currentTime;
     }
@@ -1094,26 +1383,227 @@ function playPCM16(arrayBuffer) {
   nextPlayAt += buf.duration;
 }
 
+function getTargetLanguageName(code, uiLang) {
+  const c = (code || 'en').toLowerCase().trim();
+  const KO_NAMES = {
+    en: '영어',
+    uk: '우크라이나어',
+    zh: '중국어',
+    es: '스페인어',
+    ko: '한국어',
+    vi: '베트남어',
+    ja: '일본어',
+    ru: '러시아어',
+    fr: '프랑스어',
+    de: '독일어'
+  };
+  if (uiLang === 'ko' && KO_NAMES[c]) {
+    return KO_NAMES[c];
+  }
+  const info = _catalogMap ? _catalogMap.get(c) : null;
+  if (info) return info.name;
+  return c.toUpperCase();
+}
+
+function renderAudioButton() {
+  if (!btnAudio) return;
+  const isEn = getOperatorUiLanguage() === 'en';
+  const targetCode = _monitorTarget || 'en';
+  const info = _catalogMap ? _catalogMap.get(targetCode) : null;
+  const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : targetCode.toUpperCase();
+  const nameKo = getTargetLanguageName(targetCode, 'ko');
+  const nameEn = getTargetLanguageName(targetCode, 'en');
+
+  const wrap = document.getElementById('preview-monitor-target-wrap');
+  const isSelectorVisible = wrap && wrap.style.display !== 'none';
+
+  if (audioEnabled) {
+    btnAudio.className = 'btn-playback-mini on';
+    btnAudio.title = `${displayName} monitoring active — click to stop`;
+    btnAudio.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+      </svg>
+      <span class="text">
+        <span data-lang="ko">🔊 정지</span>
+        <span data-lang="en">🔊 Stop</span>
+      </span>
+    `;
+  } else {
+    btnAudio.className = 'btn-playback-mini off';
+    btnAudio.title = `Click to spot-check ${displayName} audio`;
+    const labelKo = isSelectorVisible ? '🎧 듣기' : `🎧 ${nameKo} 듣기`;
+    const labelEn = isSelectorVisible ? '🎧 Listen' : `🎧 Listen to ${nameEn}`;
+    btnAudio.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+        <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+      </svg>
+      <span class="text">
+        <span data-lang="ko">${labelKo}</span>
+        <span data-lang="en">${labelEn}</span>
+      </span>
+    `;
+  }
+}
+
+function updateAudioMonitorDisplay() {
+  const displayEl = document.getElementById('audio-monitor-lang-display');
+  if (displayEl) {
+    const targetCode = _monitorTarget || 'en';
+    const info = _catalogMap ? _catalogMap.get(targetCode) : null;
+    const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : targetCode.toUpperCase();
+    displayEl.textContent = displayName;
+  }
+  renderAudioButton();
+}
+
+function setMonitorTarget(newTarget) {
+  if (!newTarget) return;
+  const isChanged = (newTarget !== _monitorTarget);
+  _monitorTarget = newTarget;
+
+  if (monitorTargetSelect && monitorTargetSelect.value !== newTarget) {
+    monitorTargetSelect.value = newTarget;
+  }
+
+  // 1. Auto-mute active audio (safe switching)
+  if (audioEnabled) {
+    disableAudio();
+  }
+
+  // 2. Update Audio Monitor label & button
+  updateAudioMonitorDisplay();
+
+  // 3. If changed, preserve history, commit in-flight turn, and rebind SSE preview to new target
+  if (isChanged) {
+    if (livePair) {
+      commitLivePair(null);
+    }
+    const info = _catalogMap ? _catalogMap.get(newTarget) : null;
+    const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : newTarget.toUpperCase();
+    const isEn = getOperatorUiLanguage() === 'en';
+
+    // Insert an unobtrusive switch marker if previous history exists
+    if (preview && pairs.length > 0) {
+      const divider = document.createElement('div');
+      divider.className = 'preview-pair';
+      divider.style.padding = '4px 8px';
+      divider.style.background = 'transparent';
+      divider.style.border = 'none';
+      divider.style.textAlign = 'center';
+      divider.innerHTML = `<span style="font-size: 11px; color: var(--color-text-muted); font-style: italic;">— ${isEn ? 'Monitor language switched to' : '모니터 언어 변경:'} <b>${displayName}</b> —</span>`;
+      preview.appendChild(divider);
+      if (previewWrap) previewWrap.scrollTop = previewWrap.scrollHeight;
+    }
+
+    connectSSE();
+  }
+
+  // 4. Mark currently monitored target in Today's Translation Languages
+  if (window._lastStatusSnapshot) {
+    updateLanguageTargets(window._lastStatusSnapshot);
+  }
+}
+
+function updateMonitorTargetUI(targets, primaryTarget) {
+  const wrap = document.getElementById('preview-monitor-target-wrap');
+  const sel = document.getElementById('monitor-target-select');
+  if (!wrap || !sel) return;
+
+  const list = Array.isArray(targets) && targets.length > 0 ? targets : (primaryTarget ? [primaryTarget] : ['en']);
+
+  if (list.length <= 1) {
+    wrap.style.display = 'none';
+    const soleTarget = list[0] || primaryTarget || 'en';
+    if (_monitorTarget !== soleTarget) {
+      setMonitorTarget(soleTarget);
+    } else {
+      updateAudioMonitorDisplay();
+    }
+    return;
+  }
+
+  wrap.style.display = 'inline-flex';
+
+  const currentOptions = Array.from(sel.options).map(o => o.value);
+  const isSame = currentOptions.length === list.length && currentOptions.every((val, i) => val === list[i]);
+
+  if (!isSame) {
+    sel.innerHTML = '';
+    list.forEach(code => {
+      const info = _catalogMap ? _catalogMap.get(code) : null;
+      const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = displayName;
+      sel.appendChild(opt);
+    });
+  }
+
+  if (!list.includes(_monitorTarget)) {
+    const defaultTarget = list.includes(primaryTarget) ? primaryTarget : list[0];
+    setMonitorTarget(defaultTarget);
+  } else {
+    sel.value = _monitorTarget;
+    updateAudioMonitorDisplay();
+  }
+}
+
 function connectAudio() {
-  if (audioWs) {
-    try { audioWs.close(); } catch(_) {}
-    audioWs = null;
+  disconnectAudio();
+  if (!audioEnabled || !_serviceRunning || _paused) {
+    return;
+  }
+  const currentActive = window._lastStatusSnapshot?.translation?.active_targets || _selectedTargets || [];
+  if (!currentActive.includes(_monitorTarget)) {
+    console.log('[Audio] Monitor target', _monitorTarget, 'is not currently active; suppressing WebSocket');
+    return;
   }
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream');
-  audioWs.binaryType = 'arraybuffer';
-  audioWs.onmessage = (e) => playPCM16(e.data);
-  audioWs.onerror = () => {};
-  audioWs.onclose = () => {
-    audioWs = null;
-    if (audioEnabled) setTimeout(connectAudio, 2000);
+  const target = _monitorTarget || 'en';
+  const url = proto + '//' + location.host + '/audio-stream?lang=' + encodeURIComponent(target);
+  const ws = new WebSocket(url);
+  audioWs = ws;
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = (e) => {
+    if (audioWs !== ws) return;
+    playPCM16(e.data);
+  };
+  ws.onerror = () => {};
+  ws.onclose = (ev) => {
+    if (audioWs === ws) {
+      audioWs = null;
+    }
+    // Do NOT retry if connection was rejected (e.g. 1008 policy/inactive)
+    if (ev && (ev.code === 1008 || ev.code === 4003 || ev.code === 4403)) {
+      console.warn('[Audio] WebSocket rejected by server:', ev.code, ev.reason);
+      disableAudio();
+      return;
+    }
+    const currentActive = window._lastStatusSnapshot?.translation?.active_targets || _selectedTargets || [];
+    if (audioEnabled && _serviceRunning && !_paused && currentActive.includes(_monitorTarget) && audioWs === null) {
+      setTimeout(() => {
+        if (audioEnabled && _serviceRunning && !_paused && !audioWs) {
+          connectAudio();
+        }
+      }, 2000);
+    }
   };
 }
 
 function disconnectAudio() {
   if (audioWs) {
-    try { audioWs.close(); } catch(_) {}
+    const ws = audioWs;
     audioWs = null;
+    try {
+      ws.onopen = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
+      ws.close();
+    } catch (_) {}
   }
 }
 
@@ -1121,64 +1611,58 @@ function enableAudio() {
   ensureAudioCtx();
   audioEnabled = true;
   connectAudio();
-  if (btnAudio) {
-    btnAudio.classList.remove('off');
-    btnAudio.classList.add('on');
-    btnAudio.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-      </svg>
-      <span class="text">Playback Enabled</span>
-    `;
-  }
-  if (volWrapper) volWrapper.style.display = 'flex';
+  renderAudioButton();
   if (modal) modal.classList.add('hidden');
-  updateVolLabel();
 }
 
-function updateVolLabel() {
-  if (volLabel && volSlider) {
-    volLabel.textContent = Math.round(parseFloat(volSlider.value) * 100) + '%';
-  }
+function disableAudio() {
+  audioEnabled = false;
+  disconnectAudio();
+  renderAudioButton();
 }
 
 const modalOk = document.getElementById('modal-ok');
-if (modalOk) modalOk.addEventListener('click', enableAudio);
+if (modalOk) {
+  modalOk.addEventListener('click', () => {
+    try { sessionStorage.setItem('skc_earphone_accepted', 'true'); } catch(_) {}
+    enableAudio();
+  });
+}
 
 const modalSkip = document.getElementById('modal-skip');
-if (modalSkip) modalSkip.addEventListener('click', () => {
-  if (modal) modal.classList.add('hidden');
-});
+if (modalSkip) {
+  modalSkip.addEventListener('click', () => {
+    if (modal) modal.classList.add('hidden');
+  });
+}
 
 if (btnAudio) {
   btnAudio.addEventListener('click', () => {
     if (audioEnabled) {
-      audioEnabled = false;
-      disconnectAudio();
-      btnAudio.classList.remove('on');
-      btnAudio.classList.add('off');
-      btnAudio.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-          <line x1="23" y1="9" x2="17" y2="15"/>
-          <line x1="17" y1="9" x2="23" y2="15"/>
-        </svg>
-        <span class="text">Playback Muted</span>
-      `;
-      if (volWrapper) volWrapper.style.display = 'none';
+      disableAudio();
     } else {
-      if (modal) modal.classList.remove('hidden');
+      if (!_serviceRunning || _paused) {
+        const isEn = getOperatorUiLanguage() === 'en';
+        alert(isEn ? 'Translation must be running to monitor audio.' : '통역 서비스가 실행 중일 때만 음성을 모니터링할 수 있습니다.');
+        return;
+      }
+      let accepted = false;
+      try { accepted = (sessionStorage.getItem('skc_earphone_accepted') === 'true'); } catch(_) {}
+      if (accepted) {
+        enableAudio();
+      } else {
+        if (modal) modal.classList.remove('hidden');
+      }
     }
   });
 }
 
-if (volSlider) {
-  volSlider.addEventListener('input', () => {
-    if (gainNode) gainNode.gain.value = parseFloat(volSlider.value);
-    updateVolLabel();
+if (monitorTargetSelect) {
+  monitorTargetSelect.addEventListener('change', () => {
+    setMonitorTarget(monitorTargetSelect.value);
   });
 }
+
 
 // ============================================================
 // PREVIEW & SSE STREAM
@@ -1226,20 +1710,26 @@ function resetPreview() {
 }
 
 function connectSSE() {
-  if (captionEs) captionEs.close();
-  captionEs = new EventSource('/stream');
+  if (captionEs) {
+    try { captionEs.close(); } catch(_) {}
+    captionEs = null;
+  }
+  const streamUrl = _monitorTarget ? `/stream?lang=${encodeURIComponent(_monitorTarget)}` : '/stream';
+  captionEs = new EventSource(streamUrl);
   captionEs.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.kind === 'ping') return;
 
     if (msg.kind === 'source') {
       const p = getOrCreateLivePair();
-      p.koEl.textContent += msg.text;
+      p.koEl.textContent += (msg.source || msg.text || '');
     } else if (msg.kind === 'update') {
       const p = getOrCreateLivePair();
-      p.enEl.textContent = msg.text;
+      p.enEl.textContent = (msg.target || msg.text || '');
     } else if (msg.kind === 'commit') {
-      if (livePair && msg.text) livePair.enEl.textContent = msg.text;
+      const p = getOrCreateLivePair();
+      if (msg.target || msg.text) p.enEl.textContent = (msg.target || msg.text);
+      if (msg.source || msg.ko) p.koEl.textContent = (msg.source || msg.ko);
       commitLivePair(msg.time_str || null);
     } else if (msg.kind === 'unavailable') {
       commitLivePair(null);
@@ -1264,12 +1754,654 @@ function connectSSE() {
   };
 }
 
+
+// ============================================================
+// TRANSLATION LANGUAGES (PHASE 6)
+// ============================================================
+// ============================================================
+// TRANSLATION LANGUAGES (PHASE 6)
+// ============================================================
+let _languagesCatalog = [];
+let _catalogMap = new Map();
+let _supportedTargets = ['en', 'ko', 'zh'];
+let _selectedTargets = ['en'];
+let _selectedSources = ['ko', 'en'];
+let _isAutoDetectSource = false;
+let _expectedSource = 'ko+en';
+let _spokenLanguageDisplay = 'Korean + English';
+let _sourceControlsInitialized = false;
+
+async function loadLanguageConfiguration() {
+  try {
+    const res = await fetch('/api/languages');
+    if (!res.ok) return;
+    const data = await res.json();
+    _expectedSource = data.expected_source_language || data.expected_source || 'ko+en';
+    _languagesCatalog = data.available || [];
+    _catalogMap = new Map(_languagesCatalog.map(l => [l.code, l]));
+    _supportedTargets = data.supported_targets || ['en', 'ko', 'zh'];
+    if (!_supportedTargets.includes('en')) {
+      _supportedTargets.unshift('en');
+    }
+    if (!_supportedTargets.includes('ko')) {
+      _supportedTargets.splice(1, 0, 'ko');
+    }
+    _selectedTargets = data.selected_targets || ['en'];
+    _isAutoDetectSource = Boolean(data.is_auto_detect || _expectedSource === 'any');
+    if (Array.isArray(data.selected_sources) && data.selected_sources.length > 0) {
+      _selectedSources = data.selected_sources.filter(c => c !== 'any');
+    } else {
+      _selectedSources = _expectedSource === 'any' ? ['ko', 'en'] : _expectedSource.split('+');
+    }
+    if (_selectedSources.length === 0) _selectedSources = ['ko', 'en'];
+    _spokenLanguageDisplay = data.spoken_language_display || '';
+
+    setupSourceControls();
+    renderSourcesConfigList();
+    renderSelectedTargets();
+    updateSourceUI();
+  } catch (e) {
+    console.error('Failed to load language configuration:', e);
+  }
+}
+
+function setupSourceControls() {
+  if (_sourceControlsInitialized) return;
+  _sourceControlsInitialized = true;
+
+  const btnAutodetect = document.getElementById('btn-source-autodetect');
+  if (btnAutodetect) {
+    btnAutodetect.addEventListener('click', () => {
+      if (_serviceRunning) return;
+      _isAutoDetectSource = !_isAutoDetectSource;
+      handleSourceChange();
+    });
+  }
+}
+
+function handleSourceChange() {
+  if (_isAutoDetectSource) {
+    _expectedSource = 'any';
+  } else {
+    // Canonical sort: ko first, en second, then others alphabetically
+    const sortKey = (c) => (c === 'ko' ? '0_ko' : (c === 'en' ? '1_en' : '2_' + c));
+    _selectedSources.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    _expectedSource = _selectedSources.join('+');
+  }
+
+  // Conflict rule: ONLY single non-autodetect source can conflict with target languages
+  if (!_isAutoDetectSource && _selectedSources.length === 1) {
+    const singleCode = _selectedSources[0];
+    const hadInSelected = _selectedTargets.includes(singleCode);
+    if (hadInSelected) {
+      _selectedTargets = _selectedTargets.filter(t => t !== singleCode);
+      if (_selectedTargets.length === 0) {
+        const remainingSupported = _supportedTargets.filter(t => t !== singleCode);
+        if (remainingSupported.length > 0) {
+          _selectedTargets = [remainingSupported[0]];
+        }
+      }
+      const langName = _catalogMap.get(singleCode)?.name || singleCode.toUpperCase();
+      showLanguageNotice(
+        `발화 언어가 ${langName} 단독으로 설정되어 오늘의 통역 대상에서 제외되었습니다.`,
+        `Source set to ${langName} only. It was removed from today's target languages.`
+      );
+    }
+  }
+
+  updateSourceUI();
+  saveSelectedTargets();
+  renderSelectedTargets();
+}
+
+function updateSourceUI() {
+  const isEn = getOperatorUiLanguage() === 'en';
+  const btnAutodetect = document.getElementById('btn-source-autodetect');
+  const banner = document.getElementById('lang-sources-autodetect-banner');
+  const listWrap = document.getElementById('lang-sources-list-wrap');
+  const statusBadge = document.getElementById('lang-source-status-badge');
+
+  if (btnAutodetect) {
+    btnAutodetect.classList.toggle('active', _isAutoDetectSource);
+    btnAutodetect.disabled = _serviceRunning;
+  }
+
+  if (banner) {
+    banner.style.display = _isAutoDetectSource ? 'flex' : 'none';
+  }
+
+  if (listWrap) {
+    listWrap.classList.toggle('dimmed', _isAutoDetectSource);
+  }
+
+  // Update source status badge symmetrically: "# of sources" or "Auto-detect"
+  if (statusBadge) {
+    if (_isAutoDetectSource) {
+      statusBadge.textContent = 'Auto-detect';
+      statusBadge.title = isEn ? 'Auto-detect (All languages)' : '모든 발화 언어 자동 감지';
+    } else {
+      const count = _selectedSources.length;
+      statusBadge.textContent = `${count} ${count === 1 ? 'source' : 'sources'}`;
+      statusBadge.title = _spokenLanguageDisplay || _selectedSources.join(' + ');
+    }
+  }
+
+  // Sync checkboxes in sources list
+  const sourceCheckboxes = document.querySelectorAll('#lang-sources-config-list input[type="checkbox"]');
+  sourceCheckboxes.forEach(chk => {
+    chk.disabled = _serviceRunning || _isAutoDetectSource;
+    const isChecked = !_isAutoDetectSource && _selectedSources.includes(chk.value);
+    chk.checked = isChecked;
+    const parentLabel = chk.closest('.lang-target-item');
+    if (parentLabel) {
+      parentLabel.classList.toggle('checked', isChecked);
+    }
+  });
+}
+
+function renderSourcesConfigList() {
+  const listEl = document.getElementById('lang-sources-config-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  // Spoken language choices: strictly Korean and English to save vertical space
+  const sourceCodes = ['ko', 'en'];
+
+  const orderedLangs = sourceCodes.map(code => _catalogMap.get(code) || {
+    code: code,
+    name: code === 'ko' ? 'Korean' : 'English',
+    native_name: code === 'ko' ? '한국어' : 'English'
+  });
+
+  orderedLangs.forEach(lang => {
+    const isChecked = !_isAutoDetectSource && _selectedSources.includes(lang.code);
+    const item = document.createElement('label');
+    item.className = `lang-target-item${isChecked ? ' checked' : ''}`;
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = lang.code;
+    chk.checked = isChecked;
+    chk.disabled = _serviceRunning || _isAutoDetectSource;
+
+    chk.addEventListener('change', () => {
+      if (_serviceRunning) return;
+      if (chk.checked) {
+        if (!_selectedSources.includes(lang.code)) {
+          _selectedSources.push(lang.code);
+        }
+      } else {
+        if (_selectedSources.length <= 1) {
+          chk.checked = true;
+          return; // maintain at least one source
+        }
+        _selectedSources = _selectedSources.filter(c => c !== lang.code);
+      }
+      _isAutoDetectSource = false;
+      handleSourceChange();
+    });
+
+    const displayName = (lang.native_name && lang.native_name !== lang.name)
+      ? `${lang.native_name} (${lang.name})`
+      : lang.name;
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'lang-target-label';
+    labelSpan.textContent = displayName;
+
+    item.appendChild(chk);
+    item.appendChild(labelSpan);
+    listEl.appendChild(item);
+  });
+}
+
+let _langNoticeTimer = null;
+function showLanguageNotice(koMsg, enMsg) {
+  const hintEl = document.getElementById('lang-targets-hint');
+  if (!hintEl) return;
+  const isEn = getOperatorUiLanguage() === 'en';
+  if (_langNoticeTimer) clearTimeout(_langNoticeTimer);
+
+  hintEl.innerHTML = `<span style="color: var(--color-gold-500); font-weight: 600;">ℹ ${isEn ? enMsg : koMsg}</span>`;
+  _langNoticeTimer = setTimeout(() => {
+    updateLanguageCountAndHint();
+  }, 4500);
+}
+
+function renderSelectedTargets() {
+  const listEl = document.getElementById('lang-targets-config-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  const isEn = getOperatorUiLanguage() === 'en';
+
+  // Symmetrical Target Conflict Rule:
+  // A target is blocked ONLY if the church selects exclusively that single language as source.
+  // When Auto-detect is on, or when multiple sources are selected (e.g. ko+en), NO targets are blocked.
+  const singleConflictingSource = (!_isAutoDetectSource && _selectedSources.length === 1)
+    ? _selectedSources[0]
+    : null;
+
+  // Canonical ordering: English on the top, Korean second, then others
+  const targetCodes = [..._supportedTargets];
+  if (!targetCodes.includes('en')) targetCodes.unshift('en');
+  if (!targetCodes.includes('ko')) targetCodes.splice(1, 0, 'ko');
+  const targetSortKey = (c) => (c === 'en' ? '0_en' : (c === 'ko' ? '1_ko' : '2_' + c));
+  const orderedCodes = targetCodes.sort((a, b) => targetSortKey(a).localeCompare(targetSortKey(b)));
+
+  const primaryTarget = _selectedTargets.find(c => c !== singleConflictingSource)
+    || orderedCodes.find(c => c !== singleConflictingSource)
+    || orderedCodes[0];
+
+  orderedCodes.forEach(code => {
+    const isConflicting = (code === singleConflictingSource);
+    const info = _catalogMap.get(code);
+    const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
+
+    if (isConflicting) {
+      const item = document.createElement('label');
+      item.className = 'lang-target-item disabled conflict';
+      item.title = isEn ? 'Cannot translate into the current spoken language' : '단독 발화 언어로 설정되어 있어 통역 대상으로 선택할 수 없습니다.';
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.value = code;
+      chk.checked = false;
+      chk.disabled = true;
+
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'lang-target-label';
+      labelSpan.textContent = displayName;
+
+      const conflictBadge = document.createElement('span');
+      conflictBadge.className = 'conflict-target-badge';
+      conflictBadge.innerHTML = `<span data-lang="ko">원문 언어</span><span data-lang="en">Spoken</span>`;
+
+      item.appendChild(chk);
+      item.appendChild(labelSpan);
+      item.appendChild(conflictBadge);
+      listEl.appendChild(item);
+      return;
+    }
+
+    const isChecked = _selectedTargets.includes(code);
+    const isPrimary = isChecked && (code === primaryTarget);
+
+    const item = document.createElement('label');
+    item.className = `lang-target-item${isChecked ? ' checked' : ''}${isPrimary ? ' primary' : ''}`;
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = code;
+    chk.checked = isChecked;
+    chk.dataset.code = code;
+
+    chk.addEventListener('change', () => {
+      if (chk.checked) {
+        if (!_selectedTargets.includes(code)) {
+          _selectedTargets.push(code);
+        }
+      } else {
+        if (_selectedTargets.length <= 1) {
+          chk.checked = true;
+          return;
+        }
+        _selectedTargets = _selectedTargets.filter(c => c !== code);
+      }
+      saveSelectedTargets();
+      renderSelectedTargets();
+    });
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'lang-target-label';
+    labelSpan.textContent = displayName;
+
+    item.appendChild(chk);
+    item.appendChild(labelSpan);
+
+    if (isPrimary) {
+      const primaryBadge = document.createElement('span');
+      primaryBadge.className = 'primary-target-badge';
+      primaryBadge.innerHTML = `<span data-lang="ko">★ 주 언어</span><span data-lang="en">★ Primary</span>`;
+      item.appendChild(primaryBadge);
+    } else if (isChecked) {
+      const btnMakePrimary = document.createElement('button');
+      btnMakePrimary.type = 'button';
+      btnMakePrimary.className = 'btn-make-primary';
+      btnMakePrimary.title = isEn ? 'Set as primary target language' : '기본 통역 언어로 설정';
+      btnMakePrimary.innerHTML = `<span data-lang="ko">주 언어로 설정</span><span data-lang="en">Make Primary</span>`;
+      btnMakePrimary.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        _selectedTargets = [code, ..._selectedTargets.filter(c => c !== code)];
+        saveSelectedTargets();
+        renderSelectedTargets();
+      });
+      item.appendChild(btnMakePrimary);
+    }
+
+    listEl.appendChild(item);
+  });
+
+  updateLanguageCountAndHint();
+  updateMonitorTargetUI(_selectedTargets, primaryTarget || 'en');
+}
+
+function updateLanguageCountAndHint() {
+  const count = _selectedTargets.length;
+  const countBadge = document.getElementById('lang-target-count-badge');
+  const hintEl = document.getElementById('lang-targets-hint');
+  const isEn = getOperatorUiLanguage() === 'en';
+
+  if (countBadge) {
+    countBadge.textContent = `${count} ${count === 1 ? 'target' : 'targets'}`;
+  }
+
+  if (hintEl) {
+    hintEl.innerHTML = isEn
+      ? `<span>${count} translation ${count === 1 ? 'session' : 'sessions'} will start.</span>`
+      : `<span>${count}개 통역 세션이 시작됩니다.</span>`;
+  }
+}
+
+async function saveSelectedTargets() {
+  try {
+    const expSrc = _isAutoDetectSource ? 'any' : _selectedSources.join('+');
+    const res = await fetch('/api/translation/targets', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expected_source_language: expSrc,
+        supported_targets: _supportedTargets,
+        targets: _selectedTargets
+      })
+    });
+    if (res.status === 409) {
+      console.warn('Cannot update targets while translation is running/paused');
+      return;
+    }
+    const data = await res.json();
+    if (data.ok && data.translation) {
+      _expectedSource = data.translation.expected_source_language || expSrc;
+      _selectedTargets = data.translation.default_active_targets || _selectedTargets;
+      _supportedTargets = data.translation.supported_targets || _supportedTargets;
+      if (data.translation.spoken_language_display) {
+        _spokenLanguageDisplay = data.translation.spoken_language_display;
+      }
+      updateLanguageCountAndHint();
+      updateSourceUI();
+    }
+  } catch (e) {
+    console.error('Failed to save translation targets:', e);
+  }
+}
+
+function updateLanguageTargets(st) {
+  const isRunning = Boolean(st && st.service_running);
+  const isLocked = isRunning;
+  const isEn = getOperatorUiLanguage() === 'en';
+
+  const badgeEl = document.getElementById('lang-panel-badge');
+  const configList = document.getElementById('lang-targets-config-list');
+  const activeList = document.getElementById('lang-targets-active-list');
+  const btnManage = document.getElementById('btn-open-manage-langs');
+  const hintEl = document.getElementById('lang-targets-hint');
+  const countBadge = document.getElementById('lang-target-count-badge');
+  const sourceStatusBadge = document.getElementById('lang-source-status-badge');
+  const btnAutodetect = document.getElementById('btn-source-autodetect');
+  const presetButtons = document.querySelectorAll('.btn-source-preset');
+  const sourceCheckboxes = document.querySelectorAll('#lang-sources-config-list input[type="checkbox"]');
+
+  if (btnAutodetect) btnAutodetect.disabled = isLocked;
+  presetButtons.forEach(b => b.disabled = isLocked);
+  sourceCheckboxes.forEach(c => c.disabled = isLocked || _isAutoDetectSource);
+  if (btnManage) btnManage.disabled = isLocked;
+
+  const translation = st && st.translation ? st.translation : null;
+  if (translation && translation.spoken_language_display) {
+    _spokenLanguageDisplay = translation.spoken_language_display;
+  }
+  if (sourceStatusBadge) {
+    const isAutoDetect = translation ? Boolean(translation.is_auto_detect) : _isAutoDetectSource;
+    const srcCodes = translation ? (translation.selected_sources || []) : _selectedSources;
+    if (isAutoDetect) {
+      sourceStatusBadge.textContent = 'Auto-detect';
+    } else {
+      const count = srcCodes.length || _selectedSources.length;
+      sourceStatusBadge.textContent = isLocked
+        ? `${count} active`
+        : `${count} ${count === 1 ? 'source' : 'sources'}`;
+    }
+    if (_spokenLanguageDisplay) {
+      sourceStatusBadge.title = _spokenLanguageDisplay;
+    }
+  }
+
+  if (isLocked) {
+    if (badgeEl) {
+      badgeEl.className = 'lang-panel-badge locked';
+      badgeEl.innerHTML = isEn ? '<span>🔒 Session active</span>' : '<span>🔒 세션 진행 중</span>';
+    }
+    if (configList) configList.style.display = 'none';
+    if (activeList) activeList.style.display = 'flex';
+
+    if (hintEl) {
+      hintEl.innerHTML = isEn
+        ? '<span>Stop translation to change target languages.</span>'
+        : '<span>통역 대상을 변경하려면 서비스를 종료하세요.</span>';
+    }
+
+    const activeTargets = translation ? (translation.active_targets || []) : _selectedTargets;
+    const primaryTarget = translation ? (translation.primary_target || 'en') : 'en';
+    const sessionsMap = translation ? (translation.sessions || {}) : {};
+    const telemetryStats = st && st.telemetry ? st.telemetry : {};
+    const listenersByTarget = telemetryStats.listeners_by_target || {};
+
+    updateMonitorTargetUI(activeTargets, primaryTarget);
+
+    if (countBadge) {
+      countBadge.textContent = `${activeTargets.length} active`;
+    }
+
+    if (activeList) {
+      activeList.innerHTML = '';
+      activeTargets.forEach(tgt => {
+        const info = _catalogMap.get(tgt);
+        const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : tgt.toUpperCase();
+        const sess = sessionsMap[tgt] || {};
+        const status = sess.status || (isRunning ? 'connected' : 'connecting');
+        const latencyMs = (sess.latency_ms !== null && sess.latency_ms !== undefined)
+          ? `${Math.round(sess.latency_ms)} ms`
+          : ((tgt === translation?.primary_target && st.telemetry?.gemini_latency_ms) ? `${Math.round(st.telemetry.gemini_latency_ms)} ms` : '—');
+
+        const listeners = listenersByTarget[tgt] !== undefined
+          ? listenersByTarget[tgt]
+          : (tgt === translation?.primary_target ? (st.attendees || 0) : 0);
+
+        let statusClass = 'live';
+        let statusLabel = isEn ? 'Live' : '송출 중';
+        if (status === 'reconnecting') {
+          statusClass = 'warn';
+          statusLabel = isEn ? 'Reconnecting' : '재연결 중';
+        } else if (status === 'connecting') {
+          statusClass = 'warn';
+          statusLabel = isEn ? 'Connecting' : '연결 중';
+        } else if (status === 'failed') {
+          statusClass = 'err';
+          statusLabel = isEn ? 'Error' : '오류';
+        }
+
+        const isPrimary = (tgt === primaryTarget);
+        const isMonitored = (tgt === _monitorTarget);
+
+        const card = document.createElement('div');
+        card.className = 'lang-session-card';
+        card.innerHTML = `
+          <div class="lang-session-header">
+            <div class="lang-session-title">
+              <span class="status-dot-mini ${statusClass}"></span>
+              <span class="lang-session-name">${displayName}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px;">
+              ${isMonitored ? `<span class="monitor-target-indicator"><span data-lang="ko">👁 모니터</span><span data-lang="en">👁 Monitor</span></span>` : ''}
+              ${isPrimary ? `<span class="primary-target-badge" style="font-size: 10px; padding: 1px 5px;"><span data-lang="ko">주 언어</span><span data-lang="en">Primary</span></span>` : ''}
+            </div>
+          </div>
+          <div class="lang-session-sub">
+            ${statusLabel} · ${latencyMs} · ${listeners} ${isEn ? (listeners === 1 ? 'listener' : 'listeners') : '명'}
+          </div>
+        `;
+        activeList.appendChild(card);
+      });
+    }
+
+  } else {
+    // Stopped state
+    if (badgeEl) {
+      badgeEl.className = 'lang-panel-badge ready';
+      badgeEl.innerHTML = isEn ? '<span>Ready</span>' : '<span>대기</span>';
+    }
+    if (configList) configList.style.display = 'flex';
+    if (activeList) activeList.style.display = 'none';
+
+    updateLanguageCountAndHint();
+    updateMonitorTargetUI(_selectedTargets, (st && st.translation && st.translation.primary_target) || 'en');
+  }
+}
+
+
+// ── Manage Languages Modal Logic ─────────────────────────────
+const manageModal = document.getElementById('manage-langs-modal');
+const btnOpenManage = document.getElementById('btn-open-manage-langs');
+const btnCloseManage = document.getElementById('btn-close-manage-langs');
+const btnCancelManage = document.getElementById('btn-cancel-manage-langs');
+const btnSaveManage = document.getElementById('btn-save-manage-langs');
+const searchManageInput = document.getElementById('manage-langs-search');
+const catalogListEl = document.getElementById('manage-langs-catalog-list');
+
+let _modalSelectedSupported = new Set();
+
+function openManageLanguagesModal() {
+  if (!manageModal) return;
+  _modalSelectedSupported = new Set(_supportedTargets);
+  if (searchManageInput) searchManageInput.value = '';
+  renderCatalogModalList('');
+  manageModal.classList.remove('hidden');
+}
+
+function closeManageLanguagesModal() {
+  if (!manageModal) return;
+  manageModal.classList.add('hidden');
+}
+
+function renderCatalogModalList(searchQuery) {
+  if (!catalogListEl) return;
+  catalogListEl.innerHTML = '';
+  const q = (searchQuery || '').toLowerCase().trim();
+
+  const filtered = _languagesCatalog.filter(l => {
+    if (!q) return true;
+    return l.name.toLowerCase().includes(q) ||
+           l.native_name.toLowerCase().includes(q) ||
+           l.code.toLowerCase().includes(q);
+  });
+
+  filtered.forEach(l => {
+    const item = document.createElement('label');
+    item.className = 'catalog-item';
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = l.code;
+    chk.checked = _modalSelectedSupported.has(l.code);
+
+    chk.addEventListener('change', () => {
+      if (chk.checked) {
+        _modalSelectedSupported.add(l.code);
+      } else {
+        if (_modalSelectedSupported.size <= 1) {
+          chk.checked = true;
+          return;
+        }
+        _modalSelectedSupported.delete(l.code);
+      }
+    });
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'catalog-item-name';
+    nameSpan.textContent = l.native_name === l.name ? l.name : `${l.native_name} (${l.name})`;
+
+    const codeSpan = document.createElement('span');
+    codeSpan.className = 'catalog-item-code';
+    codeSpan.textContent = `[${l.code}]`;
+
+    item.appendChild(chk);
+    item.appendChild(nameSpan);
+    item.appendChild(codeSpan);
+    catalogListEl.appendChild(item);
+  });
+}
+
+if (btnOpenManage) btnOpenManage.addEventListener('click', openManageLanguagesModal);
+if (btnCloseManage) btnCloseManage.addEventListener('click', closeManageLanguagesModal);
+if (btnCancelManage) btnCancelManage.addEventListener('click', closeManageLanguagesModal);
+
+if (searchManageInput) {
+  searchManageInput.addEventListener('input', (e) => {
+    renderCatalogModalList(e.target.value);
+  });
+}
+
+if (btnSaveManage) {
+  btnSaveManage.addEventListener('click', async () => {
+    const newSupported = Array.from(_modalSelectedSupported);
+    if (newSupported.length === 0) return;
+
+    const singleConflicting = (!_isAutoDetectSource && _selectedSources.length === 1) ? _selectedSources[0] : null;
+    const newlyAdded = newSupported.filter(code => !_supportedTargets.includes(code));
+    let newSelected = _selectedTargets.filter(t => newSupported.includes(t) && t !== singleConflicting);
+    newlyAdded.forEach(code => {
+      if (code !== singleConflicting && !newSelected.includes(code)) newSelected.push(code);
+    });
+    if (newSelected.length === 0) {
+      const avail = newSupported.filter(t => t !== singleConflicting);
+      if (avail.length > 0) newSelected = [avail[0]];
+    }
+
+    try {
+      const expSrc = _isAutoDetectSource ? 'any' : _selectedSources.join('+');
+      const res = await fetch('/api/translation/targets', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_source_language: expSrc,
+          supported_targets: newSupported,
+          targets: newSelected
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.translation) {
+          _supportedTargets = data.translation.supported_targets;
+          _selectedTargets = data.translation.default_active_targets;
+          renderSelectedTargets();
+          closeManageLanguagesModal();
+        }
+      }
+    } catch (e) {
+      console.error('Failed to save supported languages:', e);
+    }
+  });
+}
+
 // ============================================================
 // INITIALIZATION
 // ============================================================
 setOperatorUiLanguage(_currentUiLang);
 checkAuth();
 loadDevices();
+loadLanguageConfiguration();
+connectSSE();
 startStatusPoll();
 startEventPoll();
+
+
 

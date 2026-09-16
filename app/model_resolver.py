@@ -259,6 +259,8 @@ class ModelResolver:
 
     def unlock_session(self) -> None:
         """Unlock the model on service stop."""
+        if self._locked_session_model is None:
+            return
         prev = self._locked_session_model
         self._locked_session_model = None
         server_log.info("Session model UNLOCKED (was: %s)", prev)
@@ -344,8 +346,10 @@ class ModelResolver:
     def get_state(self) -> dict[str, Any]:
         """Return state snapshot for API / operator UI."""
         return {
+            "configured_model": self.preferred_model,
             "preferred_model": self.preferred_model,
             "active_model": self.active_model,
+            "resolved_model": self.active_model,
             "last_known_good_model": self.last_known_good_model,
             "fallback_model": self.fallback_model,
             "is_locked": self._locked_session_model is not None,

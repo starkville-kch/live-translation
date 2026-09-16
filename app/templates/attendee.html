@@ -47,53 +47,155 @@
   .church-header {
     background: var(--color-navy-800);
     color: var(--color-text-inverse);
-    padding: 12px 20px;
+    padding: 10px 16px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 3px solid var(--color-gold-300);
     flex-shrink: 0;
+    gap: 10px;
   }
   .header-content {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    min-width: 0;
   }
   .church-logo {
     width: 22px;
     height: auto;
+    flex-shrink: 0;
   }
   .church-titles {
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
   .kr-title {
     font-family: 'Noto Serif KR', serif;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
     letter-spacing: 0.02em;
     line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .en-title {
-    font-family: 'Source Serif 4', Georgia, serif;
-    font-size: 10px;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    opacity: 0.8;
-    line-height: 1.2;
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 5;
   }
+  .lang-wrap {
+    flex: 0 1 auto;
+    min-width: 0;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .lang-wrap.hidden { display: none !important; }
+  .lang-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--color-text-inverse);
+    border: 1px solid rgba(212, 184, 114, 0.4);
+    border-radius: 6px;
+    padding: 0 24px 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23d4b872' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    transition: all 0.2s ease;
+    width: auto;
+    max-width: 160px;
+    min-width: 90px;
+    height: 30px;
+    box-sizing: border-box;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .lang-select:focus {
+    outline: none;
+    border-color: var(--color-gold-400);
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+  .lang-select:disabled {
+    opacity: 0.65;
+    cursor: default;
+    background-image: none;
+    padding-right: 10px;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .lang-select option {
+    background: var(--color-navy-800);
+    color: var(--color-text-inverse);
+  }
+
+  #audio-btn {
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 10;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+  .ctl-btn {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(212, 184, 114, 0.4);
+    color: var(--color-text-inverse);
+    padding: 0 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 30px;
+    box-sizing: border-box;
+  }
+  .ctl-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: var(--color-gold-400);
+  }
+  .ctl-btn.active {
+    background: var(--color-gold-500);
+    color: var(--color-navy-900);
+    border-color: var(--color-gold-400);
+    font-weight: 700;
+  }
+  .ctl-btn.active:hover {
+    background: var(--color-gold-400);
+  }
+  .ctl-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .status-pill {
     font-family: 'Noto Sans KR', sans-serif;
     font-size: 11px;
     font-weight: 700;
-    padding: 4px 10px;
+    padding: 0 8px;
+    height: 30px;
+    box-sizing: border-box;
     border-radius: 99px;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     background: rgba(255,255,255,0.1);
     color: var(--color-text-muted);
     transition: all 0.3s ease;
+    white-space: nowrap;
   }
   .status-pill.ok {
     background: rgba(59, 110, 79, 0.2);
@@ -108,22 +210,34 @@
     color: #fca5a5;
   }
 
+  .lang-notice {
+    background: rgba(201, 165, 85, 0.15);
+    color: #8c6819;
+    border-bottom: 1px solid var(--color-gold-300);
+    padding: 6px 16px;
+    font-size: 12px;
+    text-align: center;
+    font-weight: 500;
+  }
+  .lang-notice.hidden { display: none !important; }
+
   /* Control Bar */
   #controls {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     padding: 10px 20px;
     background: var(--color-warm-50);
     border-bottom: 1px solid var(--color-warm-100);
     flex-shrink: 0;
-    gap: 20px;
   }
   .control-group {
     display: flex;
     align-items: center;
     gap: 12px;
-    flex: 1;
+    width: 100%;
+    max-width: 42rem;
+    margin: 0 auto;
   }
   .control-label {
     font-size: 13px;
@@ -137,34 +251,55 @@
     height: 4px;
     border-radius: 2px;
     cursor: pointer;
-    max-width: 300px;
   }
-  .ctl-btn {
-    background: var(--color-warm-white);
-    border: 1px solid var(--color-warm-100);
-    color: var(--color-navy-900);
-    padding: 6px 14px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-    transition: all 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+
+  @media (max-width: 680px) {
+    .church-header {
+      flex-wrap: wrap;
+      padding: 8px 12px;
+      gap: 8px;
+    }
+    .header-content {
+      flex: 1 1 auto;
+    }
+    .header-right {
+      flex: 0 0 auto;
+      gap: 6px;
+    }
   }
-  .ctl-btn:hover {
-    background: var(--color-navy-50);
-    border-color: var(--color-navy-100);
-  }
-  .ctl-btn.active {
-    background: var(--color-gold-500);
-    color: var(--color-text-inverse);
-    border-color: var(--color-gold-500);
-  }
-  .ctl-btn.active:hover {
-    background: var(--color-gold-400);
+
+  @media (max-width: 480px) {
+    .church-header {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 8px 12px;
+      gap: 8px;
+    }
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+    .header-right {
+      display: flex;
+      justify-content: flex-start;
+      width: 100%;
+      gap: 6px;
+    }
+    .lang-wrap {
+      flex: 1 1 auto;
+    }
+    .lang-select {
+      width: 100%;
+      max-width: none;
+    }
+    .header-right .ctl-btn {
+      flex: 0 0 auto;
+    }
+    .header-status {
+      flex: 0 0 auto;
+    }
   }
 
   /* Caption Flow Display */
@@ -196,6 +331,9 @@
     animation: slideUp 0.4s ease-out;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
   .line-source, .line-ko {
     display: none;
@@ -229,6 +367,9 @@
     color: var(--color-navy-900);
     font-weight: 500;
     min-height: 3.5em;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
 
   @keyframes slideUp {
@@ -307,8 +448,8 @@
 <div id="earphone-modal" class="hidden">
   <div class="modal-box">
     <div class="icon">🎧</div>
-    <h2>Use Earphones</h2>
-    <p>Audio translation will play through your device. Please use wired or Bluetooth earphones to avoid disturbing the service.</p>
+    <h2 id="modal-title">Use Earphones</h2>
+    <p id="modal-desc">Audio translation will play through your device. Please use wired or Bluetooth earphones to avoid disturbing the service.</p>
     <button class="modal-confirm" id="modal-ok">I have earphones — enable audio</button>
     <button class="modal-skip" id="modal-skip">Text only</button>
   </div>
@@ -321,17 +462,27 @@
       <span class="kr-title" style="font-family: 'Source Serif 4', Georgia, serif;">Starkville Korean Church (PCA)</span>
     </div>
   </div>
-  <div class="header-status">
-    <span id="status-pill" class="status-pill warn">● Connecting</span>
+  <div class="header-right">
+    <div id="language-selector-wrap" class="lang-wrap">
+      <select id="target-lang-select" class="lang-select" aria-label="Select translation language">
+      </select>
+    </div>
+    <button id="audio-btn" class="ctl-btn" title="Enable audio translation">🎧 Audio Off</button>
+    <div class="header-status">
+      <span id="status-pill" class="status-pill warn">● Connecting</span>
+    </div>
   </div>
 </header>
+
+<div id="lang-notice" class="lang-notice hidden" role="alert">
+  <span id="lang-notice-text"></span>
+</div>
 
 <div id="controls">
   <div class="control-group">
     <span class="control-label">Font <span id="font-size-label" style="font-variant-numeric:tabular-nums;">20px</span></span>
     <input id="font-range" type="range" min="16" max="40" value="20">
   </div>
-  <button id="audio-btn" class="ctl-btn" title="Enable audio translation">🔇 Audio Off</button>
 </div>
 
 <div id="tap-hint" style="text-align:center; font-size:12px; color:var(--color-text-muted); padding:4px 20px; background:var(--color-warm-50); border-bottom:1px solid var(--color-warm-100); flex-shrink:0;">
@@ -355,6 +506,68 @@ const pill = document.getElementById('status-pill');
 const fontRange = document.getElementById('font-range');
 const audioBtn = document.getElementById('audio-btn');
 const modal = document.getElementById('earphone-modal');
+const langWrap = document.getElementById('language-selector-wrap');
+const langSelect = document.getElementById('target-lang-select');
+const langNotice = document.getElementById('lang-notice');
+const langNoticeText = document.getElementById('lang-notice-text');
+
+let currentTargetLang = '';
+let activeLanguages = [];
+let awaitingFirstTurnForLang = null;  // set on lang switch, cleared on first update/commit
+let isPaused = false;
+
+function showNotice(msg) {
+  if (!msg) {
+    langNotice.classList.add('hidden');
+    langNoticeText.textContent = '';
+  } else {
+    langNoticeText.textContent = msg;
+    langNotice.classList.remove('hidden');
+  }
+}
+
+function displayName(code) {
+  const l = activeLanguages.find(x => x.code === code);
+  return l ? l.display : code.toUpperCase();
+}
+
+function clearCurrentTranslationView() {
+  historyInner.innerHTML = '';
+  current.textContent = '';
+  clearAudioQueue();
+}
+
+function switchLanguage(newLang, updateUrl = true) {
+  if (!newLang || newLang === currentTargetLang) return;
+  const wasAudioEnabled = audioEnabled;
+  currentTargetLang = newLang;
+
+  if (langSelect) langSelect.value = currentTargetLang;
+
+  if (updateUrl) {
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.set('lang', currentTargetLang);
+    window.history.replaceState({}, '', newUrl.toString());
+  }
+
+  // Clear all committed lines and the in-progress caption immediately
+  clearCurrentTranslationView();
+
+  // Show a "waiting" notice so the attendee knows what target is active
+  awaitingFirstTurnForLang = newLang;
+  showNotice(`${displayName(newLang)} selected — waiting for next translation…`);
+
+  // Rebind streams
+  disconnectAudio(false);
+  connect();
+  if (wasAudioEnabled && !isPaused) {
+    audioEnabled = true;
+    connectAudio();
+  }
+
+  // Immediately notify server of new target so operator listeners_by_target updates
+  sendTelemetryTargetUpdate(newLang);
+}
 
 // ── Font size ──────────────────────────────────────────────────────────────
 const fontSizeLabel = document.getElementById('font-size-label');
@@ -392,9 +605,27 @@ function setStatus(state) {
 // ── Audio engine (Web Audio API, 24kHz PCM16 mono) ────────────────────────
 let audioCtx = null;
 let audioEnabled = false;
+let isAudioConnecting = false;
 let audioWs = null;
 let nextPlayAt = 0;
 const SAMPLE_RATE = 24000;
+
+function updateAudioButton() {
+  if (!audioBtn) return;
+  if (isAudioConnecting) {
+    audioBtn.disabled = true;
+    audioBtn.textContent = '⏳ Connecting…';
+    audioBtn.classList.remove('active');
+  } else if (audioWs && audioWs.readyState === WebSocket.OPEN) {
+    audioBtn.disabled = false;
+    audioBtn.textContent = '🔊 Audio On';
+    audioBtn.classList.add('active');
+  } else {
+    audioBtn.disabled = false;
+    audioBtn.textContent = '🎧 Audio Off';
+    audioBtn.classList.remove('active');
+  }
+}
 
 function ensureAudioCtx() {
   if (!audioCtx) {
@@ -403,7 +634,6 @@ function ensureAudioCtx() {
       try {
         audioCtx = new AudioContextClass({ sampleRate: SAMPLE_RATE });
       } catch (e) {
-        // Fallback for iOS Safari / devices that do not support custom constructor sampleRate
         audioCtx = new AudioContextClass();
       }
       nextPlayAt = audioCtx.currentTime;
@@ -413,7 +643,6 @@ function ensureAudioCtx() {
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
-    // Unlock iOS Audio: play a 1-sample silent buffer on user gesture
     try {
       const silentBuf = audioCtx.createBuffer(1, 1, 22050);
       const src = audioCtx.createBufferSource();
@@ -443,53 +672,150 @@ function playPCM16(arrayBuffer) {
 }
 
 function connectAudio() {
-  if (audioWs) {
-    try { audioWs.close(); } catch(_) {}
-    audioWs = null;
+  disconnectAudio(false);
+  if (!audioEnabled || isPaused) {
+    updateAudioButton();
+    return;
   }
+
+  isAudioConnecting = true;
+  updateAudioButton();
+
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  audioWs = new WebSocket(proto + '//' + location.host + '/audio-stream');
-  audioWs.binaryType = 'arraybuffer';
-  audioWs.onopen = () => {
-    console.log("Audio WebSocket connected");
-    audioBtn.textContent = '🔊 Audio On';
-    audioBtn.classList.add('active');
+  const langQuery = currentTargetLang ? `?lang=${encodeURIComponent(currentTargetLang)}` : '';
+  const ws = new WebSocket(proto + '//' + location.host + '/audio-stream' + langQuery);
+  audioWs = ws;
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    if (audioWs !== ws) return;
+    isAudioConnecting = false;
+    console.log("Audio WebSocket connected for:", currentTargetLang || "default");
+    updateAudioButton();
   };
-  audioWs.onmessage = (e) => playPCM16(e.data);
-  audioWs.onerror = (err) => {
+  ws.onmessage = (e) => {
+    if (audioWs !== ws) return;
+    playPCM16(e.data);
+  };
+  ws.onerror = (err) => {
+    if (audioWs !== ws) return;
     console.warn("Audio WebSocket error:", err);
+    isAudioConnecting = false;
+    updateAudioButton();
   };
-  audioWs.onclose = () => {
+  ws.onclose = (ev) => {
+    if (audioWs !== ws) return;
     audioWs = null;
-    if (audioEnabled) {
-      setTimeout(connectAudio, 2000); // reconnect if still wanted
+    isAudioConnecting = false;
+
+    if (ev && (ev.code === 1008 || ev.code === 4003 || ev.code === 4403)) {
+      console.warn("Audio WebSocket closed by server policy (" + ev.code + "); resetting audio state");
+      audioEnabled = false;
+      updateAudioButton();
+      return;
+    }
+
+    updateAudioButton();
+
+    if (audioEnabled && !isPaused && audioWs === null) {
+      setTimeout(() => {
+        if (audioEnabled && !isPaused && !audioWs) {
+          connectAudio();
+        }
+      }, 2000);
     }
   };
 }
 
-function disconnectAudio() {
-  if (audioWs) {
-    try { audioWs.close(); } catch(_) {}
-    audioWs = null;
+function disconnectAudio(resetAudioEnabled = true) {
+  if (resetAudioEnabled) {
+    audioEnabled = false;
   }
+  isAudioConnecting = false;
+  if (audioWs) {
+    const ws = audioWs;
+    audioWs = null;
+    try {
+      ws.onopen = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
+      ws.close();
+    } catch (_) {}
+  }
+  clearAudioQueue();
+  updateAudioButton();
 }
 
-// Auto-resume audio context on user touch if suspended
 ['click', 'touchstart'].forEach(evt => {
   document.addEventListener(evt, () => {
     if (audioEnabled && audioCtx && audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
-  }, { passive: true });
+  }, { once: true });
 });
 
-// ── Earphone modal ─────────────────────────────────────────────────────────
-function enableAudio() {
+const EARPHONE_TEXTS = {
+  en: {
+    title: "Use Earphones",
+    desc: "Audio translation will play through your device. Please use wired or Bluetooth earphones to avoid disturbing the service.",
+    ok: "I have earphones — enable audio",
+    skip: "Text only"
+  },
+  ko: {
+    title: "이어폰을 착용해 주세요",
+    desc: "예배 중 주변 분들에게 방해가 되지 않도록 이어폰이나 블루투스 헤드셋을 착용한 후 소리를 켜주세요.",
+    ok: "이어폰 착용 완료 — 소리 켜기",
+    skip: "자막만 보기"
+  },
+  zh: {
+    title: "请使用耳机",
+    desc: "音频将通过您的设备播放。为避免影响礼拜，请使用有线或蓝牙耳机。",
+    ok: "我有耳机 — 开启音频",
+    skip: "仅文字"
+  },
+  uk: {
+    title: "Будь ласка, використовуйте навушники",
+    desc: "Аудіовідтворення відбуватиметься через ваш пристрій. Будь ласка, використовуйте навушники, щоб не заважати богослужінню.",
+    ok: "У мене є навушники — увімкнути звук",
+    skip: "Тільки текст"
+  },
+  es: {
+    title: "Use auriculares",
+    desc: "La traducción de audio se reproducirá en su dispositivo. Por favor, use auriculares para no interrumpir el servicio.",
+    ok: "Tengo auriculares — activar audio",
+    skip: "Solo texto"
+  }
+};
+
+let earphoneConsent = false;
+try {
+  localStorage.removeItem('skc_earphone_consent');
+} catch (_) {}
+
+function updateEarphoneModalText() {
+  const lang = currentTargetLang || 'en';
+  const t = EARPHONE_TEXTS[lang] || EARPHONE_TEXTS.en;
+  const titleEl = document.getElementById('modal-title');
+  const descEl = document.getElementById('modal-desc');
+  const okBtn = document.getElementById('modal-ok');
+  const skipBtn = document.getElementById('modal-skip');
+  if (titleEl) titleEl.textContent = t.title;
+  if (descEl) descEl.textContent = t.desc;
+  if (okBtn) okBtn.textContent = t.ok;
+  if (skipBtn) skipBtn.textContent = t.skip;
+}
+
+async function enableAudio() {
+  earphoneConsent = true;
   ensureAudioCtx();
+  if (audioCtx && audioCtx.state === 'suspended') {
+    try {
+      await audioCtx.resume();
+    } catch (_) {}
+  }
   audioEnabled = true;
+  updateAudioButton();
   connectAudio();
-  audioBtn.textContent = '🔊 Audio On';
-  audioBtn.classList.add('active');
   modal.classList.add('hidden');
 }
 
@@ -498,14 +824,16 @@ document.getElementById('modal-skip').addEventListener('click', () => {
   modal.classList.add('hidden');
 });
 
-audioBtn.addEventListener('click', () => {
-  if (audioEnabled) {
-    audioEnabled = false;
-    disconnectAudio();
-    audioBtn.textContent = '🔇 Audio Off';
-    audioBtn.classList.remove('active');
+audioBtn.addEventListener('click', async () => {
+  if (audioEnabled || (audioWs && audioWs.readyState === WebSocket.OPEN)) {
+    disconnectAudio(true);
   } else {
-    modal.classList.remove('hidden');
+    if (earphoneConsent) {
+      await enableAudio();
+    } else {
+      updateEarphoneModalText();
+      modal.classList.remove('hidden');
+    }
   }
 });
 
@@ -515,63 +843,99 @@ function clearAudioQueue() {
   }
 }
 
-// ── SSE caption stream (captions only — audio is on WS /audio-stream) ─────
-let es;
+// ── SSE caption stream ────────────────────────────────────────────────────
+let es = null;
+
+function disconnectSSE() {
+  if (es) {
+    const old = es;
+    es = null;
+    old.onopen = null;
+    old.onmessage = null;
+    old.onerror = null;
+    try { old.close(); } catch(_) {}
+  }
+}
+
 function connect() {
-  es = new EventSource('/stream');
-  es.onopen = () => { setStatus('ok'); current.textContent = ''; };
-  es.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
+  disconnectSSE();
+  const streamUrl = currentTargetLang ? `/stream?lang=${encodeURIComponent(currentTargetLang)}` : '/stream';
+  const source = new EventSource(streamUrl);
+  es = source;
+  source.onopen = () => {
+    if (es !== source) return;
+    setStatus('ok');
+    current.textContent = '';
+  };
+  source.onmessage = (e) => {
+    if (es !== source) return;
+    let msg;
+    try { msg = JSON.parse(e.data); } catch(_) { return; }
+    if (msg.kind === 'ping') return;
+
     if (msg.kind === 'update') {
-      current.textContent = msg.text;
+      // Dismiss the "waiting" notice on first real content
+      if (awaitingFirstTurnForLang === currentTargetLang) {
+        awaitingFirstTurnForLang = null;
+        showNotice(null);
+      }
+      current.textContent = msg.target || msg.text || '';
+      if (audioEnabled && !audioWs && !isPaused) {
+        connectAudio();
+      }
     } else if (msg.kind === 'commit') {
-      const text = msg.text.trim();
+      if (audioEnabled && !audioWs && !isPaused) {
+        connectAudio();
+      }
+      const text = (msg.target || msg.text || '').trim();
       const sourceText = (msg.source || msg.ko || '').trim();
       if (text) {
-        let para = historyInner.lastElementChild;
-        const needsNew = !para || /[.!?]$/.test(para.dataset.last || '');
-        if (needsNew) {
-          para = document.createElement('div');
-          para.className = 'line';
-          const srcDiv = document.createElement('div');
-          srcDiv.className = 'line-source';
-          para.appendChild(srcDiv);
-          para.addEventListener('click', () => para.classList.toggle('source-open'));
-          historyInner.appendChild(para);
-          while (historyInner.children.length > 12) historyInner.removeChild(historyInner.firstChild);
+        // Dismiss the "waiting" notice on first committed turn
+        if (awaitingFirstTurnForLang === currentTargetLang) {
+          awaitingFirstTurnForLang = null;
+          showNotice(null);
         }
-        const srcDiv = para.querySelector('.line-source') || para.querySelector('.line-ko');
-        // Insert translated text as a text node before the source div
-        const existing = [...para.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
-        if (existing) {
-          existing.textContent += ' ' + text;
-        } else {
-          para.insertBefore(document.createTextNode(text), srcDiv);
-        }
-        if (sourceText) srcDiv.textContent = (srcDiv.textContent ? srcDiv.textContent + ' ' : '') + sourceText;
+        const para = document.createElement('div');
+        para.className = 'line';
+        const srcDiv = document.createElement('div');
+        srcDiv.className = 'line-source';
+        if (sourceText) srcDiv.textContent = sourceText;
+        para.appendChild(document.createTextNode(text));
+        para.appendChild(srcDiv);
+        para.addEventListener('click', () => para.classList.toggle('source-open'));
+        historyInner.appendChild(para);
+        while (historyInner.children.length > 25) historyInner.removeChild(historyInner.firstChild);
         para.dataset.last = text;
         historyEl.scrollTop = historyEl.scrollHeight;
       }
       current.textContent = '';
 
     } else if (msg.kind === 'paused') {
+      isPaused = true;
       current.textContent = '— Paused —';
       clearAudioQueue();
+      disconnectAudio();
     } else if (msg.kind === 'resumed' || msg.kind === 'reset_clean') {
+      isPaused = false;
       current.textContent = '';
       clearAudioQueue();
+      if (audioEnabled && !audioWs) {
+        connectAudio();
+      }
     } else if (msg.kind === 'unavailable') {
       current.textContent = 'Translation unavailable';
       setStatus('err');
     }
   };
-  es.onerror = () => {
+  source.onerror = () => {
+    if (es !== source) return;
     setStatus('warn');
     current.textContent = 'Reconnecting…';
-    es.close();
+    disconnectSSE();
     setTimeout(connect, 3000);
   };
 }
+
 function loadChurchInfo() {
   fetch('/api/status')
     .then(r => r.json())
@@ -583,60 +947,220 @@ function loadChurchInfo() {
     })
     .catch(() => {});
 }
+
+let availableLanguageMap = new Map();
+let lastActiveTargetsSnapshot = [];
+
+function renderLanguageDropdown(activeTargets) {
+  if (!langSelect || !langWrap) return;
+  langWrap.classList.remove('hidden');
+  langSelect.innerHTML = '';
+
+  if (!activeTargets || activeTargets.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Waiting for translation…';
+    langSelect.appendChild(opt);
+    langSelect.disabled = true;
+    return;
+  }
+
+  activeLanguages = activeTargets.map(code => {
+    const info = availableLanguageMap.get(code);
+    return {
+      code,
+      name: info ? info.name : code,
+      native_name: info ? info.native_name : code,
+      display: info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase()
+    };
+  });
+
+  activeLanguages.forEach(l => {
+    const opt = document.createElement('option');
+    opt.value = l.code;
+    opt.textContent = l.display;
+    langSelect.appendChild(opt);
+  });
+
+  // Enabled only when 2+ target choices exist
+  langSelect.disabled = (activeTargets.length <= 1);
+  if (currentTargetLang && activeTargets.includes(currentTargetLang)) {
+    langSelect.value = currentTargetLang;
+  }
+}
+
+function reconcileLanguages(data) {
+  if (!data) return;
+  const activeTargets = data.active_targets || ['en'];
+  const available = data.available || [];
+  if (available.length > 0) {
+    availableLanguageMap = new Map(available.map(l => [l.code, l]));
+  }
+
+  lastActiveTargetsSnapshot = [...activeTargets];
+  const prevTarget = currentTargetLang;
+  renderLanguageDropdown(activeTargets);
+
+  // Case 3: Operator removed attendee's current language
+  if (prevTarget && activeTargets.length > 0 && !activeTargets.includes(prevTarget)) {
+    const fallbackTarget = activeTargets[0] || 'en';
+    const oldInfo = availableLanguageMap.get(prevTarget);
+    const oldName = oldInfo ? oldInfo.name : prevTarget.toUpperCase();
+    const newInfo = availableLanguageMap.get(fallbackTarget);
+    const newName = newInfo ? newInfo.name : fallbackTarget.toUpperCase();
+
+    showNotice(`${oldName} translation is no longer active. Switched to ${newName}.`);
+
+    const wasAudioEnabled = audioEnabled;
+    disconnectAudio(true);
+    switchLanguage(fallbackTarget, true);
+    if (wasAudioEnabled) {
+      enableAudio();
+    }
+  }
+}
+
+async function initLanguageSelection() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const requestedLang = (urlParams.get('lang') || '').toLowerCase().trim();
+
+  try {
+    const res = await fetch('/api/languages');
+    if (!res.ok) throw new Error('Failed to load languages');
+    const data = await res.json();
+    const activeTargets = data.active_targets || ['en'];
+    const available = data.available || [];
+    availableLanguageMap = new Map(available.map(l => [l.code, l]));
+    lastActiveTargetsSnapshot = [...activeTargets];
+
+    let initialTarget = activeTargets[0] || 'en';
+    if (requestedLang) {
+      if (activeTargets.includes(requestedLang)) {
+        initialTarget = requestedLang;
+        showNotice(null);
+      } else if (availableLanguageMap.has(requestedLang)) {
+        const requestedInfo = availableLanguageMap.get(requestedLang);
+        showNotice(`${requestedInfo.name} translation is not active for this session.`);
+      } else {
+        showNotice('The requested language is not available.');
+      }
+    } else {
+      showNotice(null);
+    }
+
+    currentTargetLang = initialTarget;
+    renderLanguageDropdown(activeTargets);
+
+    langSelect.addEventListener('change', (e) => {
+      showNotice(null);
+      switchLanguage(e.target.value, true);
+    });
+
+  } catch (e) {
+    console.warn('Language init fallback:', e);
+    currentTargetLang = requestedLang || 'en';
+    renderLanguageDropdown([currentTargetLang]);
+  }
+
+  connect();
+
+  // Periodic reconciliation with operator active_targets
+  setInterval(async () => {
+    try {
+      const res = await fetch('/api/languages');
+      if (res.ok) {
+        const data = await res.json();
+        reconcileLanguages(data);
+      }
+    } catch (_) {}
+  }, 4000);
+}
+
 loadChurchInfo();
-connect();
+initLanguageSelection();
 
 // ── Telemetry ping/pong ───────────────────────────────────────────────────
+let _telemetryWs = null;
+let _telemetryClientId = sessionStorage.getItem('skc_cid');
+if (!_telemetryClientId) {
+  _telemetryClientId = 'c_' + Math.random().toString(36).substring(2, 10);
+  sessionStorage.setItem('skc_cid', _telemetryClientId);
+}
+
+function sendTelemetryTargetUpdate(lang) {
+  if (_telemetryWs && _telemetryWs.readyState === WebSocket.OPEN) {
+    _telemetryWs.send(JSON.stringify({
+      type: 'target_changed',
+      client_id: _telemetryClientId,
+      target_lang: lang,
+    }));
+  }
+}
+
 (function setupTelemetry() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  let clientId = sessionStorage.getItem('skc_cid');
-  if (!clientId) {
-    clientId = 'c_' + Math.random().toString(36).substring(2, 10);
-    sessionStorage.setItem('skc_cid', clientId);
-  }
-  let tWs = null;
   let timer = null;
   function initTelemetry() {
     try {
-      tWs = new WebSocket(proto + '//' + location.host + '/ws/telemetry');
-      tWs.onopen = () => {
+      const ws = new WebSocket(proto + '//' + location.host + '/ws/telemetry');
+      _telemetryWs = ws;
+      ws.onopen = () => {
         if (timer) clearInterval(timer);
         timer = setInterval(() => {
-          if (tWs && tWs.readyState === WebSocket.OPEN) {
-            tWs.send(JSON.stringify({
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
               type: 'latency_ping',
-              client_id: clientId,
+              client_id: _telemetryClientId,
               client_sent_ms: performance.now(),
               hostname: window.location.hostname
             }));
           }
         }, 10000);
       };
-      tWs.onmessage = (e) => {
+      ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
           if (msg.type === 'latency_pong') {
             const rtt = performance.now() - msg.client_sent_ms;
-            if (tWs && tWs.readyState === WebSocket.OPEN) {
-              tWs.send(JSON.stringify({
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
                 type: 'latency_report',
-                client_id: clientId,
+                client_id: _telemetryClientId,
                 hostname: window.location.hostname,
-                rtt_ms: Math.round(rtt)
+                rtt_ms: Math.round(rtt),
+                target_lang: currentTargetLang || 'en'
               }));
             }
           }
         } catch(err) {}
       };
-      tWs.onclose = () => {
+      ws.onclose = () => {
+        if (_telemetryWs === ws) _telemetryWs = null;
         if (timer) clearInterval(timer);
         setTimeout(initTelemetry, 15000);
       };
-      tWs.onerror = () => {};
+      ws.onerror = () => {};
     } catch(err) {}
   }
   initTelemetry();
 })();
+
+// ── Clean page teardown on tab close / navigation ────────────────────────
+['pagehide', 'beforeunload'].forEach(evt => {
+  window.addEventListener(evt, () => {
+    disconnectAudio(true);
+    disconnectSSE();
+    if (_telemetryWs) {
+      try { _telemetryWs.close(); } catch(_) {}
+      _telemetryWs = null;
+    }
+    if (audioCtx) {
+      try { audioCtx.close(); } catch(_) {}
+      audioCtx = null;
+    }
+  });
+});
 </script>
 </body>
 </html>
+

@@ -5,6 +5,129 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-09-15
+
+### Added
+- **Embedded On-Demand Cloudflare Tunnel & Portable Non-Admin Operation**:
+  - `cloudflared.exe` runs as a managed child subprocess without requiring Windows Service installation or Administrator UAC elevation.
+  - Native `.env` configuration reading `CLOUDFLARE_TUNNEL_TOKEN` directly via `get_tunnel_token()`.
+  - Windows Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) ensuring child tunnel processes are cleanly terminated on server exit without orphaned background tasks.
+- **Observer-Only Audio Classifier (`app/audio_classifier.py`)**:
+  - Passive heuristic audio classifier identifying `speech` / `music` / `uncertain` states in real time.
+  - Read-only visual badge on the operator console without gating or interrupting active live translation.
+- **Dual QR Code Access & Printable Flyer Modal**:
+  - High-resolution modal with printable flyer layout (`@media print`) presenting both Public HTTPS and Local Wi-Fi QR codes side by side.
+  - Segmented 1-click toggle on operator console for switching attendee access cards dynamically.
+- **Multi-Source Spoken Language Auto-Detection**:
+  - Interactive `✦ 자동 감지 모드` toggle with support for dynamic language switching and language drift recovery across all source languages.
+- **Parallel Multi-Process PyInstaller Builder (`build_parallel.py -j 4`)**:
+  - 4-worker concurrent compilation of `SKC_translation.exe` and `SKC_setup.exe` cutting build times by ~40%.
+  - Excluded test suites (`pytest`, `google.genai.tests`) to eliminate packaging warnings and reduce binary footprint.
+
+### Changed
+- **Decluttered Operator Console**: Cleaned redundant English glosses from Korean UI mode and streamlined 3-pill header status badges.
+- **Local Share URL Normalization**: Standardized local URLs to root (`http://skc.local:8080`) matching church flyers and auto-redirecting to `/live`.
+
+### Fixed
+- **Headless Test Robustness**: `SetupApp` Tkinter tests in `tests/test_setup_config.py` made resilient against headless subshell `TclError` exceptions.
+
+## [3.1.3] - 2026-09-06
+
+### Added
+- **Observer-Only Speech/Music Heuristic Classifier (`app/audio_classifier.py`)**:
+  - Passive NumPy-only classifier labels the live audio stream `speech` / `music` / `uncertain` for operator awareness — never gates, pauses, or alters translation.
+  - Isolated from `_audio_pipe`: a bounded `put_nowait`-only tee queue and dedicated `_classifier_pipe` task in `TranslationManager`; a classifier failure is caught and logged, never propagated into audio handling or billing.
+  - Rule stack anchored on `beat_strength` (60–140 BPM autocorrelation of a short onset envelope, one FFT per window shared across all spectral features), corroborated by `spectral_flatness` / `rolloff` / `env_var`; ~15–20s sustained raw-label agreement (tracked in audio time) required before the published label flips.
+  - Exposed read-only via `/api/status` (`audio_class`) and as a compact `audio_class_transitions` track in `session.json`; operator console shows a small read-only badge next to the audio input level meter.
+- **QR Network-Type Badge (`app/server.py`)**: `_build_qr()` now draws a navy circular badge with a white glyph at the bottom-right of the center logo — a globe for Public HTTPS QR codes, ascending signal bars for Local Wi-Fi ones — so the two are visually distinguishable at a glance. Drawn entirely with PIL primitives (no new font/asset dependency) and kept fully inside the existing quiet-zone buffer so it never touches real QR modules.
+
+### Fixed
+- **Language Drift Auto-Recovery Restricted to Korean Sources**: `GeminiSession._evaluate_turn_drift` gated automatic clean-session recovery to `expected_source_language` containing `ko`/`any`, even though `evaluate_drift_score()` already scores drift from the output language vs. `target_language_code` regardless of source. Removed the gate — auto recovery (when enabled) now works for any source-language configuration.
+
+### Changed
+- **Decluttered Korean Operator Console (`app/templates/operator/*.html`, `app/static/js/operator.js`)**: Removed redundant English glosses from Korean-language labels/status text/button text (e.g. `입력 장치 설정 (Input Device)` → `입력 장치 설정`, `● 번역 중 (RUNNING)` → `● 번역 중`) — English-language UI (`data-lang="en"` / `isEn` branches) is unaffected. Also fixed one untagged bilingual span (`발화 언어 (Spoken Language)`) that was always shown regardless of the selected UI language.
+- **More Prominent Auto-detect Button (`app/static/css/operator.css`, `app/templates/operator/_language_targets.html`)**: The `✦ 자동 감지 모드` (Auto-detect) toggle looked like flat text rather than a clickable control. Gave it a tinted background, thicker border, shadow, hover-lift, and a subtle pulsing sparkle icon (stops pulsing once toggled on) to signal interactivity.
+- **Shortened Local Wi-Fi Share URL (`app/server.py`)**: `_get_live_urls()` now returns the local/fallback URL without the `/live` path suffix (e.g. `http://skc.local:8080` instead of `http://skc.local:8080/live`) — root `/` already redirects to `/live`, so this is functionally identical but matches the shorter church-internal-network standard everywhere it's shown: the attendee access card, the printable Dual QR modal, and `how_to_use.html`.
+- **`how_to_use.html` Cloudflare Troubleshooting Rewrite**: Removed references to `check_skc_live.bat` / `install_cloudflare_tunnel.bat` / `fix_cloudflared_service.bat`, which were archived to `.agent/scratch/` when the embedded on-demand tunnel shipped and no longer exist in the distributed program folder. Replaced with the current workflow: watch the `[공용 HTTPS]` status badge on the operator console, `SKC_setup.exe`'s `[Tunnel Token]` field for a missing/expired token, and its `[⬇️ Download cloudflared.exe]` button for fresh installs. Also fixed the system-access URL table, which was still missing `:8080`.
+
+## [3.1.2] - 2026-09-05
+
+### Added
+- **Embedded On-Demand Cloudflare Tunnel (`app/cloudflared_service.py`, `app/config.py`)**:
+  - Non-admin laptop execution: when the system Windows service is not running, the application starts `cloudflared.exe tunnel run --token <TOKEN>` as an embedded, windowless child process (`CREATE_NO_WINDOW`).
+  - Native `.env` configuration: `CLOUDFLARE_TUNNEL_TOKEN` is loaded directly from `.env` (via `get_tunnel_token()`), eliminating the requirement for a separate `token.txt` file.
+  - Output redirection to `logs/cloudflared.log` to prevent Windows 4KB pipe buffer deadlocks.
+  - Graceful termination on server shutdown and registration with Python `atexit` to ensure child processes never linger.
+  - Public Host Guard allowance for dynamic `live-origin.*` host headers.
+- **Setup GUI Direct `.env` Tunnel Token Provisioning (`setup_gui.py`, `app/config.py`)**:
+  - Generalized `update_env_var()` and added `update_tunnel_token()` in `app/config.py` for atomic `.env` modifications.
+  - Setup GUI saves tunnel token directly into `.env` and clarifies that the application operates portably without requiring Administrator UAC elevation.
+- **Packaging & Build Resilience (`build_parallel.py`, `build_exe.bat`)**:
+  - `_safe_copy()` helper prevents `[Errno 13] Permission denied` crashes when destination files are running or unchanged.
+  - Automated packaging of `cloudflared.exe`, `.env`, and `.env.example` into `.agent/dist/`.
+  - Pre-build `taskkill` in `build_exe.bat` ensuring destination binaries are unlocked before compilation.
+  - Replaced Unicode emojis with ASCII progress indicators to prevent Windows console `charmap` encoding errors.
+
+### Changed
+- **Repository Decluttering**:
+  - Archived legacy batch scripts (`install_cloudflare_tunnel.bat`, `fix_cloudflared_service.bat`, `check_skc_live.bat`) and `token.txt` into `.agent/scratch/`.
+  - Simplified `find_tunnel_token_file()` in `app/cloudflared_service.py` to a single directory search comprehension.
+
+## [3.1.1] - 2026-09-05
+
+### Added
+- **Operator Console Dual QR Code Access (`app/templates/operator/_attendee_access.html`, `app/templates/operator/_dual_qr_modal.html`, `app/static/js/operator.js`, `app/server.py`)**:
+  - Added Local Wi-Fi QR code (`/api/qr.png?type=local`) alongside the Public HTTPS QR code on the operator console.
+  - Interactive segmented pill switcher (`[ 🌐 공용 인터넷 | 🏛️ 현장 Wi-Fi ]`) enabling instant 1-click toggling between Public HTTPS and Local Wi-Fi modes.
+  - Dynamic Attendee Access card updating the active QR code, status badge, direct URL link, and copy/open buttons according to the selected network mode.
+  - Scannable secondary QR thumbnail with 1-click quick-switch action in the alternate network info box.
+  - High-resolution Dual QR Code Modal (`_dual_qr_modal.html`) displaying both Public HTTPS and Local Wi-Fi QR codes side-by-side with church branding, attendee guidance notes, and print poster stylesheet (`@media print`).
+  - Extended `/api/qr.png` endpoint to support `type="fallback"` and `type="ip"` query parameters for raw IP fallback access.
+- **Universal Cloudflare Tunnel Installer & Auto-Downloader (`install_cloudflare_tunnel.bat`, `fix_cloudflared_service.bat`, `setup_gui.py`)**:
+  - Direct binary download routine in `setup_gui.py` (`SKC_setup.exe`) to pull the official `cloudflared.exe` (~54MB) directly into the software directory.
+  - Added `Tunnel Binary:` status indicator and `[⬇️ Download cloudflared.exe]` button in Card 3 of Setup GUI.
+  - Automatic prompt to download `cloudflared.exe` when attempting to install/start service if binary is missing.
+  - Seamless UAC elevation integration launching `fix_cloudflared_service.bat` with user's Tunnel Token when non-admin permissions block service registration.
+  - Created `install_cloudflare_tunnel.bat` with auto-elevation, binary download, token provisioning via argument / file / prompt, service registration (`sc create`/`sc config`), and dynamic endpoint testing.
+  - Enhanced `fix_cloudflared_service.bat` to support token argument passing (`fix_cloudflared_service.bat [TOKEN]`), auto-download missing binary, and repair Windows Service `binPath` portably.
+  - Documented Cloudflare Zero Trust dashboard token retrieval steps and URLs in `how_to_use.html` and `docs/TECHNICAL.md`.
+
+## [3.1.0] - 2026-09-02
+
+### Added
+- **Multilingual Multi-Target Live Translation (`app/translation_manager.py`, `app/languages.py`, `app/server.py`)**:
+  - `TranslationManager` fan-out pipeline managing concurrent per-target `GeminiSession`s from a single shared microphone capture.
+  - Standard catalog of 70+ supported languages (`app/languages.py`) with native naming and code validation.
+  - Multi-target routing for attendee SSE caption streams (`/stream?lang=<target>`) and binary audio streams (`/audio-stream?lang=<target>`).
+  - Active targets dynamic synchronization endpoint `GET /api/languages`.
+  - Canonical 4-file post-service session export (`session.json`, `transcript.jsonl`, `transcript.md`, `summary.txt`) capturing multi-target turns and per-target billing metrics.
+- **Server-Rendered Operator Authentication (`app/templates/operator/_auth_modal.html`, `app/operator_auth.py`, `app/server.py`)**:
+  - Auth modal rendered directly into server HTML when unauthenticated, eliminating client-side JavaScript execution timing lag.
+- **Directional Session Failure Isolation (`app/translation_manager.py`, `tests/test_translation_manager.py`)**:
+  - Primary target session failure isolated so secondary translations and shared microphone continue uninterrupted.
+  - Secondary target failure isolated so primary session and operator live preview continue uninterrupted.
+- **Voluntary Streaming Shutdown Lifecycle (`app/server.py`, `main.py`)**:
+  - Global `shutdown_event` and `signal_shutdown()` triggering early voluntary termination across active SSE, audio, and telemetry streams.
+  - `SKCUvicornServer` subclass in `main.py` overriding `handle_exit` to initiate stream drainage on first OS signal.
+  - Process-level `KeyboardInterrupt` handling in `main.py` eliminating ASGI `CancelledError` tracebacks.
+- **Pinned Offline JavaScript Static Analysis (`eslint.config.mjs`, `package.json`)**:
+  - Pinned local `eslint` (v10.9.1) enforcing `no-undef: error` across browser JavaScript files.
+  - Automated offline test assertions using `npx --no-install eslint` inside `tests/test_operator_ui.py` and `tests/test_attendee_multilingual.py`.
+
+### Changed
+- **Attendee UI & Audio Controls Layout (`app/templates/attendee.html`)**:
+  - Moved audio toggle into persistent header bar directly adjacent to the language selector and status pill.
+  - Simplified control bar below header to contain font size slider only.
+  - Language selector permanently visible: disabled when active targets $\le 1$, interactive dropdown when active targets $\ge 2$.
+  - Enforced explicit CSS flex and z-index boundaries preventing select element from overlapping the audio button on 3+ target choices.
+  - Synchronous `AudioContext.resume()` execution directly inside user click gesture stack for earphone modal confirmation.
+  - Runtime reconciliation polling `/api/languages` with notification banner and fallback switching if operator removes attendee's active language.
+- **Model Resolver Idempotence (`app/model_resolver.py`)**:
+  - Guarded `unlock_session()` to ignore redundant unlock invocations during multi-target session teardown.
+- **PyInstaller Packaging (`requirements.txt`, `SKC_translation.spec`, `build_exe.bat`)**:
+  - Added `jinja2>=3.1.2` dependency to `requirements.txt` and PyInstaller build specifications.
+  - Validated standalone execution of `SKC_translation.exe` without missing module errors.
+
 ## [3.0.0] - 2026-08-31
 
 ### Added

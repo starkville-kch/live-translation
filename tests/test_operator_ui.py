@@ -48,10 +48,10 @@ def test_operator_html_structure_and_accessibility():
     assert ".service-status-pill.status-running .status-dot" in css
     assert "pulse-dot" not in css
 
-    # 6. Check Top Navigation Bar: ss-internet is removed, other status pills present
+    # 6. Check Top Navigation Bar: ss-internet and ss-gemini are removed, other status pills present
     assert 'id="ss-internet"' not in html
+    assert 'id="ss-gemini"' not in html
     assert 'id="ss-audio"' in html
-    assert 'id="ss-gemini"' in html
     assert 'id="ss-translation"' in html
 
     # 7. Check Status Monitor Card: Gemini session row is removed, audio input is single-line with ellipsis
@@ -84,6 +84,20 @@ def test_operator_html_structure_and_accessibility():
     assert 'html[lang="en"] [data-lang="en"]' in css
     assert 'setOperatorUiLanguage' in js
     assert 'skc_ui_lang' in js
+
+    # 10. Check Attendee QR Access (Public HTTPS & Local Wi-Fi dual QR support)
+    assert 'id="qr-access-tabs"' in html
+    assert 'id="qr-tab-public"' in html
+    assert 'id="qr-tab-local"' in html
+    assert 'id="qr-img"' in html
+    assert 'id="qr-public-url"' in html
+    assert 'id="stat-level-bar"' in html
+    assert 'id="dual-qr-modal"' in html
+    assert 'id="modal-qr-public-img"' in html
+    assert 'id="modal-qr-local-img"' in html
+    assert 'switchQrMode' in js
+    assert 'openDualQrModal' in js
+    assert '#qr-access-tabs input[type="radio"]:checked + .seg-label' in css
 
 
 
@@ -118,10 +132,11 @@ def test_api_status_includes_pause_duration():
 def test_pause_resume_status_lifecycle():
     client = TestClient(app)
 
-    # Simulate running service state
+    # Simulate running service state on server and manager
     server_mod._state = ServiceState.RUNNING
-    server_mod._paused = False
-    server_mod._pause_start = None
+    server_mod.manager._is_running = True
+    server_mod.manager._is_paused = False
+    server_mod.manager._pause_start = None
 
     # Status while active
     st_run = client.get("/api/status").json()
@@ -151,5 +166,50 @@ def test_pause_resume_status_lifecycle():
 
     # Reset state
     server_mod._state = ServiceState.STOPPED
-    server_mod._paused = False
-    server_mod._pause_start = None
+    server_mod.manager._is_running = False
+    server_mod.manager._is_paused = False
+    server_mod.manager._pause_start = None
+
+
+def test_operator_default_ui_language_config():
+    client = TestClient(app)
+
+    # 1. Verify status contains default_ui_language in church info
+    st = client.get("/api/status").json()
+    assert "church" in st
+    assert "default_ui_language" in st["church"]
+    assert st["church"]["default_ui_language"] in ("ko", "en")
+
+    # 2. Verify admin HTML body has data-default-ui-lang attribute
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert 'data-default-ui-lang=' in resp.text
+
+    # 3. Update via endpoint
+    from unittest.mock import patch
+    with patch("app.server.is_authenticated", return_value=True):
+        res_post = client.post("/api/config/ui-language", json={"default_ui_language": "en"})
+        assert res_post.status_code == 200
+        assert res_post.json()["default_ui_language"] == "en"
+
+        st_after = client.get("/api/status").json()
+        assert st_after["church"]["default_ui_language"] == "en"
+
+        # Revert back to ko
+        client.post("/api/config/ui-language", json={"default_ui_language": "ko"})
+
+
+def test_operator_js_syntax():
+    import subprocess
+    import shutil
+    node_bin = shutil.which("node")
+    if node_bin:
+        js_file = Path(__file__).resolve().parent.parent / "app" / "static" / "js" / "operator.js"
+        res = subprocess.run([node_bin, "-c", str(js_file)], capture_output=True, text=True)
+        assert res.returncode == 0, f"Syntax error in operator.js: {res.stderr}"
+
+        npx = shutil.which("npx")
+        if npx:
+            lint_res = subprocess.run([npx, "--no-install", "eslint", str(js_file)], capture_output=True, text=True, shell=True)
+            assert lint_res.returncode == 0, f"ESLint no-undef error in operator.js:\n{lint_res.stdout}\n{lint_res.stderr}"
+

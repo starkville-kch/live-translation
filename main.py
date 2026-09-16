@@ -113,7 +113,10 @@ if __name__ == "__main__":
     admin_url = _admin_url(cfg)
     live_url = f"{base_url}/live"
     public_url = cfg.get("public_url")
-    public_live_url = f"{str(public_url).rstrip('/')}/live" if public_url else "https://live.starkvillekoreanchurch.org/live"
+    public_live_url = str(public_url).rstrip('/') if public_url else "https://live.starkvillekoreanchurch.org"
+
+
+
     browser_url = f"{_format_url('localhost', port)}/admin"
     fallback_url = _format_url("192.168.0.169", port)
 
@@ -148,11 +151,17 @@ if __name__ == "__main__":
     if len(banner_title) > W - 4:
         banner_title = banner_title[:W - 7] + "..."
 
+    from app.model_resolver import model_resolver
+    from app.operator_auth import is_auth_enabled
+    active_m = model_resolver.active_model
+    auth_str = "Enabled (Password protected)" if is_auth_enabled() else "Disabled (No password set)"
+
     print()
     print("╔" + "═" * W + "╗")
     print(_banner_line(banner_title))
     print("╠" + "═" * W + "╣")
-    print(_banner_line("STATUS: Ready"))
+    print(_banner_line(f"STATUS: Ready — Model: {active_m}"))
+    print(_banner_line(f"SECURITY: Operator Auth {auth_str}"))
     print(_banner_line())
     print(_banner_line("ATTENDEES — Public HTTPS (Scan QR or open):"))
     print(_banner_line(f"  {public_live_url}"))
@@ -174,4 +183,24 @@ if __name__ == "__main__":
     print()
 
     # Pass the app object directly (not a string) so PyInstaller frozen builds work.
-    uvicorn.run(app, host=cfg.get("host", "0.0.0.0"), port=port, reload=False, access_log=False)
+    import uvicorn
+    from app.server import signal_shutdown
+
+    class SKCUvicornServer(uvicorn.Server):
+        def handle_exit(self, sig: int, frame) -> None:
+            signal_shutdown()
+            super().handle_exit(sig, frame)
+
+    server_config = uvicorn.Config(
+        app,
+        host=cfg.get("host", "0.0.0.0"),
+        port=port,
+        reload=False,
+        access_log=False,
+        timeout_graceful_shutdown=3,
+    )
+    server = SKCUvicornServer(server_config)
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        pass

@@ -20,6 +20,10 @@ logs/sessions/*
 .agent/*.txt
 .agent/skills/
 .agent/handoffs/
+.agent/worktrees/
 .claude/
 var/
 .pytest_cache/
+node_modules/
+cloudflared.exe
+token.txt

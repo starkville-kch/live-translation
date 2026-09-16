@@ -26,7 +26,7 @@
 
 ## 1. 시스템 소개
 
-예배용 실시간 한영 번역 시스템입니다. 마이크 오디오 입력을 캡처하고 Google Gemini Live API를 통해 번역하여 로컬 WiFi 네트워크 내의 참석자 모바일 브라우저로 자막과 오디오를 스트리밍합니다. 스탁빌 한인 교회(PCA)를 위해 제작되었으나 다른 교회에서도 설정하여 사용할 수 있습니다.
+예배용 실시간 다국어 동시 통역 시스템입니다. 단일 마이크 오디오 입력을 캡처하고 Google Gemini Live API를 통해 다중 타겟 언어(영어, 중국어, 스페인어, 우크라이나어 등 70+ 언어)로 동시 번역하여 로컬 WiFi 및 공인 HTTPS 접속 참석자의 모바일 브라우저로 자막과 음성을 스트리밍합니다. 스탁빌 한인 교회(PCA)를 위해 제작되었으나 다른 다문화 예배 환경에서도 자유롭게 설정하여 사용할 수 있습니다.
 
 ---
 
@@ -173,7 +173,7 @@ build_exe.bat
 
 ## 1. System Overview
 
-This is a real-time Korean to English translation system for church services. It captures audio from a microphone input, translates it using the Google Gemini Live API, and streams captions and audio to attendees' mobile web browsers over a local WiFi network. It was originally created for Starkville Korean Church (PCA) but can be set up for other churches.
+This is a real-time multilingual live translation system for church services. It captures audio from a single microphone input, translates it into multiple target languages concurrently (70+ languages, e.g. English, Chinese, Spanish, Ukrainian) using the Google Gemini Live API, and streams captions and audio to attendees' mobile web browsers over local WiFi or public HTTPS. It was originally created for Starkville Korean Church (PCA) but can be easily deployed for any multilingual or multicultural church service.
 
 ---
 

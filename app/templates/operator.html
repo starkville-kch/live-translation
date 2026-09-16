@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@600;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/operator.css">
 </head>
-<body>
+<body data-default-ui-lang="{{ default_ui_lang | default('ko') }}">
 
 {% include "operator/_header_status.html" %}
 
@@ -24,7 +24,7 @@
     <div class="card" id="status-card">
       <h2>
         <span class="tooltip">
-          <span data-lang="ko">상태 모니터 (Status)</span>
+          <span data-lang="ko">상태 모니터</span>
           <span data-lang="en">System Status</span>
           <span class="tooltiptext" data-lang="ko">현재 번역 시스템의 오디오, Gemini AI 연결, 세션 통계를 실시간으로 표시합니다.</span>
           <span class="tooltiptext" data-lang="en">Real-time status of audio input, Gemini AI connection, and session statistics.</span>
@@ -36,16 +36,46 @@
       </div>
     </div>
 
-    <!-- Caption preview (Korean + English paired) -->
-    <div class="card">
-      <h2>
-        <span class="tooltip">
-          <span data-lang="ko">실시간 자막 미리보기 (Preview)</span>
-          <span data-lang="en">Live Captions Preview</span>
-          <span class="tooltiptext" data-lang="ko">Gemini가 번역한 한국어 원문과 영어 번역문을 실시간으로 쌍으로 보여줍니다. 참석자 화면에 표시되는 내용과 동일합니다.</span>
-          <span class="tooltiptext" data-lang="en">Live paired source speech and translated captions, identical to what attendees see.</span>
-        </span>
-      </h2>
+    <!-- Caption preview (Paired source + monitored target) -->
+    <div class="card" id="card-preview">
+      <div class="preview-header-row">
+        <h2>
+          <span class="tooltip">
+            <span data-lang="ko">실시간 자막 미리보기</span>
+            <span data-lang="en">Live Captions Preview</span>
+            <span class="tooltiptext" data-lang="ko">Gemini가 번역한 실시간 발화와 통역 자막을 확인합니다.</span>
+            <span class="tooltiptext" data-lang="en">Live paired source speech and translated captions.</span>
+          </span>
+        </h2>
+
+        <!-- Header Right: Unified Monitor Controls (Target Selector + Squeezed Audio Playback) -->
+        <div class="preview-monitor-controls">
+          <!-- Unified Monitor Target Selector (hidden when <= 1 active target) -->
+          <div id="preview-monitor-target-wrap" class="monitor-target-wrap" style="display: none;">
+            <label for="monitor-target-select" class="monitor-target-label">
+              <span data-lang="ko">모니터 언어:</span>
+              <span data-lang="en">Monitor Target:</span>
+            </label>
+            <select id="monitor-target-select" class="monitor-target-select" aria-label="Select operator monitor target language">
+              <!-- Populated dynamically: English, Ukrainian, Chinese, etc. -->
+            </select>
+          </div>
+
+          <!-- Squeezed Audio Playback Controls -->
+          <div class="preview-audio-controls">
+            <button type="button" id="btn-audio" class="btn-playback-mini off" title="실시간 통역 음성 듣기 / 중지">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+                <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+              </svg>
+              <span class="text">
+                <span data-lang="ko">🎧 듣기</span>
+                <span data-lang="en">🎧 Listen</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
       <div id="preview-wrap"><div id="preview"></div></div>
     </div>
 
@@ -62,13 +92,13 @@
 
       <!-- Action 1: Start / Pause / Resume (fixed middle) -->
       <button id="btn-primary-action" class="btn-action btn-start">
-        <span data-lang="ko">▶ 번역 시작 (Start)</span>
+        <span data-lang="ko">▶ 번역 시작</span>
         <span data-lang="en">▶ Start Translation</span>
       </button>
 
       <!-- Action 2: Stop (fixed right) -->
       <button id="btn-stop" class="btn-action btn-stop" disabled>
-        <span data-lang="ko">■ 서비스 종료 (Stop)</span>
+        <span data-lang="ko">■ 서비스 종료</span>
         <span data-lang="en">■ Stop Service</span>
       </button>
     </div>
@@ -118,60 +148,35 @@
     <div class="card">
       <h2>
         <span class="tooltip tooltip-left">
-          <span data-lang="ko">📖 사용 가이드 (Guide)</span>
+          <span data-lang="ko">📖 사용 가이드</span>
           <span data-lang="en">📖 Volunteer Guide</span>
           <span class="tooltiptext" data-lang="ko">번역 시스템 운영 방법, 장치 설정, 문제 해결 방법을 안내하는 운영자 가이드입니다.</span>
           <span class="tooltiptext" data-lang="en">Operator guide covering setup, device configuration, and troubleshooting.</span>
         </span>
       </h2>
       <a href="/help" target="_blank" style="font-size:13px; color:var(--color-gold-500); text-decoration:underline; font-weight:600; display:block; margin-top:4px;">
-        <span data-lang="ko">가이드 열기 (Open Guide) →</span>
+        <span data-lang="ko">가이드 열기 →</span>
         <span data-lang="en">Open Guide (Help) →</span>
       </a>
     </div>
 
-    <!-- Audio playback -->
-    <div class="card">
-      <h2>
-        <span class="tooltip tooltip-left">
-          <span data-lang="ko">음성 통역 모니터 (Audio)</span>
-          <span data-lang="en">Audio Translation Monitor</span>
-          <span class="tooltiptext" data-lang="ko">관리자가 이어폰을 꽂고 번역된 실시간 영어 음성 스트림을 모니터링하기 위한 볼륨 조절 영역입니다.</span>
-          <span class="tooltiptext" data-lang="en">Volume control for listening to real-time translated voice stream using headphones.</span>
-        </span>
-      </h2>
-      <div class="card-body">
-        <div class="audio-row">
-          <button type="button" id="btn-audio" class="btn-playback off">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-              <line x1="23" y1="9" x2="17" y2="15"/>
-              <line x1="17" y1="9" x2="23" y2="15"/>
-            </svg>
-            <span class="text">
-              <span data-lang="ko">Playback Muted</span>
-              <span data-lang="en">Muted</span>
-            </span>
-          </button>
-          <div id="volume-wrapper" style="display: none; align-items: center; gap: 8px; margin-top: 10px; width: 100%;">
-            <span style="font-size: 13px;">🔊</span>
-            <input id="vol-slider" type="range" min="0" max="1" step="0.05" value="0.8" style="flex: 1; accent-color: var(--color-gold-500);">
-            <span id="vol-label" style="font-size: 12px; color: var(--color-text-muted);">80%</span>
-          </div>
-        </div>
-      </div>
-    </div>
 
-    {% include "operator/_event_log.html" %}
+
+    {% include "operator/_language_targets.html" %}
 
     {% include "operator/_attendee_access.html" %}
+
+    {% include "operator/_event_log.html" %}
 
   </div><!-- /col-right -->
 
 </main>
 
 {% include "operator/_auth_modal.html" %}
+{% include "operator/_manage_languages_modal.html" %}
+{% include "operator/_dual_qr_modal.html" %}
 
-<script src="/static/js/operator.js"></script>
+<script src="/static/js/operator.js{% if build_id %}?v={{ build_id }}{% endif %}"></script>
 </body>
 </html>
+

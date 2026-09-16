@@ -11,6 +11,13 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 print_lock = threading.Lock()
 
@@ -30,7 +37,7 @@ def run_pyinstaller(spec_name: str, work_subfolder: str, out_dir: Path) -> tuple
     ]
     
     with print_lock:
-        print(f"  [{tag:11s}] 🚀 Launching build process...")
+        print(f"  [{tag:11s}] [*] Launching build process...")
 
     proc = subprocess.Popen(
         cmd,
@@ -144,14 +151,24 @@ def main():
     # Post-build packaging
     branding_dir = dist_dir / "branding"
     branding_dir.mkdir(parents=True, exist_ok=True)
-    
-    src_logo = root_dir / "branding" / "church-logo.png"
-    if src_logo.exists():
-        shutil.copy2(src_logo, branding_dir / "church-logo.png")
 
-    src_config = root_dir / "config.yaml"
-    if src_config.exists():
-        shutil.copy2(src_config, dist_dir / "config.yaml")
+    def _safe_copy(src: Path, dst: Path) -> None:
+        if not src.exists():
+            return
+        try:
+            if dst.exists() and dst.stat().st_size == src.stat().st_size:
+                return  # Identical, avoid file lock conflict
+            shutil.copy2(src, dst)
+        except PermissionError:
+            print(f"  [WARN] {dst.name} is currently running/locked. Keeping existing file.")
+        except Exception as e:
+            print(f"  [WARN] Could not copy {src.name} -> {dst.name}: {e}")
+
+    _safe_copy(root_dir / "branding" / "church-logo.png", branding_dir / "church-logo.png")
+    _safe_copy(root_dir / "config.yaml", dist_dir / "config.yaml")
+    _safe_copy(root_dir / "cloudflared.exe", dist_dir / "cloudflared.exe")
+    _safe_copy(root_dir / ".env", dist_dir / ".env")
+    _safe_copy(root_dir / ".env.example", dist_dir / ".env.example")
 
     sum_task_time = sum(r[2] for r in results)
     wall_time = total_time
@@ -159,7 +176,7 @@ def main():
     time_saved = max(0.0, sum_task_time - wall_time)
 
     print("\n" + "=" * 70)
-    print("  🎉 PARALLEL BUILD SUCCEEDED!")
+    print("  [SUCCESS] PARALLEL BUILD SUCCEEDED!")
     print(f"  Wall-Clock Time:  {wall_time:.1f}s (Actual real time elapsed)")
     print(f"  Sequential Time:  {sum_task_time:.1f}s (Sum of individual task compute times)")
     print(f"  Parallel Speedup: {speedup:.2f}x (Saved ~{time_saved:.1f}s on {max_workers} parallel workers)")

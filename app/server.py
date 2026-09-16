@@ -47,45 +47,59 @@ Generated via ``_build_qr()`` using the ``qrcode`` + ``Pillow`` libraries:
   • Pixel-level gold (#b89445) recoloring of the three 7×7 finder patterns
   • White quiet-zone ellipse → navy inner circle → white PCA logo overlay
 
-Session transcript export
--------------------------
-On /api/stop, ``_write_session_log()`` writes four files to
+Session transcript export (v3.0 Canonical Format)
+-------------------------------------------------
+On /api/stop, ``_write_session_log()`` writes exactly four canonical files to
 ``logs/sessions/YYYYMMDD_HHMMSS/``:
-  summary.txt   — runtime, cost, model, turn count
-  ko.txt        — Korean source turns with timestamps
-  en.txt        — English translation turns with timestamps
-  aligned.txt   — Korean/English pairs interleaved for easy review
+  session.json    — Machine-readable manifest (session metadata, cost accounting, turns)
+  transcript.jsonl— Canonical machine-readable turn records (1 JSON per committed turn)
+  transcript.md   — Human-readable multi-language chronological transcript
+  summary.txt     — Concise operational performance & billing summary
 """
 import asyncio
 import io
 import json
-
 import socket
+import sys
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
+from jinja2 import Environment, FileSystemLoader
 import qrcode
 from starlette.types import ASGIApp, Receive, Scope, Send
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from app.audio import AudioCapture, AudioStatus, list_input_devices
-from app.broadcast import CaptionBroadcaster, CaptionEvent
+from app.audio import AudioStatus, list_input_devices
+from app.broadcast import CaptionBroadcaster
 from app.config import (
     audio_cfg,
     church_cfg,
+    gemini_cfg,
     get_app_root,
     logging_cfg,
     network_cfg,
     save_audio_device,
     save_auto_stop_timeout,
+    save_operator_ui_language,
+    save_translation_settings,
+    translation_cfg,
 )
+
 from app.events import operator_events
-from app.gemini_session import GeminiSession, SessionStatus
+from app.gemini_session import SessionStatus
 from app.glossary import GlossaryCorrector
+from app.languages import (
+    format_source_language_display,
+    get_available_languages,
+    get_language,
+    is_valid_language_code,
+    normalize_source_language_code,
+    parse_source_language_codes,
+)
 from app.logger import server_log
 from app.model_resolver import model_resolver, verify_model_compatibility
 from app.operator_auth import (
@@ -97,6 +111,7 @@ from app.operator_auth import (
     set_auth_cookie,
     verify_password,
 )
+from app.translation_manager import TranslationManager
 
 # Gemini 3.5 Live Translate pricing (Paid Tier):
 # Audio Input: $0.0053/min (~$0.00008833/sec)
@@ -114,26 +129,32 @@ class ServiceState(str, Enum):
     STOPPING = "stopping"
     FAILED = "failed"
 
+# ── Global Application Shutdown Lifecycle ────────────────────────────────────
+shutdown_event = asyncio.Event()
+
+def signal_shutdown() -> None:
+    """Signal all active SSE streams and WebSockets to terminate voluntarily."""
+    if not shutdown_event.is_set():
+        server_log.info("[Shutdown] Shutdown signal received — initiating voluntary stream closures.")
+        shutdown_event.set()
+
 _glossary = GlossaryCorrector()
-broadcaster = CaptionBroadcaster(glossary=_glossary)
-audio = AudioCapture()
-session = GeminiSession(
-    on_caption=broadcaster.on_caption_delta,
-    on_source_transcript=broadcaster.on_source_delta,
-    on_audio_chunk=broadcaster.on_audio_chunk,
-    glossary=_glossary,
-)
+manager = TranslationManager(glossary=_glossary)
+_SERVER_BUILD_ID = int(time.time())
+audio = manager.audio
+broadcaster = manager.primary_broadcaster
+session = manager.sessions.get("en") or manager._create_session_for_target("en", "ko")
 
 _state_lock = asyncio.Lock()
 _state = ServiceState.STOPPED
 _qr_png_cache: bytes | None = None
-_paused = False
-_service_start_time: float | None = None   # monotonic, set when service starts
-_billed_seconds: float = 0.0               # audio seconds sent to Gemini
-_pause_start: float | None = None          # monotonic when paused
+_last_session_runtime: float = 0.0
+_last_session_billed_seconds: float = 0.0
+_last_session_targets: list[str] = []
 _auto_restart_attempt = 0
 _auto_restart_reason = ""
 _auto_restart_task: asyncio.Task | None = None
+
 
 
 
@@ -245,23 +266,27 @@ def _get_live_urls() -> tuple[str, str, str]:
     else:
         host = ip_addr
 
+    # Root "/" redirects to "/live" (see root_redirect()), so the shortest
+    # shareable/QR form omits the path — matches the church-internal-network
+    # standard of "http://skc.local:8080".
     if port == 80:
-        local_url = f"http://{host}/live"
-        fallback_url = f"http://{ip_addr}/live"
+        local_url = f"http://{host}"
+        fallback_url = f"http://{ip_addr}"
     elif port == 443:
-        local_url = f"https://{host}/live"
-        fallback_url = f"https://{ip_addr}/live"
+        local_url = f"https://{host}"
+        fallback_url = f"https://{ip_addr}"
     else:
-        local_url = f"http://{host}:{port}/live"
-        fallback_url = f"http://{ip_addr}:{port}/live"
+        local_url = f"http://{host}:{port}"
+        fallback_url = f"http://{ip_addr}:{port}"
 
     pub_url = cfg.get("public_url")
     if pub_url:
-        public_url = f"{str(pub_url).rstrip('/')}/live"
+        public_url = str(pub_url).rstrip('/')
     else:
-        public_url = "https://live.starkvillekoreanchurch.org/live"
+        public_url = "https://live.starkvillekoreanchurch.org"
 
     return local_url, fallback_url, public_url
+
 
 
 _tunnel_logged = False
@@ -275,7 +300,31 @@ def _get_active_attendee_share_url() -> tuple[str, str]:
 
 
 
-def _build_qr(url: str) -> bytes:
+def _draw_globe_badge_icon(draw, cx: float, cy: float, r: float, color: tuple) -> None:
+    """Simple globe glyph (meridian + equator) for the Public HTTPS badge."""
+    lw = max(1, int(r * 0.2))
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=lw)
+    draw.ellipse([cx - r * 0.45, cy - r, cx + r * 0.45, cy + r], outline=color, width=lw)
+    draw.line([cx - r, cy, cx + r, cy], fill=color, width=lw)
+
+
+def _draw_signal_badge_icon(draw, cx: float, cy: float, r: float, color: tuple) -> None:
+    """Simple ascending signal-bars glyph for the Local Wi-Fi badge."""
+    bar_w = max(2, r * 0.34)
+    gap = bar_w * 0.45
+    heights = [r * 0.7, r * 1.15, r * 1.6]
+    total_w = bar_w * 3 + gap * 2
+    x0 = cx - total_w / 2
+    base_y = cy + r * 0.55
+    for i, h in enumerate(heights):
+        x1 = x0 + i * (bar_w + gap)
+        x2 = x1 + bar_w
+        y1 = base_y - h
+        radius = min(bar_w * 0.4, h * 0.4)
+        draw.rounded_rectangle([x1, y1, x2, base_y], radius=radius, fill=color)
+
+
+def _build_qr(url: str, network: str = "public") -> bytes:
     from PIL import Image, ImageDraw
     from qrcode.image.styledpil import StyledPilImage
     from qrcode.image.styles.moduledrawers.pil import RoundedModuleDrawer
@@ -366,82 +415,238 @@ def _build_qr(url: str) -> bytes:
 
         img.paste(logo, (cx - logo_w // 2, cy - logo_h // 2), logo)
 
+        # Network-type badge: circle at the bottom-right corner of the logo
+        # buffer distinguishing the Public HTTPS QR (globe) from the Local
+        # Wi-Fi QR (signal bars). Navy fill + white glyph for contrast
+        # against the gold finder patterns. Placed tangent to the buffer's
+        # own edge so the badge (incl. its white ring) never touches real
+        # QR modules, while still overlapping the navy logo box corner for
+        # the familiar "notification badge" look.
+        badge_r = max(11, int(logo_w * 0.20))
+        ring_w = max(2, int(badge_r * 0.18))
+        badge_r_total = badge_r + ring_w
+        badge_cx = cx + buf_half_w - badge_r_total
+        badge_cy = cy + buf_half_h - badge_r_total
+        draw.ellipse(
+            [badge_cx - badge_r - ring_w, badge_cy - badge_r - ring_w,
+             badge_cx + badge_r + ring_w, badge_cy + badge_r + ring_w],
+            fill=(255, 255, 255, 255),
+        )
+        draw.ellipse(
+            [badge_cx - badge_r, badge_cy - badge_r, badge_cx + badge_r, badge_cy + badge_r],
+            fill=(*NAVY, 255),
+        )
+        icon_r = badge_r * 0.6
+        WHITE = (255, 255, 255)
+        if network == "lan":
+            _draw_signal_badge_icon(draw, badge_cx, badge_cy, icon_r, WHITE)
+        else:
+            _draw_globe_badge_icon(draw, badge_cx, badge_cy, icon_r, WHITE)
+
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
 
 def _runtime_seconds() -> float:
-    if _service_start_time is None:
-        return 0.0
-    elapsed = time.monotonic() - _service_start_time
-    if _pause_start is not None:
-        elapsed -= (time.monotonic() - _pause_start)
-    return max(0.0, elapsed)
+    if manager and manager.is_running:
+        return manager.runtime_seconds
+    return _last_session_runtime
 
 
-def _write_session_log() -> None:
-    """Write per-language transcript files into a timestamped session folder on stop.
+def _write_session_log() -> Optional[str]:
+    """Writes post-service session directory under logs/sessions/YYYYMMDD_HHMMSS/.
 
-    Output layout:
-        logs/sessions/20260710_171124/
-            summary.txt     — runtime, cost, model
-            ko.txt          — Korean source turns, one per line with timestamps
-            en.txt          — English translation turns, one per line with timestamps
-            aligned.txt     — Korean + English interleaved, human-readable
+    Consolidated v3.0 format:
+    Exactly 4 canonical files regardless of target count:
+        session.json    — Machine-readable manifest (session metadata, cost accounting, turns)
+        transcript.jsonl— Canonical machine-readable turn records (1 JSON per committed turn)
+        transcript.md   — Human-readable multi-language chronological transcript
+        summary.txt     — Concise operational performance & billing summary
     """
     try:
+        for s in manager.sessions.values():
+            s.flush_current_turn()
+
+        runtime = _runtime_seconds()
+        max_turns = max([len(s.transcript) for s in manager.sessions.values()], default=0)
+
+        # Do not export zero-content sessions (e.g. initial teardown before first start, or instant cancel)
+        if max_turns == 0 and runtime < 5.0:
+            server_log.debug("Skipping session export: zero turns and negligible runtime (<5s)")
+            return None
+        if not manager.sessions and max_turns == 0:
+            server_log.debug("Skipping session export: no active sessions or turns")
+            return None
+
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_dir = Path(logging_cfg().get("log_dir", "logs")) / "sessions" / ts
         session_dir.mkdir(parents=True, exist_ok=True)
 
-        session.flush_current_turn()  # capture any in-progress turn not yet committed
-        runtime = _runtime_seconds()
-        cost = _billed_seconds * _COST_PER_AUDIO_SEC
-        entries = session.transcript
-        t0 = _service_start_time if _service_start_time is not None else (entries[0].timestamp if entries else 0.0)
+        active_tgts = list(manager.active_targets) if manager.active_targets else ["en"]
+        billed_sec = manager.billed_seconds if (manager and manager.is_running) else _last_session_billed_seconds
+        per_target_cost = billed_sec * _COST_PER_AUDIO_SEC
+        total_cost = len(active_tgts) * per_target_cost
 
-        def ts_tag(t: float) -> str:
-            m, s = divmod(int(t - t0), 60)
-            return f"[{m:02d}:{s:02d}]"
+        session_end_dt = datetime.now()
+        session_start_dt = (
+            session_end_dt - timedelta(seconds=runtime)
+            if runtime > 0
+            else session_end_dt
+        )
 
-        # ── summary.txt ───────────────────────────────────────────────────
-        (session_dir / "summary.txt").write_text("\n".join([
-            f"Session ended: {datetime.now().isoformat()}",
-            f"Runtime:       {runtime/60:.1f} min ({runtime:.0f}s)",
-            f"Audio billed:  {_billed_seconds:.0f}s",
-            f"Est. cost:     ${cost:.4f} USD",
-            f"Turns:         {len(entries)}",
-            f"Captions:      {broadcaster.caption_count}",
-            f"Model:         {model_resolver.active_model}",
-        ]), encoding="utf-8")
+        primary_sess = manager.sessions.get(manager.primary_target)
 
-        # ── ko.txt ────────────────────────────────────────────────────────
-        (session_dir / "ko.txt").write_text("\n".join(
-            f"{ts_tag(e.timestamp)}  {e.korean}" for e in entries
-        ), encoding="utf-8")
+        t0 = manager._start_time if (manager and manager._start_time is not None) else None
+        if t0 is None:
+            for s in manager.sessions.values():
+                if s.transcript:
+                    t0 = s.transcript[0].timestamp
+                    break
+        if t0 is None:
+            t0 = 0.0
 
-        # ── en.txt ────────────────────────────────────────────────────────
-        (session_dir / "en.txt").write_text("\n".join(
-            f"{ts_tag(e.timestamp)}  {e.english}" for e in entries
-        ), encoding="utf-8")
+        def turn_time_str(t: float) -> str:
+            offset = max(0.0, t - t0)
+            turn_dt = session_start_dt + timedelta(seconds=offset)
+            return turn_dt.strftime("%H:%M:%S")
 
-        # ── aligned.txt ───────────────────────────────────────────────────
-        aligned = []
-        for e in entries:
-            tag = ts_tag(e.timestamp)
-            aligned.append(f"{tag}  KO: {e.korean}")
-            aligned.append(f"        EN: {e.english}")
-            aligned.append("")
-        (session_dir / "aligned.txt").write_text("\n".join(aligned), encoding="utf-8")
+        # Collect consolidated turn records
+        consolidated_turns: List[dict] = []
+        for i in range(max_turns):
+            rep_entry = None
+            if primary_sess and i < len(primary_sess.transcript):
+                rep_entry = primary_sess.transcript[i]
+            else:
+                for s in manager.sessions.values():
+                    if i < len(s.transcript):
+                        rep_entry = s.transcript[i]
+                        break
 
-        server_log.info("Session exported: %s (%d turns)", session_dir, len(entries))
+            if not rep_entry:
+                continue
+
+            time_label = turn_time_str(rep_entry.timestamp)
+            src_lang = rep_entry.source_lang or manager.expected_source_language
+            src_text = rep_entry.source
+
+            targets_dict = {}
+            for tgt, sess in manager.sessions.items():
+                if i < len(sess.transcript):
+                    targets_dict[tgt] = sess.transcript[i].target
+
+            consolidated_turns.append({
+                "timestamp": time_label,
+                "source": {
+                    "lang": src_lang,
+                    "text": src_text,
+                },
+                "targets": targets_dict,
+            })
+
+        src_name = format_source_language_display(manager.expected_source_language)
+
+        tgt_names = []
+        for tgt in active_tgts:
+            info = get_language(tgt)
+            tgt_names.append(info.name if info else tgt.upper())
+
+        # ── 1. session.json ───────────────────────────────────────────────
+        session_manifest = {
+            "session_id": ts,
+            "spoken_language": manager.expected_source_language,
+            "expected_source_language": manager.expected_source_language,
+            "spoken_language_display": src_name,
+            "active_targets": active_tgts,
+            "started_at": session_start_dt.isoformat(),
+            "ended_at": session_end_dt.isoformat(),
+            "runtime_seconds": round(runtime, 1),
+            "audio_billed_seconds": round(billed_sec, 1),
+            "estimated_total_cost_usd": round(total_cost, 4),
+            "cost_by_target": {tgt: round(per_target_cost, 4) for tgt in active_tgts},
+            "total_turns": len(consolidated_turns),
+            "configured_model": gemini_cfg().get("model", model_resolver.preferred_model),
+            "resolved_model": model_resolver.active_model,
+            "model": model_resolver.active_model,
+            "captions_by_target": {
+                tgt: manager.broadcasters[tgt].caption_count
+                for tgt in active_tgts if tgt in manager.broadcasters
+            },
+            "audio_class_transitions": list(manager.classifier_transitions),
+        }
+        (session_dir / "session.json").write_text(json.dumps(session_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        # ── 2. transcript.jsonl ───────────────────────────────────────────
+        jsonl_lines = [json.dumps(turn, ensure_ascii=False) for turn in consolidated_turns]
+        (session_dir / "transcript.jsonl").write_text("\n".join(jsonl_lines) + ("\n" if jsonl_lines else ""), encoding="utf-8")
+
+        # ── 3. transcript.md ──────────────────────────────────────────────
+        md_sections = [
+            "# Translation Transcript",
+            "",
+            f"Spoken language: {src_name}",
+            f"Targets: {', '.join(tgt_names)}",
+            "",
+        ]
+
+        for turn in consolidated_turns:
+            time_label = turn["timestamp"]
+            src_t = turn["source"]["text"]
+
+            md_sections.append(f"## {time_label}")
+            md_sections.append("")
+            md_sections.append(f"**Spoken — {src_name}**")
+            md_sections.append(src_t)
+            md_sections.append("")
+
+            for tgt in active_tgts:
+                t_val = turn["targets"].get(tgt, "")
+                t_info = get_language(tgt)
+                if t_info and t_info.native_name and t_info.native_name != t_info.name:
+                    tgt_header = f"**{t_info.native_name} ({t_info.name})**"
+                elif t_info:
+                    tgt_header = f"**{t_info.name}**"
+                else:
+                    tgt_header = f"**{tgt.upper()}**"
+
+                md_sections.append(tgt_header)
+                md_sections.append(t_val)
+                md_sections.append("")
+
+            md_sections.append("---")
+            md_sections.append("")
+
+        (session_dir / "transcript.md").write_text("\n".join(md_sections).rstrip() + "\n", encoding="utf-8")
+
+        # ── 4. summary.txt ────────────────────────────────────────────────
+        duration_min = int(runtime // 60)
+        duration_sec = int(runtime % 60)
+        summary_lines = [
+            f"Session:        {ts}",
+            f"Session ended:  {session_end_dt.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Duration:       {duration_min}m {duration_sec:02d}s ({runtime:.0f}s)",
+            f"Spoken:         {src_name}",
+            f"Active Targets: {', '.join(tgt_names)}",
+            f"Committed turns:{len(consolidated_turns)}",
+            f"Audio billed:   {billed_sec:.0f}s per target",
+            f"Est. total cost:${total_cost:.4f} USD",
+            f"Model:          {model_resolver.active_model}",
+        ]
+        (session_dir / "summary.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+
+        server_log.info("Session exported: %s (canonical 4-file format, %d turns, %d active targets)",
+                        session_dir, len(consolidated_turns), len(manager.sessions))
+        return f"logs/sessions/{ts}"
     except Exception as e:
         server_log.warning("Could not write session log: %s", e)
+        return None
+
+
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _qr_png_cache
+    shutdown_event.clear()
     cfg = network_cfg()
     port = cfg.get("port", 8080)
     hostname = (cfg.get("hostname", "") or "").strip()
@@ -485,23 +690,26 @@ async def lifespan(app: FastAPI):
     async def _ping():
         while True:
             await asyncio.sleep(15)
-            broadcaster._push(CaptionEvent(kind="ping"))
+            for b in manager.broadcasters.values():
+                b._push(CaptionEvent(kind="ping"))
 
-    asyncio.create_task(_ping())
+    ping_task = asyncio.create_task(_ping())
     try:
         yield
     finally:
+        ping_task.cancel()
         tunnel_mgr = getattr(app.state, "tunnel_manager", None)
         if tunnel_mgr:
             tunnel_mgr.stop()
         _unregister_zeroconf()
-        await session.stop()
-        audio.stop()
+        await manager.stop()
 
 
 class PublicHostGuardMiddleware:
     """Strict default-deny boundary for the public attendee hostname."""
-    _HTTP_GET = {"/", "/live", "/stream", "/logo.webp", "/logo.png", "/logo"}
+    _HTTP_GET = {"/", "/live", "/stream", "/logo.webp", "/logo.png", "/logo", "/api/languages"}
+    _WEBSOCKETS = {"/audio-stream", "/ws/telemetry"}
+
     _WEBSOCKETS = {"/audio-stream", "/ws/telemetry"}
 
     def __init__(self, app: ASGIApp):
@@ -511,12 +719,15 @@ class PublicHostGuardMiddleware:
     def _get_public_hosts(cls) -> set[str]:
         cfg = network_cfg()
         pub_url = cfg.get("public_url", "")
-        hosts = {"live.starkvillekoreanchurch.org"}
+        hosts = {"live.starkvillekoreanchurch.org", "live-origin.starkvillekoreanchurch.org"}
         if pub_url:
             from urllib.parse import urlparse
             parsed = urlparse(str(pub_url) if "://" in str(pub_url) else f"https://{pub_url}")
             if parsed.hostname:
-                hosts.add(parsed.hostname.lower())
+                h = parsed.hostname.lower()
+                hosts.add(h)
+                if h.startswith("live."):
+                    hosts.add("live-origin." + h[5:])
         return hosts
 
     def _is_public_host(self, scope: Scope) -> bool:
@@ -598,32 +809,66 @@ if _static_dir.exists():
 
 
 # ── SSE caption stream ────────────────────────────────────────────────────────
-async def _sse_generator(request: Request, q: asyncio.Queue) -> AsyncIterator[str]:
+async def _sse_generator(request: Request, q: asyncio.Queue, target_broadcaster: CaptionBroadcaster) -> AsyncIterator[str]:
     try:
-        while True:
+        while not shutdown_event.is_set():
             if await request.is_disconnected():
                 break
             try:
-                event = await asyncio.wait_for(q.get(), timeout=20.0)
-                payload = {"kind": event.kind, "text": event.text}
+                event = await asyncio.wait_for(q.get(), timeout=0.5)
+                text_val = event.source if event.kind == "source" else (event.target or event.text)
+                payload = {
+                    "kind": event.kind,
+                    "text": text_val,
+                    "target": event.target,
+                    "source": event.source,
+                    "ko": event.source or getattr(event, "ko", ""),
+                    "source_lang": event.source_lang,
+                    "target_lang": event.target_lang,
+                }
                 if event.kind == "commit":
                     runtime = _runtime_seconds()
                     m, s = divmod(int(runtime), 60)
                     payload["time_str"] = f"{m:02d}:{s:02d}"
-                    if event.ko:
-                        payload["ko"] = event.ko
                 yield f"data: {json.dumps(payload)}\n\n"
+
             except asyncio.TimeoutError:
-                yield ": keepalive\n\n"
+                continue
+    except (asyncio.CancelledError, GeneratorExit):
+        pass
     finally:
-        broadcaster.remove_client(q)
+        target_broadcaster.remove_client(q)
+
 
 
 @app.get("/stream")
-async def caption_stream(request: Request):
-    q = broadcaster.add_client()
+async def caption_stream(request: Request, lang: Optional[str] = None):
+    if lang:
+        clean_lang = lang.lower().strip()
+        if not is_valid_language_code(clean_lang):
+            return JSONResponse(
+                {"error": "invalid_language", "message": f"'{lang}' is not a valid language code."},
+                status_code=400,
+            )
+        if clean_lang not in manager.active_targets:
+            return JSONResponse(
+                {
+                    "error": "target_not_active",
+                    "target": clean_lang,
+                    "active_targets": list(manager.active_targets),
+                },
+                status_code=404,
+            )
+        target_broadcaster = manager.get_broadcaster(clean_lang)
+    else:
+        target_broadcaster = manager.primary_broadcaster
+
+    if not target_broadcaster:
+        target_broadcaster = manager.primary_broadcaster
+
+    q = target_broadcaster.add_client()
     return StreamingResponse(
-        _sse_generator(request, q),
+        _sse_generator(request, q, target_broadcaster),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -631,23 +876,59 @@ async def caption_stream(request: Request):
 
 # ── Binary WebSocket audio stream ─────────────────────────────────────────────
 @app.websocket("/audio-stream")
-async def audio_stream(ws: WebSocket):
+async def audio_stream(ws: WebSocket, lang: Optional[str] = None):
+    client_host = ws.client.host if ws.client else "unknown"
+    req_headers = dict(ws.headers)
+    target_lang = (lang or "").lower().strip() or manager.primary_target or "en"
+
+    service_state = "RUNNING" if manager.is_running else "STOPPED"
+    server_log.debug(
+        "[AudioWS Request] target=%s host=%s user-agent=%s service_state=%s active_targets=%s",
+        target_lang,
+        client_host,
+        req_headers.get("user-agent", "unknown"),
+        service_state,
+        manager.active_targets,
+    )
+
+    if lang:
+        clean_lang = lang.lower().strip()
+        if not is_valid_language_code(clean_lang) or clean_lang not in manager.active_targets:
+            server_log.debug("[AudioWS Reject] target=%s not active (code 1008)", clean_lang)
+            await ws.accept()
+            await ws.close(code=1008)
+            return
+        target_broadcaster = manager.get_broadcaster(clean_lang)
+    else:
+        target_broadcaster = manager.primary_broadcaster
+
+    if not target_broadcaster or not manager.is_running:
+        server_log.debug("[AudioWS Reject] target=%s broadcaster unavailable or service stopped (code 1008)", target_lang)
+        await ws.accept()
+        await ws.close(code=1008)
+        return
+
     await ws.accept()
-    q = broadcaster.add_audio_client()
+    q = target_broadcaster.add_audio_client()
     try:
-        while True:
+        while not shutdown_event.is_set():
             try:
-                pcm = await asyncio.wait_for(q.get(), timeout=10.0)
+                pcm = await asyncio.wait_for(q.get(), timeout=0.5)
+                if ws.client_state.name != "CONNECTED":
+                    break
                 await ws.send_bytes(pcm)
             except asyncio.TimeoutError:
-                # Keepalive: send empty bytes frame during silence to prevent disconnect
-                await ws.send_bytes(b"")
-    except (WebSocketDisconnect, asyncio.CancelledError):
+                if ws.client_state.name != "CONNECTED":
+                    break
+                continue
+    except (WebSocketDisconnect, asyncio.CancelledError, ConnectionResetError, BrokenPipeError, OSError):
         pass
     except Exception as e:
-        server_log.debug("WebSocket audio client disconnected: %s", e)
+        server_log.debug("WebSocket audio client disconnected with exception: %s", e)
     finally:
-        broadcaster.remove_audio_client(q)
+        target_broadcaster.remove_audio_client(q)
+        server_log.debug("[Audio:%s] Removed disconnected audio client (%s)", target_lang, client_host)
+
 
 
 # ── WebSocket telemetry stream ───────────────────────────────────────────────
@@ -655,8 +936,11 @@ async def audio_stream(ws: WebSocket):
 async def telemetry_stream(ws: WebSocket):
     await ws.accept()
     try:
-        while True:
-            data = await ws.receive_json()
+        while not shutdown_event.is_set():
+            try:
+                data = await asyncio.wait_for(ws.receive_json(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
             msg_type = data.get("type")
             if msg_type == "latency_ping":
                 await ws.send_json({
@@ -667,8 +951,23 @@ async def telemetry_stream(ws: WebSocket):
                 hostname = str(data.get("hostname", ""))
                 rtt_ms = float(data.get("rtt_ms", 0))
                 client_id = str(data.get("client_id", ""))
+                target_lang = str(data.get("target_lang", ""))
                 if rtt_ms > 0:
-                    broadcaster.record_rtt(hostname, rtt_ms, client_id=client_id)
+                    manager.primary_broadcaster.record_rtt(
+                        hostname, rtt_ms, client_id=client_id, target_lang=target_lang
+                    )
+                    if target_lang:
+                        b = manager.get_broadcaster(target_lang)
+                        if b and b != manager.primary_broadcaster:
+                            b.record_rtt(
+                                hostname, rtt_ms, client_id=client_id, target_lang=target_lang
+                            )
+            elif msg_type == "target_changed":
+                client_id = str(data.get("client_id", ""))
+                target_lang = str(data.get("target_lang", ""))
+                if client_id and target_lang:
+                    manager.primary_broadcaster.update_target(client_id, target_lang)
+
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     except Exception:
@@ -713,23 +1012,17 @@ async def auth_logout(response: Response):
 
 # ── Operator control API ───────────────────────────────────────────────────────
 async def _teardown():
-    global _state
-    audio.stop()
-    if audio._thread and audio._thread.is_alive():
-        await asyncio.get_event_loop().run_in_executor(None, audio._thread.join, 1.5)
-    await session.stop()
-    _write_session_log()
-    while not audio._queue.empty():
-        try:
-            audio._queue.get_nowait()
-        except asyncio.QueueEmpty:
-            break
-    while not session._audio_queue.empty():
-        try:
-            session._audio_queue.get_nowait()
-        except asyncio.QueueEmpty:
-            break
+    global _state, _last_session_runtime, _last_session_billed_seconds, _last_session_targets
+    _last_session_runtime = manager.runtime_seconds if (manager and manager.is_running) else 0.0
+    _last_session_billed_seconds = manager.billed_seconds if (manager and manager.is_running) else 0.0
+    _last_session_targets = list(manager.active_targets) if (manager and manager.active_targets) else []
+    saved_dir = _write_session_log()
+    if saved_dir:
+        operator_events.add("info", f"Session logs saved: {saved_dir}")
+    await manager.stop()
     _state = ServiceState.STOPPED
+
+
 
 
 async def _auto_stop_check():
@@ -748,7 +1041,7 @@ async def _auto_stop_check():
             continue
 
         current_status = audio.state.status
-        if current_status in (AudioStatus.NO_SIGNAL, AudioStatus.DISCONNECTED) and not _paused:
+        if current_status in (AudioStatus.NO_SIGNAL, AudioStatus.DISCONNECTED) and not manager.is_paused:
             if silence_start is None:
                 silence_start = time.monotonic()
             elif time.monotonic() - silence_start >= (timeout_min * 60.0):
@@ -776,11 +1069,20 @@ def _check_auth(request: Request) -> Response | None:
 
 
 @app.post("/api/start")
-async def start_service(request: Request = None, body: dict = {}, from_auto_restart: bool = False):
+async def start_service(request: Request = None, body: dict = None, from_auto_restart: bool = False):
     if not from_auto_restart:
         if auth_err := _check_auth(request):
             return auth_err
-    global _state, _paused, _service_start_time, _billed_seconds, _pause_start
+    if body is None:
+        if request is not None:
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+        else:
+            body = {}
+    global _state, _last_session_runtime, _last_session_billed_seconds, _last_session_targets
+
     global _auto_restart_task, _auto_restart_attempt, _auto_restart_reason
     if not from_auto_restart:
         if _auto_restart_task and not _auto_restart_task.done():
@@ -796,33 +1098,41 @@ async def start_service(request: Request = None, body: dict = {}, from_auto_rest
         try:
             await _teardown()
             device_index = body.get("device_index")
-            audio.start(device_index=device_index)
-            _service_start_time = time.monotonic()
-            _billed_seconds = 0.0
-            _paused = False
-            _pause_start = None
-            broadcaster.reset()
-            session.reset_transcript()
+            t_cfg = translation_cfg()
+            if "targets" in body or "active_targets" in body:
+                active_targets = body.get("targets") or body.get("active_targets")
+                if not active_targets:
+                    return JSONResponse(
+                        status_code=400,
+                        content={"ok": False, "error": "no_targets_selected", "message": "At least one target language must be selected."}
+                    )
+            else:
+                active_targets = t_cfg.get("default_active_targets", ["en"])
 
-            async def _pipe():
-                global _billed_seconds
-                CHUNK_MS = 100
-                try:
-                    async for chunk in audio.chunks():
-                        if not _paused:
-                            await session.send_audio(chunk)
-                            _billed_seconds += CHUNK_MS / 1000.0
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    server_log.error("Audio pipe error: %s", e)
+            raw_src = body.get("expected_source_language") or body.get("source") or t_cfg["expected_source_language"]
+            expected_src = normalize_source_language_code(raw_src)
 
-            asyncio.create_task(_pipe())
+            await manager.start(
+                device_index=device_index,
+                active_targets=active_targets,
+                expected_source_language=expected_src,
+            )
+            _last_session_runtime = 0.0
+            _last_session_billed_seconds = 0.0
+            _last_session_targets = []
+
             asyncio.create_task(_auto_stop_check())
-            await session.start()
             _state = ServiceState.RUNNING
-            server_log.info("Service started")
-            operator_events.add("success", "Translation started")
+            server_log.info("Service started with targets: %s", manager.active_targets)
+            operator_events.add("success", f"Translation started ({', '.join(manager.active_targets).upper()})")
+        except ValueError as ve:
+            server_log.warning("Failed to start service: %s", ve)
+            await _teardown()
+            _state = ServiceState.STOPPED
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": "invalid_configuration", "message": str(ve)}
+            )
         except Exception as e:
             server_log.error("Failed to start service: %s", e)
             await _teardown()
@@ -879,47 +1189,50 @@ async def shutdown_service(request: Request):
 async def pause_service(request: Request = None):
     if auth_err := _check_auth(request):
         return auth_err
-    global _paused, _pause_start
-    if _state == ServiceState.RUNNING and not _paused:
-        _paused = True
-        _pause_start = time.monotonic()
-        audio.pause()
-        await session.pause_clean()
-        broadcaster.drain_audio_clients()
-        broadcaster._push(CaptionEvent(kind="paused"))
-        server_log.info("Service paused (audio frames dropped, Gemini session closed, model lock preserved)")
+    if _state == ServiceState.RUNNING and not manager.is_paused:
+        await manager.pause_clean()
+        server_log.info("Service paused (clean standby on locked model)")
         operator_events.add("user", "Translation paused (clean standby)")
-    return {"ok": True, "paused": _paused}
+    return {"ok": True, "paused": manager.is_paused}
 
 
 @app.post("/api/resume")
 async def resume_service(request: Request = None):
     if auth_err := _check_auth(request):
         return auth_err
-    global _paused, _pause_start
-    if _state == ServiceState.RUNNING and _paused:
-        audio.drain()
-        audio.resume()
-        broadcaster.drain_audio_clients()
-        await session.resume_clean()
-        _paused = False
-        _pause_start = None
-        broadcaster._push(CaptionEvent(kind="resumed"))
-        server_log.info("Service resumed (fresh Gemini session on locked model)")
+    if _state == ServiceState.RUNNING and manager.is_paused:
+        await manager.resume_clean()
+        server_log.info("Service resumed (fresh Gemini sessions on locked model)")
         operator_events.add("user", "Translation resumed (fresh context)")
-    return {"ok": True, "paused": _paused}
+    return {"ok": True, "paused": manager.is_paused}
 
 
 @app.post("/api/config/auto-drift-correction")
+@app.post("/api/drift-correction")
 async def set_auto_drift_correction(request: Request, body: dict):
     if auth_err := _check_auth(request):
         return auth_err
-    enabled = bool(body.get("enabled", False))
-    session.set_auto_drift_correction(enabled)
-    session.clear_drift_state()
+    enabled = bool(body.get("enabled", body.get("auto_drift_correction", False)))
+    manager.set_auto_drift_correction(enabled)
+    if session:
+        session.set_auto_drift_correction(enabled)
+        session.clear_drift_state()
     server_log.info("Auto drift correction set to: %s (runtime-only)", enabled)
     operator_events.add("config", f"Auto drift correction set to {'ON' if enabled else 'OFF'}")
     return {"ok": True, "auto_drift_correction": enabled, "enabled": enabled}
+
+
+@app.post("/api/config/ui-language")
+async def set_operator_ui_language_endpoint(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
+    lang = str(body.get("default_ui_language") or body.get("lang") or "ko").strip().lower()
+    clean_lang = "en" if lang == "en" else "ko"
+    save_operator_ui_language(clean_lang)
+    server_log.info("Operator default UI language saved to config.yaml: %s", clean_lang)
+    operator_events.add("config", f"Operator default UI language set to: {clean_lang}")
+    return {"ok": True, "default_ui_language": clean_lang}
+
 
 
 async def _auto_stop_on_failure(reason: str):
@@ -961,7 +1274,8 @@ async def _auto_stop_on_failure(reason: str):
         _auto_restart_attempt = 0
         _auto_restart_reason = ""
         operator_events.add("error", "Auto-restart exhausted — manual intervention required")
-        broadcaster.set_unavailable()
+        for b in manager.broadcasters.values():
+            b.set_unavailable()
         async with _state_lock:
             _state = ServiceState.FAILED
 
@@ -972,20 +1286,32 @@ async def _auto_stop_on_failure(reason: str):
         raise
 
 
-def _handle_session_state_change(s):
+def _handle_session_state_change(*args, **kwargs):
     global _auto_restart_task
-    if s.status == SessionStatus.FAILED:
-        broadcaster.set_unavailable()
+    if len(args) == 1:
+        target = manager.primary_target
+        s = args[0]
+    elif len(args) >= 2:
+        target, s = args[0], args[1]
+    else:
+        target = kwargs.get("target", manager.primary_target)
+        s = kwargs.get("s") or kwargs.get("state")
+
+    if s and s.status == SessionStatus.FAILED:
+        b = manager.get_broadcaster(target)
+        if b:
+            b.set_unavailable()
         if _auto_restart_task and not _auto_restart_task.done():
             _auto_restart_task.cancel()
         # Non-retryable configuration errors should stop once and NOT trigger auto-restart loops
         if "Configuration error" in (s.last_event or ""):
-            server_log.error("Session failed with non-retryable configuration error — skipping auto-restart")
+            server_log.error("[%s] Session failed with non-retryable configuration error — skipping auto-restart", target)
             return
-        _auto_restart_task = asyncio.create_task(_auto_stop_on_failure(s.last_event))
+        _auto_restart_task = asyncio.create_task(_auto_stop_on_failure(f"[{target}] {s.last_event}"))
 
 
-session._on_state = _handle_session_state_change
+manager._on_session_state = _handle_session_state_change
+
 
 
 @app.post("/api/config/auto-stop")
@@ -1009,13 +1335,101 @@ async def reconnect_public_link(request: Request = None):
     return {"ok": True, "status": tunnel_mgr.status if tunnel_mgr else "unavailable"}
 
 
+# ── Language Discovery & Target Selection APIs ────────────────────────────────
+@app.get("/api/languages")
+async def get_languages():
+    cfg = translation_cfg()
+    exp_src = manager.expected_source_language if manager.is_running else cfg["expected_source_language"]
+    src_codes = list(parse_source_language_codes(exp_src))
+    return {
+        "available": [
+            {
+                "code": lang.code,
+                "name": lang.name,
+                "native_name": lang.native_name,
+                "display_name": lang.display_name(),
+            }
+            for lang in get_available_languages()
+        ],
+        "expected_source": exp_src,
+        "expected_source_language": exp_src,
+        "selected_sources": src_codes,
+        "is_auto_detect": "any" in src_codes,
+        "spoken_language_display": format_source_language_display(exp_src),
+        "supported_targets": cfg["supported_targets"],
+        "selected_targets": cfg["default_active_targets"],
+        "active_targets": list(manager.active_targets) if manager.is_running else cfg["default_active_targets"],
+    }
+
+
+@app.get("/api/translation/targets")
+async def get_translation_targets(request: Request = None):
+    if auth_err := _check_auth(request):
+        return auth_err
+    cfg = translation_cfg()
+    exp_src = manager.expected_source_language if manager.is_running else cfg["expected_source_language"]
+    src_codes = list(parse_source_language_codes(exp_src))
+    return {
+        "expected_source": exp_src,
+        "expected_source_language": exp_src,
+        "selected_sources": src_codes,
+        "is_auto_detect": "any" in src_codes,
+        "spoken_language_display": format_source_language_display(exp_src),
+        "supported_targets": cfg["supported_targets"],
+        "selected_targets": cfg["default_active_targets"],
+        "active_targets": list(manager.active_targets) if manager.is_running else cfg["default_active_targets"],
+        "is_running": manager.is_running,
+        "is_paused": manager.is_paused,
+    }
+
+
+@app.post("/api/translation/targets")
+@app.put("/api/translation/targets")
+async def update_translation_targets(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
+    if manager.is_running or manager.is_paused:
+        return Response(
+            content=json.dumps({
+                "error": "translation_running",
+                "message": "Stop translation before changing target languages.",
+            }),
+            status_code=409,
+            media_type="application/json",
+        )
+
+    cfg = translation_cfg()
+    raw_targets = body.get("targets") or body.get("default_active_targets") or cfg["default_active_targets"]
+    raw_src = body.get("expected_source_language") or body.get("source") or cfg["expected_source_language"]
+    canonical_src = normalize_source_language_code(raw_src)
+    raw_supported = body.get("supported_targets") or cfg["supported_targets"]
+
+    try:
+        new_cfg = save_translation_settings(
+            expected_source_language=canonical_src,
+            supported_targets=raw_supported,
+            default_active_targets=raw_targets,
+        )
+        new_cfg["spoken_language_display"] = format_source_language_display(canonical_src)
+        operator_events.add("config", f"Translation targets updated: {new_cfg['default_active_targets']}")
+        return {"ok": True, "translation": new_cfg}
+    except ValueError as e:
+        return Response(
+            content=json.dumps({"ok": False, "error": str(e)}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+
 @app.get("/api/status")
 async def get_status():
     global _tunnel_logged, _tunnel_failed_logged
     a = audio.state
-    s = session.state
+    mgr_state = manager.state()
+    primary_sess = manager.sessions.get(manager.primary_target)
+    primary_sess_state = primary_sess.state if primary_sess else None
+
     runtime = _runtime_seconds()
-    cost = _billed_seconds * _COST_PER_AUDIO_SEC
     local_url, fallback_url, public_url_cfg = _get_live_urls()
     active_share_url, _ = _get_active_attendee_share_url()
     ch = church_cfg()
@@ -1035,25 +1449,53 @@ async def get_status():
         _tunnel_failed_logged = True
         operator_events.add("warning", "Public HTTPS unavailable. Local translation remains ready.")
 
-    telemetry = broadcaster.get_telemetry_stats()
-    gemini_lat = round(s.last_latency_ms, 1)
+    telemetry = manager.primary_broadcaster.get_telemetry_stats()
+    gemini_lat = round(primary_sess_state.last_latency_ms, 1) if primary_sess_state else 0.0
     local_rtt = telemetry.get("local_rtt_ms")
     public_rtt = telemetry.get("public_rtt_ms")
 
     est_local_delay_s = round((gemini_lat + (local_rtt or 5) + 200) / 1000.0, 2) if gemini_lat > 0 else None
     est_public_delay_s = round((gemini_lat + (public_rtt or 150) + 200) / 1000.0, 2) if gemini_lat > 0 else None
 
+    total_clients = sum(b.client_count for b in manager.broadcasters.values()) if manager.broadcasters else broadcaster.client_count
+    total_audio = sum(b.audio_client_count for b in manager.broadcasters.values()) if manager.broadcasters else broadcaster.audio_client_count
+
+    t_cfg = translation_cfg()
+    active_tgts = list(manager.active_targets) if manager.is_running else (_last_session_targets or t_cfg["default_active_targets"])
+    billed_sec = manager.billed_seconds if (manager and manager.is_running) else _last_session_billed_seconds
+    per_target_cost = billed_sec * _COST_PER_AUDIO_SEC
+    total_cost = len(active_tgts) * per_target_cost
+
+    session_states = mgr_state.get("sessions", {})
+    for tgt, s_info in session_states.items():
+        s_info["estimated_cost"] = round(per_target_cost, 4)
+
+    cur_src = manager.expected_source_language if manager.is_running else t_cfg["expected_source_language"]
+    cur_src_codes = list(parse_source_language_codes(cur_src))
+    translation_info = {
+        "expected_source": cur_src,
+        "selected_sources": cur_src_codes,
+        "is_auto_detect": "any" in cur_src_codes,
+        "spoken_language_display": format_source_language_display(cur_src),
+        "selected_targets": t_cfg["default_active_targets"],
+        "active_targets": active_tgts,
+        "primary_target": manager.primary_target,
+        "estimated_total_cost": round(total_cost, 4),
+        "sessions": session_states,
+    }
+
     return {
         "service_running": _state != ServiceState.STOPPED,
         "state": _state.value,
-        "paused": _paused,
-        "pause_duration_s": round(time.monotonic() - _pause_start, 1) if (_paused and _pause_start) else 0.0,
+        "paused": manager.is_paused,
+        "pause_duration_s": round(manager.current_pause_seconds, 1),
         "runtime_s": round(runtime, 1),
-        "cost_usd": round(cost, 4),
-        "billed_audio_s": round(_billed_seconds, 1),
+        "cost_usd": round(total_cost, 4),
+        "billed_audio_s": round(billed_sec, 1),
+
         "auto_stop_timeout_min": audio_cfg().get("auto_stop_timeout_min", 10),
-        "auto_drift_correction": session.auto_drift_correction,
-        "session_epoch": session.session_epoch,
+        "auto_drift_correction": primary_sess.auto_drift_correction if primary_sess else manager.auto_drift_correction,
+        "session_epoch": primary_sess.session_epoch if primary_sess else 0,
         "device_index": audio_cfg().get("device_index", 0),
         "auto_restart_attempt": _auto_restart_attempt,
         "auto_restart_reason": _auto_restart_reason,
@@ -1061,6 +1503,7 @@ async def get_status():
         "church": {
             "name": ch.get("name", "Starkville Korean Church"),
             "short_name": ch.get("short_name", "SKC"),
+            "default_ui_language": ch.get("default_ui_language", "ko"),
         },
         "telemetry": {
             "gemini_latency_ms": gemini_lat,
@@ -1078,21 +1521,25 @@ async def get_status():
             "level": round(a.level_rms, 1),
             "device": a.device_name,
         },
+        "audio_class": mgr_state.get("audio_class", {"label": "uncertain", "confidence": 0.0, "since_s": 0.0}),
         "session": {
-            "status": s.status,
-            "reconnect_count": s.reconnect_count,
-            "last_event": s.last_event,
+            "status": primary_sess_state.status if primary_sess_state else SessionStatus.STOPPED,
+            "reconnect_count": primary_sess_state.reconnect_count if primary_sess_state else 0,
+            "last_event": primary_sess_state.last_event if primary_sess_state else None,
             "latency_ms": gemini_lat,
             "model": model_resolver.active_model,
         },
+        "translation": translation_info,
+        "church": church_cfg(),
         "models": model_resolver.get_state(),
+
         "attendees": max(
             telemetry.get("total_listeners") or 0,
-            broadcaster.client_count,
-            broadcaster.audio_client_count,
+            total_clients,
+            total_audio,
         ),
-        "captions": broadcaster.caption_count,
-        "last_caption_ago_s": broadcaster.last_caption_ago_s,
+        "captions": manager.primary_broadcaster.caption_count,
+        "last_caption_ago_s": manager.primary_broadcaster.last_caption_ago_s,
         "live_url_primary": active_share_url,
         "live_url_local": local_url,
         "live_url_fallback": fallback_url,
@@ -1105,6 +1552,7 @@ async def get_status():
         "local_translation_status": "ready",
         "public_https_status": (tunnel_mgr.status if tunnel_mgr else ("available" if tunnel_ready else "unavailable")),
     }
+
 
 
 @app.get("/api/devices")
@@ -1191,12 +1639,18 @@ async def qr_png(type: str = "primary"):
 
     if type == "local":
         target_url = local_url
+        network = "lan"
+    elif type in ("fallback", "ip"):
+        target_url = fallback_url
+        network = "lan"
     elif type == "public":
         target_url = public_url
+        network = "public"
     else:
         target_url = active_url
+        network = "public" if target_url == public_url else "lan"
 
-    qr_bytes = _build_qr(target_url)
+    qr_bytes = _build_qr(target_url, network=network)
     return Response(
         content=qr_bytes,
         media_type="image/png",
@@ -1258,20 +1712,32 @@ async def attendee_page():
 
 
 @app.get("/admin", response_class=HTMLResponse)
-async def operator_page():
-    if getattr(sys, "frozen", False):
-        return _OPERATOR_HTML_CACHE
-    return _read_template("operator.html")
+async def operator_page(request: Request):
+    default_lang = church_cfg().get("default_ui_language", "ko")
+    models_state = model_resolver.get_state()
+    t_cfg = translation_cfg()
+    auth_enabled = is_auth_enabled()
+    authenticated = is_authenticated(request)
+    return _read_template(
+        "operator.html",
+        default_ui_lang=default_lang,
+        models=models_state,
+        translation_cfg=t_cfg,
+        auth_enabled=auth_enabled,
+        authenticated=authenticated,
+        build_id=_SERVER_BUILD_ID,
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root_redirect():
+async def root_redirect(request: Request):
+    host = request.headers.get("host", "").lower()
+    if "localhost" in host or "127.0.0.1" in host:
+        return RedirectResponse(url="/admin", status_code=307)
     return RedirectResponse(url="/live", status_code=307)
 
 
-def _read_template(filename: str) -> str:
-    import sys
-    from jinja2 import Environment, FileSystemLoader
+def _read_template(filename: str, **kwargs) -> str:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         template_dir = Path(sys._MEIPASS) / "app" / "templates"
     else:
@@ -1281,14 +1747,12 @@ def _read_template(filename: str) -> str:
 
     try:
         env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=False)
-        return env.get_template(filename).render()
+        return env.get_template(filename).render(**kwargs)
     except Exception as e:
         server_log.error("Failed to render template %s: %s", filename, str(e))
         return f"Error: Template {filename} failed to render: {e}"
 
 
 # Cache templates in production
-import sys
 _ATTENDEE_HTML_CACHE = _read_template("attendee.html")
-_OPERATOR_HTML_CACHE = _read_template("operator.html")
 

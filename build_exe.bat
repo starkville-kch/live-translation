@@ -4,7 +4,7 @@
 :: Prerequisites (one-time setup):
 ::   conda create -n skc_build python=3.11 --yes
 ::   conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy ^
-::       python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf pyinstaller
+::       python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf jinja2 pyinstaller
 ::
 :: Output:
 ::   .agent\dist\SKC_translation.exe  (Main Sunday live translation)
@@ -37,6 +37,11 @@ if errorlevel 1 (
 )
 
 cd /d "%~dp0"
+
+:: Terminate any running instances so Windows does not lock files in .agent\dist
+taskkill /F /IM SKC_translation.exe >nul 2>&1
+taskkill /F /IM SKC_setup.exe >nul 2>&1
+taskkill /F /IM cloudflared.exe >nul 2>&1
 
 echo [2/2] Running Multi-Threaded Parallel Build (SKC_translation.exe + SKC_setup.exe)...
 python build_parallel.py -j 4

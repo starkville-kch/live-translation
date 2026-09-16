@@ -30,8 +30,8 @@ def test_qr_png_returns_valid_image(client):
 
 
 def test_qr_png_supports_types(client):
-    """Verify /api/qr.png accepts type=local, type=public, and type=primary."""
-    for qr_type in ("primary", "public", "local"):
+    """Verify /api/qr.png accepts type=local, type=public, type=primary, type=fallback, type=ip."""
+    for qr_type in ("primary", "public", "local", "fallback", "ip"):
         resp = client.get(f"/api/qr.png?type={qr_type}")
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/png"
