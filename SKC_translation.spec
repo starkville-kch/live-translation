@@ -21,9 +21,7 @@ block_cipher = None
 # ── Collect data files from packages that need them ──────────────────────────
 datas = []
 datas += collect_data_files("google.genai")
-datas += collect_data_files("google.api_core")
 datas += collect_data_files("google.auth")
-datas += collect_data_files("grpc")
 datas += collect_data_files("certifi")
 datas += collect_data_files("sse_starlette")
 # Bundle glossary config, PCA logo asset, HTML templates, static assets, and language catalog
@@ -41,7 +39,7 @@ hiddenimports = []
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("anyio")
 hiddenimports += collect_submodules("starlette")
-hiddenimports += collect_submodules("google.genai")
+hiddenimports += collect_submodules("google.genai", filter=lambda name: "tests" not in name)
 hiddenimports += collect_submodules("google.api_core")
 hiddenimports += collect_submodules("google.auth")
 hiddenimports += collect_submodules("grpc")
@@ -103,6 +101,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        "pytest", "_pytest", "google.genai.tests",
         "tkinter", "matplotlib", "pandas", "jupyter",
         "IPython", "PyQt5", "PyQt6", "wx",
     ],
