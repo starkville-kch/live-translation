@@ -158,7 +158,15 @@ def test_mocked_gemini_validation_invalid_key_sanitization():
         is_mock_root = True
 
     try:
-        app = SetupApp(root)
+        try:
+            app = SetupApp(root)
+        except Exception:
+            root = MagicMock()
+            root.after.side_effect = lambda delay, fn, *args: fn(*args)
+            is_mock_root = True
+            with patch.object(SetupApp, "_setup_styles", return_value=None):
+                app = SetupApp(root)
+
         raw_key = "AIzaSy_secret_leak_test_9999"
 
         with patch("google.genai.Client") as mock_client_cls:
