@@ -377,6 +377,7 @@ function setOperatorUiLanguage(lang, syncToServer = false) {
   renderAudioButton();
   if (typeof updateSourceUI === 'function') updateSourceUI();
   if (typeof renderSelectedTargets === 'function') renderSelectedTargets();
+  if (typeof pollStatus === 'function') pollStatus();
 }
 
 
@@ -907,7 +908,8 @@ function switchQrMode(mode) {
     }
 
     if (qrPubStatusEl) {
-      qrPubStatusEl.textContent = '✓ Local Wi-Fi ready (교회 내부망)';
+      const isEn = getOperatorUiLanguage() === 'en';
+      qrPubStatusEl.textContent = isEn ? '✓ Local Wi-Fi ready (Church Network)' : '✓ Local Wi-Fi ready (교회 내부망)';
       qrPubStatusEl.style.color = 'var(--color-success)';
     }
 
@@ -1105,7 +1107,12 @@ async function pollStatus() {
     if (lvlBar) lvlBar.style.width = st.audio.level + '%';
     const lvlLbl = document.getElementById('level-label');
     if (lvlLbl) {
-      lvlLbl.textContent = st.audio.level > 0 ? '레벨: ' + Math.round(st.audio.level) + '%' : '입력 레벨 — 신호 없음';
+      if (st.audio.level > 0) {
+        const pct = Math.round(st.audio.level) + '%';
+        lvlLbl.innerHTML = `<span data-lang="ko">레벨: ${pct}</span><span data-lang="en">Level: ${pct}</span>`;
+      } else {
+        lvlLbl.innerHTML = `<span data-lang="ko">입력 레벨 — 신호 없음</span><span data-lang="en">Input Level — No Signal</span>`;
+      }
     }
 
     const statLvlBar = document.getElementById('stat-level-bar');
@@ -1287,7 +1294,7 @@ async function pollStatus() {
             qrPubStatusEl.style.color = 'var(--color-gold-500)';
           }
         } else {
-          qrPubStatusEl.textContent = '✓ Local Wi-Fi ready (교회 내부망)';
+          qrPubStatusEl.textContent = isEn ? '✓ Local Wi-Fi ready (Church Network)' : '✓ Local Wi-Fi ready (교회 내부망)';
           qrPubStatusEl.style.color = 'var(--color-success)';
         }
       }

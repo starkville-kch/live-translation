@@ -5,6 +5,22 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.1] - 2026-09-20
+
+### Fixed
+- **Telemetry Listener Count & Initial Blind Spot (`app/templates/attendee.html`, `app/broadcast.py`, `app/server.py`)**:
+  - Eliminated initial 10s blind spot: attendee telemetry WebSocket now sends immediate `latency_ping` on connection open before entering 10s periodic cadence.
+  - Sub-millisecond local RTT support: accepted `rtt_ms >= 0` in `record_rtt`, preventing localhost or LAN pings that round to 0 ms from being discarded.
+  - Improved local vs. public route classification: single-label LAN hostnames (`http://skc:8080`), local domains (`.lan`, `.home`), and `skc.live` are correctly categorized under Local Wi-Fi.
+  - Mobile background timer throttle resilience: extended client inactivity timeout to prevent throttled mobile browser tabs from oscillating listener counts.
+- **Operator Console System Status English Localization (`app/templates/operator/*.html`, `app/static/js/operator.js`)**:
+  - Full bilingual English/Korean parity across the 6-card session metrics dashboard (`_session_metrics.html`): "총 접속자" / "Total Listeners", "재연결" / "Reconnects", "자막 수" / "Captions", "체감 지연" / "Est. Latency", "운영 시간" / "Runtime", and "추정 비용" / "Est. Cost" with accompanying English tooltips.
+  - Fixed audio input tooltip markup (`class="tooltiptext"`) in `_status_telemetry.html` preventing tooltip text leak.
+  - Added bilingual spans for language drift recovery status and model selector initial render.
+  - Immediate dynamic UI re-rendering upon operator language switch.
+- **Documentation Link Consistency (`README.md`)**:
+  - Fixed broken links pointing to non-existent `BUILD_EXE.ko.md` and `BUILD_EXE.en.md` to reference canonical `docs/BUILD_EXE.md`.
+
 ## [3.2.0] - 2026-09-15
 
 ### Added

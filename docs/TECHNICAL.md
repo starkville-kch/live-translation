@@ -552,5 +552,25 @@ async def my_endpoint():
      - `server.py` lifespan teardown 및 Python `atexit` 훅을 통해 `cloudflared.exe` 프로세스를 안전하게 자동 종료합니다.
      - 노트북을 닫거나 집에서 프로그램을 종료하면 터널이 함께 내려가므로 교회 본당 시스템과의 커넥터 충돌이 원천 방지됩니다.
 
+---
 
+## 13. 실시간 텔레메트리 및 청취자 통계 정합성 (Network Telemetry & Listener Tracking)
 
+### 목적 및 개요
+운영자 콘솔에 구글 제미나이 AI 처리 지연(Turn-Onset Latency)과 접속 경로별(현장 Wi-Fi vs 공용 HTTPS) 실시간 왕복 지연(RTT) 및 청취자 수를 정확히 제공합니다.
+
+### 통신 프로토콜 (`/ws/telemetry`)
+1. **즉시 핑 (Immediate Initial Ping)**:
+   - 참석자가 `/live` 페이지에 접속하여 텔레메트리 WebSocket이 열리는 즉시(`ws.onopen`) 첫 번째 `latency_ping`을 전송합니다.
+   - 이후 10초 주기로 정기 핑을 전송합니다. (초기 10초 동안 청취자 수가 0으로 집계되는 지연 현상 방지)
+2. **서브 밀리초 RTT 수용 (`rtt_ms >= 0`)**:
+   - 로컬호스트 및 초저지연 LAN 환경에서 `Math.round(rtt)` 연산 시 `0 ms`가 반환될 수 있으므로, 백엔드(`broadcast.py`, `server.py`)는 `rtt_ms >= 0`을 정상 샘플로 수용하여 활성 청취자 목록(`_active_clients`)에서 누락되지 않도록 보장합니다.
+3. **접속 경로 판별 (Route Classification)**:
+   - 클라이언트 호스트명이 마침표가 없는 단일 라벨(예: `http://skc:8080`), 로컬 도메인(`.local`, `.lan`, `.home`, `skc.live`), 또는 사설 IP 대역인 경우 `local`로 자동 분류됩니다.
+   - Cloudflare Tunnel 도메인(`live.starkvillekoreanchurch.org`)을 통해 인입된 요청은 `PublicHostGuardMiddleware.get_public_hosts()` 검사를 거쳐 `public`으로 분류됩니다.
+4. **상호작용 타이밍 마진 (Interacting Timeouts Margin)**:
+   - 모바일 브라우저(iOS/Android Safari/Chrome)는 백그라운드 탭 전환 또는 화면 잠금 시 `setInterval`을 약 60초 간격으로 스로틀링합니다.
+   - 백엔드의 비활성 청취자 정리 TTL(`CLIENT_INACTIVE_TTL_S`)은 60초와 동일하게 설정하지 않고, 50%의 지터 안전 마진을 둔 **90초** (1.5:1 비율)로 운영하여 청취자 수가 주기적으로 0으로 출렁이는 현상(Flapping)을 방지합니다.
+
+### 운영자 콘솔 이중 언어 현지화 원칙 (Bilingual Parity)
+- 모든 UI 요소는 `data-lang="ko"`와 `data-lang="en"` 요소를 동시에 유지해야 하며, 런타임 텍스트 동적 치환 시에도 순수 단일 언어 문자열로 innerHTML/textContent를 덮어쓰지 않고 이중 언어 태그를 보존하거나 `getOperatorUiLanguage()`를 검사하여 일치시킵니다.

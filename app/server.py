@@ -716,7 +716,7 @@ class PublicHostGuardMiddleware:
         self.app = app
 
     @classmethod
-    def _get_public_hosts(cls) -> set[str]:
+    def get_public_hosts(cls) -> set[str]:
         cfg = network_cfg()
         pub_url = cfg.get("public_url", "")
         hosts = {"live.starkvillekoreanchurch.org", "live-origin.starkvillekoreanchurch.org"}
@@ -730,6 +730,16 @@ class PublicHostGuardMiddleware:
                     hosts.add("live-origin." + h[5:])
         return hosts
 
+    # Backward compatibility alias
+    _get_public_hosts = get_public_hosts
+
+    @classmethod
+    def is_public_hostname(cls, host: str) -> bool:
+        if not host:
+            return False
+        clean = host.split(":", 1)[0].strip().lower()
+        return clean in cls.get_public_hosts()
+
     def _is_public_host(self, scope: Scope) -> bool:
         headers = {key.lower(): value.decode("latin1") for key, value in scope.get("headers", [])}
         host = headers.get(b"host", "")
@@ -741,12 +751,8 @@ class PublicHostGuardMiddleware:
             for part in forwarded.split(";")
             if part.lower().startswith("host=") and "=" in part
         )
-        public_hosts = self._get_public_hosts()
         for cand in candidates:
-            if not cand:
-                continue
-            cand_host = cand.split(":", 1)[0].strip().lower()
-            if cand_host in public_hosts:
+            if cand and self.is_public_hostname(cand):
                 return True
         return False
 
@@ -935,6 +941,7 @@ async def audio_stream(ws: WebSocket, lang: Optional[str] = None):
 @app.websocket("/ws/telemetry")
 async def telemetry_stream(ws: WebSocket):
     await ws.accept()
+    client_id: Optional[str] = None
     try:
         while not shutdown_event.is_set():
             try:
@@ -943,6 +950,9 @@ async def telemetry_stream(ws: WebSocket):
                 continue
             msg_type = data.get("type")
             if msg_type == "latency_ping":
+                cid = str(data.get("client_id", ""))
+                if cid:
+                    client_id = cid
                 await ws.send_json({
                     "type": "latency_pong",
                     "client_sent_ms": data.get("client_sent_ms"),
@@ -950,20 +960,26 @@ async def telemetry_stream(ws: WebSocket):
             elif msg_type == "latency_report":
                 hostname = str(data.get("hostname", ""))
                 rtt_ms = float(data.get("rtt_ms", 0))
-                client_id = str(data.get("client_id", ""))
+                cid = str(data.get("client_id", ""))
+                if cid:
+                    client_id = cid
                 target_lang = str(data.get("target_lang", ""))
-                if rtt_ms > 0:
+                if rtt_ms >= 0:
+                    is_pub = PublicHostGuardMiddleware.is_public_hostname(ws.headers.get("host", ""))
+                    route_override = "public" if is_pub else ""
                     manager.primary_broadcaster.record_rtt(
-                        hostname, rtt_ms, client_id=client_id, target_lang=target_lang
+                        hostname, rtt_ms, client_id=client_id, target_lang=target_lang, route_override=route_override
                     )
                     if target_lang:
                         b = manager.get_broadcaster(target_lang)
                         if b and b != manager.primary_broadcaster:
                             b.record_rtt(
-                                hostname, rtt_ms, client_id=client_id, target_lang=target_lang
+                                hostname, rtt_ms, client_id=client_id, target_lang=target_lang, route_override=route_override
                             )
             elif msg_type == "target_changed":
-                client_id = str(data.get("client_id", ""))
+                cid = str(data.get("client_id", ""))
+                if cid:
+                    client_id = cid
                 target_lang = str(data.get("target_lang", ""))
                 if client_id and target_lang:
                     manager.primary_broadcaster.update_target(client_id, target_lang)

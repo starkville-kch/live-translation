@@ -69,3 +69,34 @@ def test_update_target_unknown_client_is_noop():
     stats = b.get_telemetry_stats()
     assert stats["total_listeners"] == 0
     assert stats["listeners_by_target"] == {}
+
+
+def test_zero_rtt_and_single_label_hostname():
+    """Localhost/LAN sub-millisecond pings rounding to 0 ms and single-label hostnames must be recorded as local."""
+    b = CaptionBroadcaster()
+    b.record_rtt("skc", 0.0, client_id="c_zero")
+    stats = b.get_telemetry_stats()
+    assert stats["local_listeners"] == 1
+    assert stats["total_listeners"] == 1
+    assert stats["local_samples"] == 1
+    assert stats["local_rtt_ms"] == 0
+
+
+def test_remove_telemetry_client_on_disconnect():
+    """Telemetry client must be removed immediately on disconnect."""
+    b = CaptionBroadcaster()
+    b.record_rtt("localhost", 15.0, client_id="c_disconnect")
+    assert b.get_telemetry_stats()["total_listeners"] == 1
+
+    b.remove_telemetry_client("c_disconnect")
+    assert b.get_telemetry_stats()["total_listeners"] == 0
+
+
+def test_route_override():
+    """PublicHostGuard route_override takes precedence over ambiguous hostname."""
+    b = CaptionBroadcaster()
+    b.record_rtt("skc", 50.0, client_id="c_override", route_override="public")
+    stats = b.get_telemetry_stats()
+    assert stats["public_listeners"] == 1
+    assert stats["local_listeners"] == 0
+

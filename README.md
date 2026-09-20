@@ -120,7 +120,7 @@ python -m app.audio --test 2 30
 python main.py
 
 ### 4.1. 단일 실행 파일 (.exe) 빌드
-개발 환경 없이 파이썬 설치가 안 된 운영자 PC에서 실행 가능한 `.exe` 단일 파일을 빌드하려면 아래 명령어를 실행합니다. (자세한 내용은 [BUILD_EXE.ko.md](docs/BUILD_EXE.ko.md) 참조)
+개발 환경 없이 파이썬 설치가 안 된 운영자 PC에서 실행 가능한 `.exe` 단일 파일을 빌드하려면 아래 명령어를 실행합니다. (자세한 내용은 [BUILD_EXE.md](docs/BUILD_EXE.md) 참조)
 
 ```bat
 # 1회성 빌드용 Conda 환경 생성 (선택 사항)
@@ -267,7 +267,7 @@ python -m app.audio --test 2 30
 python main.py
 
 ### 4.1 Standalone Distribution Package (.exe)
-To compile standalone `.exe` binaries that run on target Windows PCs without requiring Python installed, run the build batch script (see [BUILD_EXE.en.md](docs/BUILD_EXE.en.md) for full technical details):
+To compile standalone `.exe` binaries that run on target Windows PCs without requiring Python installed, run the build batch script (see [BUILD_EXE.md](docs/BUILD_EXE.md) for full technical details):
 
 ```bat
 # One-time build environment setup (optional)

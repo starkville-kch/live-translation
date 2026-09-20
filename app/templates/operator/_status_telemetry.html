@@ -5,7 +5,7 @@
     <span data-lang="ko">오디오 입력</span>
     <span data-lang="en">Audio Input</span>
     <span class="tooltiptext" data-lang="ko">Windows PC의 마이크/오디오 신호가 서버에 정상 수신되고 있는지 나타냅니다.</span>
-    <span data-lang="en">Indicates if the mic audio is being captured properly.</span>
+    <span class="tooltiptext" data-lang="en">Indicates if the mic audio is being captured properly.</span>
   </span>
   <div class="stat-row-content" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;">
     <span id="stat-audio">—</span>
@@ -42,16 +42,16 @@
           {% for name in models.available_models %}
             <option value="{{ name }}" {% if name == models.preferred_model or name == models.active_model %}selected{% endif %}>
               {{ name }}
-              {%- if name == models.fallback_model and name == models.preferred_model %} — 기본 · 권장
-              {%- elif name == models.fallback_model %} — 기본
-              {%- elif name == models.preferred_model %} — 권장
-              {%- elif name == models.last_known_good_model %} — 최근 검증됨
-              {%- else %} — 새 모델 · 확인 중
+              {%- if name == models.fallback_model and name == models.preferred_model %} — 기본 · 권장 (Default · Recommended)
+              {%- elif name == models.fallback_model %} — 기본 (Default)
+              {%- elif name == models.preferred_model %} — 권장 (Recommended)
+              {%- elif name == models.last_known_good_model %} — 최근 검증됨 (Verified)
+              {%- else %} — 새 모델 (New)
               {%- endif -%}
             </option>
           {% endfor %}
         {% else %}
-          <option value="gemini-3.5-live-translate-preview" selected>gemini-3.5-live-translate-preview — 기본 · 권장</option>
+          <option value="gemini-3.5-live-translate-preview" selected>gemini-3.5-live-translate-preview — 기본 · 권장 (Default · Recommended)</option>
         {% endif %}
       </select>
       <span id="stat-model-status">✓ Ready</span>
@@ -88,7 +88,10 @@
         Auto
       </label>
     </div>
-    <span class="seg-desc-text" id="stat-drift-status">잘못된 언어 감지 시 수동 교정 (Pause → Resume)</span>
+    <span class="seg-desc-text" id="stat-drift-status">
+      <span data-lang="ko">잘못된 언어 감지 시 수동 교정 (Pause → Resume)</span>
+      <span data-lang="en">Manual recovery on unexpected drift (Pause → Resume)</span>
+    </span>
   </div>
 </div>
 

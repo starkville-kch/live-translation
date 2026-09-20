@@ -52,6 +52,15 @@ PAUSE_THRESHOLD_S = 1.5  # seconds without new tokens before committing current 
 MAX_LINE_CHARS = 150      # force-commit when line exceeds this length (continuous speech)
 _BOUNDARY_LOOKBACK = 60  # search the last N chars for a natural split point
 
+# Interacting timing constants:
+# Mobile browsers (iOS Safari, Android Chrome) throttle background setInterval timers to ~60s.
+# A 60s inactivity TTL would be a 1:1 ratio with zero safety margin, causing attendees
+# with background tabs/locked screens to intermittently oscillate (flap) between active
+# and expired. We set CLIENT_INACTIVE_TTL_S to 90.0s (1.5:1 ratio, +50% safety margin).
+MOBILE_BACKGROUND_THROTTLE_INTERVAL_S: float = 60.0
+CLIENT_INACTIVE_TTL_S: float = 90.0
+RTT_SAMPLE_MAX_AGE_S: float = 60.0
+
 
 @dataclass
 class CaptionEvent:
@@ -126,48 +135,64 @@ class CaptionBroadcaster:
         self._current_source = val
 
 
-    def record_rtt(self, hostname: str, rtt_ms: float, client_id: str = "", target_lang: str = "") -> None:
-        if not isinstance(rtt_ms, (int, float)) or rtt_ms <= 0 or rtt_ms > 10000:
+    def record_rtt(
+        self, hostname: str, rtt_ms: float, client_id: str = "", target_lang: str = "", route_override: str = ""
+    ) -> None:
+        if not isinstance(rtt_ms, (int, float)) or rtt_ms < 0 or rtt_ms > 10000:
             return
 
         now = time.monotonic()
         h = (hostname or "").lower().strip()
+        if ":" in h and not h.startswith("["):
+            h = h.split(":", 1)[0]
+
         is_local = (
             not h
+            or "." not in h  # single-label local hostnames like 'skc', 'localhost'
             or h.endswith(".local")
-            or h in ("localhost", "127.0.0.1", "::1")
+            or h.endswith(".lan")
+            or h.endswith(".home")
+            or h in ("localhost", "127.0.0.1", "::1", "skc.live")
             or h.startswith("192.168.")
             or h.startswith("10.")
             or h.startswith("172.16.")
             or h.startswith("172.17.")
             or h.startswith("172.18.")
             or h.startswith("172.19.")
-            or h.startswith("172.2")
-            or h.startswith("172.30.")
-            or h.startswith("172.31.")
+            or (h.startswith("172.") and len(h.split(".")) >= 2 and h.split(".")[1].isdigit() and 16 <= int(h.split(".")[1]) <= 31)
         )
-        route = "local" if is_local else "public"
+        if route_override in ("local", "public"):
+            route = route_override
+        else:
+            route = "local" if is_local else "public"
+
         clean_cid = str(client_id)[:64] if client_id else ""
         clean_lang = str(target_lang).lower().strip() if target_lang else self.target_lang
 
         if clean_cid:
             self._active_clients[clean_cid] = (route, now, clean_lang)
 
-        # Prune active clients older than 30s
-        self._active_clients = {cid: val for cid, val in self._active_clients.items() if now - val[1] <= 30.0}
+        # Prune active clients older than CLIENT_INACTIVE_TTL_S (90s vs 60s mobile throttle)
+        self._active_clients = {cid: val for cid, val in self._active_clients.items() if now - val[1] <= CLIENT_INACTIVE_TTL_S}
 
-        # Prune samples older than 60s
-        self._rtt_samples_local = [s for s in self._rtt_samples_local if now - s[0] <= 60.0]
-        self._rtt_samples_public = [s for s in self._rtt_samples_public if now - s[0] <= 60.0]
+        # Prune samples older than RTT_SAMPLE_MAX_AGE_S (60s)
+        self._rtt_samples_local = [s for s in self._rtt_samples_local if now - s[0] <= RTT_SAMPLE_MAX_AGE_S}
+        self._rtt_samples_public = [s for s in self._rtt_samples_public if now - s[0] <= RTT_SAMPLE_MAX_AGE_S}
 
         if is_local:
             self._rtt_samples_local.append((now, float(rtt_ms)))
         else:
             self._rtt_samples_public.append((now, float(rtt_ms)))
 
+    def remove_telemetry_client(self, client_id: str) -> None:
+        """Immediately remove an active telemetry client on disconnect."""
+        clean_cid = str(client_id)[:64] if client_id else ""
+        if clean_cid:
+            self._active_clients.pop(clean_cid, None)
+
     def get_telemetry_stats(self) -> dict:
         now = time.monotonic()
-        self._active_clients = {cid: val for cid, val in self._active_clients.items() if now - val[1] <= 30.0}
+        self._active_clients = {cid: val for cid, val in self._active_clients.items() if now - val[1] <= CLIENT_INACTIVE_TTL_S}
 
         local_clients = sum(1 for cid, val in self._active_clients.items() if val[0] == "local")
         public_clients = sum(1 for cid, val in self._active_clients.items() if val[0] == "public")
