@@ -19,6 +19,7 @@
 ::       └── church-logo.png
 
 setlocal
+set "OUT_DIR=.agent"
 set "CONDA_ROOT=D:\Program_Files\miniconda3"
 set "CONDA_ENV=agent"
 if exist "%CONDA_ROOT%\envs\skc_build\python.exe" set "CONDA_ENV=skc_build"
@@ -58,11 +59,16 @@ echo Output Directory: %OUT_DIR%\dist\
 echo   ├── SKC_translation.exe
 echo   ├── SKC_setup.exe
 echo   ├── config.yaml
-echo   └── branding\
+echo   ├── CHANGELOG.md
+echo   ├── how_to_use.html
+echo   ├── cloudflared.exe
+echo   ├── branding\
+echo   └── SKC_translate_v*.zip  (Distribution Archive)
 echo.
 echo Deployment instructions:
-echo   1. Copy the contents of .agent\dist\ to the target Windows PC.
-echo   2. Run SKC_setup.exe once to set church identity and API key.
-echo   3. Run SKC_translation.exe every Sunday.
+echo   1. Distribute SKC_translate_v*.zip or contents of .agent\dist\ to the target Windows PC.
+echo   2. Extract to a clean folder.
+echo   3. Run SKC_setup.exe once to set church identity and API key.
+echo   4. Run SKC_translation.exe every Sunday.
 echo.
 pause

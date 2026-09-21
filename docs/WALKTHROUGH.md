@@ -168,6 +168,7 @@
     * 불필요한 `🔒 잠금` 버튼을 제거하고 통역 모델, 복구 모드 등 상태 배지 텍스트를 간소화하여 1024px 창 모드에서 버튼 겹침 현상 원천 해소.
     * 1024px 이하 해상도 대응 반응형 미디어 쿼리를 추가하여 좌측 메인 패널 폭 축소.
   * **이중 언어 전수 검사 자동화 (`tests/test_bilingual_parity.py`)**: Jinja2 템플릿 전체를 스캔하여 모든 한글 텍스트에 `data-lang="ko"` 및 대칭되는 `data-lang="en"` 태그가 존재하는지 자동 검증 (169개 테스트 통과).
+  * **배포 패키징 자동화 & CHANGELOG 연동 (`build_parallel.py`, `build_exe.bat`)**: 빌드 완료 시 `CHANGELOG.md`와 `how_to_use.html`을 `.agent/dist/`로 자동 복사하고, 런타임 로그/캐시를 제외한 원클릭 배포 패키지 `SKC_translate_v{version}.zip` 자동 생성.
 
 ---
 

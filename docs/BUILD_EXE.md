@@ -300,8 +300,14 @@ build_exe.bat
 2. **정확한 실제 경과 시간 (Wall-Clock Time) 측정**: 순차 연산 시간의 단순 합산이 아닌 실제 작업 완료까지 걸린 현실 시간을 측정하여 속도 향상(Speedup Factor)을 보고.
 3. **독립 격리 빌드**: 각 빌드가 충돌 없이 별도 작업 디렉토리를 사용하도록 보장.
 4. **빌드 후 필수 자산 자동 패키징 (`_safe_copy`)**:
-   - `branding/church-logo.png`
+   - `branding/church-logo.png` 및 `church-logo.webp`
    - `config.yaml`
+   - `CHANGELOG.md` (버전별 릴리즈 변경 내역)
+   - `how_to_use.html` (사용자 가이드)
    - `cloudflared.exe` (공식 Cloudflare 바이너리)
    - `.env` 및 `.env.example`
    - 파일 잠금 충돌(`PermissionError: [Errno 13]`) 방지: 파일 크기가 동일하거나 실행 중인 경우 안전하게 건너뛰며, `build_exe.bat` 시작 시 `taskkill`로 잔여 프로세스를 선제 정리.
+5. **원클릭 배포 압축 파일 자동 생성 (`create_distribution_zip`)**:
+   - 빌드 완료 즉시 `CHANGELOG.md`의 최신 버전을 파싱하여 `.agent\dist\SKC_translate_v{version}.zip`을 자동 생성.
+   - 런타임 로그(`logs/`), 내부 캐시(`var/`, `__pycache__`), 동적 생성 QR(`qr_*.png`)을 자동 제외하여 순수 배포 패키지만 격리 압축.
+   - 옵션: `--no-zip` (압축 건너뛰기), `--package-only` (바이너리 재컴파일 없이 자산 복사 및 배포 압축만 수행).
