@@ -243,6 +243,16 @@ logging:
   - 한국어/영어 코드 스위칭 및 다중 화자 예배(한/영 번갈아 발화) 환경에서 입력 언어를 실시간으로 자동 감지 및 세션 프롬프트 동적 조정.
   - 소스 언어 전환 시 컨텍스트 오염 방지 및 지연 최소화.
 
+### Phase 27 — 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
+- **목표**: Cloudflare Zero Trust 대시보드를 수동으로 탐색하여 토큰을 발급받는 복잡한 초기 진입 장벽을 제거하고, 설정 마법사(`SKC_setup.exe`) 및 초기 구동 시 터널 생성 및 공용 HTTPS 연결을 원클릭으로 자동화.
+- **주요 계획 항목**:
+  1. **원클릭 터널 프로비저닝 (Cloudflare API 연동)**:
+     - Cloudflare API 토큰 또는 간이 인증을 통해 사용자가 웹 대시보드를 직접 조작하지 않고도 터널 생성, 인증 토큰 획득, CNAME 호스트 라우팅 등록을 `SKC_setup.exe`에서 자동 수행.
+  2. **Zero-Config 임시 터널 폴백 (Quick Tunnel / TryCloudflare)**:
+     - 영구 도메인/토큰이 아직 설정되지 않은 새 환경에서도 즉시 외부 접속 테스트가 가능하도록, Cloudflare Quick Tunnel(`*.trycloudflare.com`) 임시 공용 HTTPS 프로비저닝 및 동적 QR 코드 생성 지원.
+  3. **사전 진단 및 연결 헬스체크 자동화**:
+     - 터널 프로세스 실행 전 방화벽 포트 차단, DNS 전파 상태, 로컬 8080 포트 응답성을 3초 이내에 사전 점검(Pre-flight Diagnostics)하여 사용자 친화적 해결 가이드 제공.
+
 
 
 
