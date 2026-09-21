@@ -46,6 +46,7 @@ import time
 from dataclasses import dataclass
 
 from app.events import operator_events
+from app.logger import server_log
 
 
 PAUSE_THRESHOLD_S = 1.5  # seconds without new tokens before committing current line
@@ -53,12 +54,11 @@ MAX_LINE_CHARS = 150      # force-commit when line exceeds this length (continuo
 _BOUNDARY_LOOKBACK = 60  # search the last N chars for a natural split point
 
 # Interacting timing constants:
-# Mobile browsers (iOS Safari, Android Chrome) throttle background setInterval timers to ~60s.
-# A 60s inactivity TTL would be a 1:1 ratio with zero safety margin, causing attendees
-# with background tabs/locked screens to intermittently oscillate (flap) between active
-# and expired. We set CLIENT_INACTIVE_TTL_S to 90.0s (1.5:1 ratio, +50% safety margin).
+# Mobile browsers (iOS Safari, Android Chrome) throttle background setInterval timers to ~60s,
+# and aggressive OS power-saving can introduce further suspension when phones are pocketed.
+# We set CLIENT_INACTIVE_TTL_S to 120.0s (2.0:1 ratio, +100% safety margin against 60s throttle).
 MOBILE_BACKGROUND_THROTTLE_INTERVAL_S: float = 60.0
-CLIENT_INACTIVE_TTL_S: float = 90.0
+CLIENT_INACTIVE_TTL_S: float = 120.0
 RTT_SAMPLE_MAX_AGE_S: float = 60.0
 
 
@@ -124,6 +124,7 @@ class CaptionBroadcaster:
         self._rtt_samples_local: list[tuple[float, float]] = []   # (timestamp, rtt_ms)
         self._rtt_samples_public: list[tuple[float, float]] = []  # (timestamp, rtt_ms)
         self._active_clients: dict[str, tuple[str, float]] = {}   # client_id -> (route, timestamp)
+        self._last_surplus_warn_at: float = 0.0
 
     @property
     def _current_ko(self) -> str:
@@ -176,8 +177,8 @@ class CaptionBroadcaster:
         self._active_clients = {cid: val for cid, val in self._active_clients.items() if now - val[1] <= CLIENT_INACTIVE_TTL_S}
 
         # Prune samples older than RTT_SAMPLE_MAX_AGE_S (60s)
-        self._rtt_samples_local = [s for s in self._rtt_samples_local if now - s[0] <= RTT_SAMPLE_MAX_AGE_S}
-        self._rtt_samples_public = [s for s in self._rtt_samples_public if now - s[0] <= RTT_SAMPLE_MAX_AGE_S}
+        self._rtt_samples_local = [s for s in self._rtt_samples_local if now - s[0] <= RTT_SAMPLE_MAX_AGE_S]
+        self._rtt_samples_public = [s for s in self._rtt_samples_public if now - s[0] <= RTT_SAMPLE_MAX_AGE_S]
 
         if is_local:
             self._rtt_samples_local.append((now, float(rtt_ms)))
@@ -209,6 +210,18 @@ class CaptionBroadcaster:
         local_rtt = round(statistics.median(local_valid)) if local_valid else None
         public_rtt = round(statistics.median(public_valid)) if public_valid else None
 
+        total_classified = local_clients + public_clients
+        total_sse = self.client_count
+        if total_classified > total_sse and (now - self._last_surplus_warn_at >= 30.0):
+            self._last_surplus_warn_at = now
+            server_log.warning(
+                "Telemetry surplus detected: classified=%d > sse=%d (possible stale telemetry record)",
+                total_classified,
+                total_sse,
+            )
+        total_listeners = max(total_classified, total_sse)
+        unknown_clients = max(0, total_listeners - total_classified)
+
         return {
             "local_rtt_ms": local_rtt,
             "local_samples": len(local_valid),
@@ -216,7 +229,8 @@ class CaptionBroadcaster:
             "public_rtt_ms": public_rtt,
             "public_samples": len(public_valid),
             "public_listeners": public_clients,
-            "total_listeners": local_clients + public_clients,
+            "unknown_listeners": unknown_clients,
+            "total_listeners": total_listeners,
             "listeners_by_target": by_target,
         }
 

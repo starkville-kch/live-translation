@@ -17,6 +17,8 @@
 9. [용어집 교정 패스 (Glossary)](#9-용어집-교정-패스-glossary)
 10. [Asyncio 패턴 요약](#10-asyncio-패턴-요약)
 11. [확장 가이드](#11-확장-가이드)
+12. [Cloudflare Named Tunnel 및 Windows 서비스 관리](#12-cloudflare-named-tunnel-및-windows-서비스-관리)
+13. [실시간 텔레메트리 및 청취자 통계 정합성 (Network Telemetry & Listener Tracking)](#13-실시간-텔레메트리-및-청취자-통계-정합성-network-telemetry--listener-tracking)
 
 ---
 
@@ -565,12 +567,15 @@ async def my_endpoint():
    - 이후 10초 주기로 정기 핑을 전송합니다. (초기 10초 동안 청취자 수가 0으로 집계되는 지연 현상 방지)
 2. **서브 밀리초 RTT 수용 (`rtt_ms >= 0`)**:
    - 로컬호스트 및 초저지연 LAN 환경에서 `Math.round(rtt)` 연산 시 `0 ms`가 반환될 수 있으므로, 백엔드(`broadcast.py`, `server.py`)는 `rtt_ms >= 0`을 정상 샘플로 수용하여 활성 청취자 목록(`_active_clients`)에서 누락되지 않도록 보장합니다.
-3. **접속 경로 판별 (Route Classification)**:
-   - 클라이언트 호스트명이 마침표가 없는 단일 라벨(예: `http://skc:8080`), 로컬 도메인(`.local`, `.lan`, `.home`, `skc.live`), 또는 사설 IP 대역인 경우 `local`로 자동 분류됩니다.
-   - Cloudflare Tunnel 도메인(`live.starkvillekoreanchurch.org`)을 통해 인입된 요청은 `PublicHostGuardMiddleware.get_public_hosts()` 검사를 거쳐 `public`으로 분류됩니다.
+3. **접속 경로 판별 및 ASGI 스코프 스탬핑 (Route Classification & ASGI Scope Stamping)**:
+   - `PublicHostGuardMiddleware`가 인입되는 모든 HTTP/WebSocket 요청에 대해 호스트 및 포워딩 헤더(`Host`, `X-Forwarded-Host`, `Forwarded`)를 검사하여 `scope["route_scope"] = "public" if is_public else "local"`로 1회 원자적 스탬핑합니다.
+   - 핸들러(`/ws/telemetry` 등)는 중복 계산이나 외부 헬퍼 재호출 없이 `ws.scope.get("route_scope", "local")`을 직접 참조합니다.
 4. **상호작용 타이밍 마진 (Interacting Timeouts Margin)**:
    - 모바일 브라우저(iOS/Android Safari/Chrome)는 백그라운드 탭 전환 또는 화면 잠금 시 `setInterval`을 약 60초 간격으로 스로틀링합니다.
    - 백엔드의 비활성 청취자 정리 TTL(`CLIENT_INACTIVE_TTL_S`)은 60초와 동일하게 설정하지 않고, 50%의 지터 안전 마진을 둔 **90초** (1.5:1 비율)로 운영하여 청취자 수가 주기적으로 0으로 출렁이는 현상(Flapping)을 방지합니다.
+5. **이벤트 정합성 및 Unknown 버킷 (Eventual Consistency & Unknown Bucket)**:
+   - SSE 브로드캐스트 연결 큐(`total_listeners`)와 텔레메트리 WebSocket 수신 간의 네트워크 시차를 흡수하기 위해 `local_listeners + public_listeners + unknown_listeners == total_listeners` 항등식을 유지합니다.
 
 ### 운영자 콘솔 이중 언어 현지화 원칙 (Bilingual Parity)
 - 모든 UI 요소는 `data-lang="ko"`와 `data-lang="en"` 요소를 동시에 유지해야 하며, 런타임 텍스트 동적 치환 시에도 순수 단일 언어 문자열로 innerHTML/textContent를 덮어쓰지 않고 이중 언어 태그를 보존하거나 `getOperatorUiLanguage()`를 검사하여 일치시킵니다.
+- `<option>` 태그는 HTML 표준상 하위 `<span>` 요소를 가질 수 없으므로, 템플릿에는 `data-tag` 속성만 부여하고 자바스크립트(`renderModelDropdown()`)가 UI 언어에 맞춰 `option.textContent`를 동적으로 합성합니다.

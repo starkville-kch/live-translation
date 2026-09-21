@@ -572,8 +572,8 @@
   <h2 data-lang="ko">상태 모니터 표시등 설명</h2>
   <h2 data-lang="en">Status Monitor Explanations</h2>
 
-  <p data-lang="ko">운영자 콘솔 상단에 실시간 핵심 파이프라인의 상태가 3개의 배지로 표시됩니다.</p>
-  <p data-lang="en">The operator console displays 3 real-time pipeline status badges in the header.</p>
+  <p data-lang="ko">운영자 콘솔 상단에 실시간 핵심 파이프라인의 상태가 3개의 배지로 표시됩니다. 상단 우측의 <code>en</code> / <code>한</code> 버튼을 눌러 콘솔 언어를 언제든지 전환할 수 있습니다.</p>
+  <p data-lang="en">The operator console displays 3 real-time pipeline status badges in the header. Use the <code>en</code> / <code>한</code> toggle in the top-right corner to switch interface language at any time.</p>
 
   <table>
     <thead>
@@ -585,7 +585,7 @@
     </thead>
     <tbody>
       <tr>
-        <td><strong data-lang="ko">🎙 오디오 (Audio)</strong><strong data-lang="en">🎙 Audio</strong></td>
+        <td><strong data-lang="ko">오디오 (Audio)</strong><strong data-lang="en">Audio</strong></td>
         <td><span class="badge badge-green" data-lang="ko">초록 (Green)</span><span class="badge badge-green" data-lang="en">Green</span></td>
         <td><span data-lang="ko">마이크 / 믹서 음성 신호가 정상 수신 중</span><span data-lang="en">Microphone audio signal is receiving normally</span></td>
       </tr>
@@ -600,34 +600,34 @@
         <td><span data-lang="ko">오디오 장치 연결 끊김 (USB 케이블 확인)</span><span data-lang="en">Audio device disconnected (check USB cable)</span></td>
       </tr>
       <tr>
-        <td><strong data-lang="ko">🤖 제미나이 AI (Gemini)</strong><strong data-lang="en">🤖 Gemini AI</strong></td>
-        <td><span class="badge badge-green" data-lang="ko">초록 (Green)</span><span class="badge badge-green" data-lang="en">Green</span></td>
-        <td><span data-lang="ko">구글 Gemini AI 연결됨 — 실시간 통역 진행 중</span><span data-lang="en">Gemini AI connected — live streaming active</span></td>
-      </tr>
-      <tr>
-        <td></td>
-        <td><span class="badge badge-amber" data-lang="ko">노랑 (Amber)</span><span class="badge badge-amber" data-lang="en">Amber</span></td>
-        <td><span data-lang="ko">일시정지 중 / 10분 주기 자동 재연결 대기 중</span><span data-lang="en">Paused / Automatic reconnection in progress</span></td>
-      </tr>
-      <tr>
-        <td></td>
-        <td><span class="badge badge-red" data-lang="ko">빨강 (Red)</span><span class="badge badge-red" data-lang="en">Red</span></td>
-        <td><span data-lang="ko">API 연결 오류 — 인터넷 확인 후 Stop ➔ Start 재실행</span><span data-lang="en">API connection error — check network, click Stop ➔ Start</span></td>
-      </tr>
-      <tr>
-        <td><strong data-lang="ko">🔤 실시간 자막 (Translation)</strong><strong data-lang="en">🔤 Translation</strong></td>
+        <td><strong data-lang="ko">통역 (Translation)</strong><strong data-lang="en">Translation</strong></td>
         <td><span class="badge badge-green" data-lang="ko">초록 (Green)</span><span class="badge badge-green" data-lang="en">Green</span></td>
         <td><span data-lang="ko">참석자 스마트폰 화면으로 자막 정상 송출 중</span><span data-lang="en">Live captions flowing to attendees</span></td>
       </tr>
       <tr>
         <td></td>
         <td><span class="badge badge-amber" data-lang="ko">노랑 (Amber)</span><span class="badge badge-amber" data-lang="en">Amber</span></td>
-        <td><span data-lang="ko">일시정지 중 (Paused)</span><span data-lang="en">Paused (standby)</span></td>
+        <td><span data-lang="ko">일시정지 중 (Paused) 또는 준비 중</span><span data-lang="en">Paused (standby) or initializing</span></td>
       </tr>
       <tr>
         <td></td>
         <td><span class="badge badge-red" data-lang="ko">빨강 (Red)</span><span class="badge badge-red" data-lang="en">Red</span></td>
         <td><span data-lang="ko">서비스 중지됨 또는 송출 오류</span><span data-lang="en">Stopped or stream error</span></td>
+      </tr>
+      <tr>
+        <td><strong data-lang="ko">HTTPS (공용 접속)</strong><strong data-lang="en">HTTPS (Public Tunnel)</strong></td>
+        <td><span class="badge badge-green" data-lang="ko">초록 (Green)</span><span class="badge badge-green" data-lang="en">Green</span></td>
+        <td><span data-lang="ko">연결됨 — 외부 접속 정상 (QR 코드 사용 가능)</span><span data-lang="en">Connected — Public QR ready</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><span class="badge badge-amber" data-lang="ko">노랑 (Amber)</span><span class="badge badge-amber" data-lang="en">Amber</span></td>
+        <td><span data-lang="ko">연결 시도 중 / 확인 대기</span><span data-lang="en">Connecting…</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><span class="badge badge-red" data-lang="ko">빨강 (Red)</span><span class="badge badge-red" data-lang="en">Red</span></td>
+        <td><span data-lang="ko">연결 불가 (로컬 Wi-Fi 번역은 정상 작동)</span><span data-lang="en">Offline (Local Wi-Fi still works)</span></td>
       </tr>
     </tbody>
   </table>

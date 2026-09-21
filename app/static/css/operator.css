@@ -51,6 +51,32 @@ main {
 .col-left  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .col-right { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 20px; }
 
+/* Responsive adjustments: Full screen maintains 1024px composition.
+   When window is reduced (e.g. snapped window, quarter-screen <= 1024px),
+   reduce the left panel by 1 inch (~96px) and tighten spacing. */
+@media (max-width: 1024px) {
+  main {
+    max-width: 928px; /* 1024px - 96px (1in) */
+    padding: 16px;
+    gap: 16px;
+  }
+  .col-left {
+    max-width: 556px; /* Reduced by 1in (96px) from full-screen 652px */
+  }
+}
+
+@media (max-width: 768px) {
+  main {
+    flex-direction: column;
+    padding: 12px;
+    gap: 16px;
+  }
+  .col-left, .col-right {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
 /* Cards */
 .card {
   background: var(--color-warm-50);

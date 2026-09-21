@@ -30,7 +30,7 @@
 <!-- Row 2: Live Translation Model -->
 <div class="stat-row">
   <span class="stat-row-label tooltip">
-    <span data-lang="ko">실시간 통역 모델</span>
+    <span data-lang="ko">통역 모델</span>
     <span data-lang="en">Translation Model</span>
     <span class="tooltiptext" data-lang="ko">실시간 음성 번역 및 자막 스트리밍을 수행하는 구글 제미나이 AI 모델입니다.</span>
     <span class="tooltiptext" data-lang="en">Google Gemini AI model performing live translation and caption streaming.</span>
@@ -40,18 +40,13 @@
       <select id="model-select">
         {% if models and models.available_models %}
           {% for name in models.available_models %}
-            <option value="{{ name }}" {% if name == models.preferred_model or name == models.active_model %}selected{% endif %}>
+            <option value="{{ name }}" {% if name == models.preferred_model or name == models.active_model %}selected{% endif %}
+              data-tag="{% if name == models.fallback_model and name == models.preferred_model %}default_rec{% elif name == models.fallback_model %}default{% elif name == models.preferred_model %}rec{% elif name == models.last_known_good_model %}verified{% else %}new{% endif %}">
               {{ name }}
-              {%- if name == models.fallback_model and name == models.preferred_model %} — 기본 · 권장 (Default · Recommended)
-              {%- elif name == models.fallback_model %} — 기본 (Default)
-              {%- elif name == models.preferred_model %} — 권장 (Recommended)
-              {%- elif name == models.last_known_good_model %} — 최근 검증됨 (Verified)
-              {%- else %} — 새 모델 (New)
-              {%- endif -%}
             </option>
           {% endfor %}
         {% else %}
-          <option value="gemini-3.5-live-translate-preview" selected>gemini-3.5-live-translate-preview — 기본 · 권장 (Default · Recommended)</option>
+          <option value="gemini-3.5-live-translate-preview" selected data-tag="default_rec">gemini-3.5-live-translate-preview</option>
         {% endif %}
       </select>
       <span id="stat-model-status">✓ Ready</span>
@@ -70,8 +65,8 @@
 <!-- Row 3: Auto Drift Recovery (Segmented Pill Control) -->
 <div class="stat-row auto-recovery-row">
   <span class="stat-row-label tooltip">
-    <span data-lang="ko">자동 언어 오류 복구</span>
-    <span data-lang="en">Language Drift Fix</span>
+    <span data-lang="ko">언어 오류 복구</span>
+    <span data-lang="en">Drift Recovery</span>
     <span class="tooltiptext" data-lang="ko">일본어/베트남어 등 잘못된 언어 감지가 계속될 때 세션을 자동으로 초기화합니다.</span>
     <span class="tooltiptext" data-lang="en">Automatically resets translation session if sustained language drift occurs.</span>
   </span>

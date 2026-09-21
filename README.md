@@ -118,6 +118,7 @@ python -m app.audio --test 2 30
 
 # 6. 로컬 개발 서버 실행 / Start local dev server
 python main.py
+```
 
 ### 4.1. 단일 실행 파일 (.exe) 빌드
 개발 환경 없이 파이썬 설치가 안 된 운영자 PC에서 실행 가능한 `.exe` 단일 파일을 빌드하려면 아래 명령어를 실행합니다. (자세한 내용은 [BUILD_EXE.md](docs/BUILD_EXE.md) 참조)
@@ -125,7 +126,7 @@ python main.py
 ```bat
 # 1회성 빌드용 Conda 환경 생성 (선택 사항)
 conda create -n skc_build python=3.11 --yes
-conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy pyinstaller
+conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf pyinstaller
 
 # 단일 executable 빌드 스크립트 실행
 build_exe.bat
@@ -265,6 +266,7 @@ python -m app.audio --test 2 30
 
 # 6. 로컬 개발 서버 실행 / Start local dev server
 python main.py
+```
 
 ### 4.1 Standalone Distribution Package (.exe)
 To compile standalone `.exe` binaries that run on target Windows PCs without requiring Python installed, run the build batch script (see [BUILD_EXE.md](docs/BUILD_EXE.md) for full technical details):

@@ -769,7 +769,9 @@ class PublicHostGuardMiddleware:
         await send({"type": "http.response.body", "body": body})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        if not self._is_public_host(scope):
+        is_public = self._is_public_host(scope)
+        scope["route_scope"] = "public" if is_public else "local"
+        if not is_public:
             await self.app(scope, receive, send)
             return
 
@@ -965,8 +967,8 @@ async def telemetry_stream(ws: WebSocket):
                     client_id = cid
                 target_lang = str(data.get("target_lang", ""))
                 if rtt_ms >= 0:
-                    is_pub = PublicHostGuardMiddleware.is_public_hostname(ws.headers.get("host", ""))
-                    route_override = "public" if is_pub else ""
+                    route_scope = ws.scope.get("route_scope", "local")
+                    route_override = "public" if route_scope == "public" else ""
                     manager.primary_broadcaster.record_rtt(
                         hostname, rtt_ms, client_id=client_id, target_lang=target_lang, route_override=route_override
                     )
@@ -1438,7 +1440,7 @@ async def update_translation_targets(request: Request, body: dict):
 
 
 @app.get("/api/status")
-async def get_status():
+async def get_status(request: Request = None):
     global _tunnel_logged, _tunnel_failed_logged
     a = audio.state
     mgr_state = manager.state()
@@ -1513,6 +1515,8 @@ async def get_status():
         "auto_drift_correction": primary_sess.auto_drift_correction if primary_sess else manager.auto_drift_correction,
         "session_epoch": primary_sess.session_epoch if primary_sess else 0,
         "device_index": audio_cfg().get("device_index", 0),
+        "auth_enabled": is_auth_enabled(),
+        "authenticated": is_authenticated(request) if request is not None else False,
         "auto_restart_attempt": _auto_restart_attempt,
         "auto_restart_reason": _auto_restart_reason,
         "admin_url": _get_admin_url(),
@@ -1734,7 +1738,7 @@ async def operator_page(request: Request):
     t_cfg = translation_cfg()
     auth_enabled = is_auth_enabled()
     authenticated = is_authenticated(request)
-    return _read_template(
+    content = _read_template(
         "operator.html",
         default_ui_lang=default_lang,
         models=models_state,
@@ -1742,6 +1746,10 @@ async def operator_page(request: Request):
         auth_enabled=auth_enabled,
         authenticated=authenticated,
         build_id=_SERVER_BUILD_ID,
+    )
+    return HTMLResponse(
+        content=content,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
 
 

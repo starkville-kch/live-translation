@@ -80,7 +80,7 @@
           <input type="checkbox" value="{{ code }}" {% if is_checked %}checked{% endif %} {% if is_conflict %}disabled{%
             endif %} data-code="{{ code }}">
           <span class="lang-target-label">
-            {%- if code == 'ko' %}한국어 (Korean)
+            {%- if code == 'ko' %}한국어 (Korean) {# i18n-exempt #}
             {%- elif code == 'en' %}English
             {%- elif code == 'zh' %}中文 (Chinese)
             {%- elif code == 'uk' %}Українська (Ukrainian)
@@ -113,7 +113,7 @@
         </label>
         <label class="lang-target-item disabled conflict">
           <input type="checkbox" value="ko" disabled data-code="ko">
-          <span class="lang-target-label">한국어 (Korean)</span>
+          <span class="lang-target-label">한국어 (Korean)</span> {# i18n-exempt #}
           <span class="conflict-target-badge">
             <span data-lang="ko">원문 언어</span>
             <span data-lang="en">Spoken</span>

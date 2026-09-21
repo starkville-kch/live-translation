@@ -56,6 +56,32 @@ MAX_RECONNECT_ATTEMPTS = 3
 RECONNECT_BASE_DELAY = 2.0  # seconds, doubled each attempt
 
 
+def _matches_exception_text(exc: BaseException | None, target: str) -> bool:
+    """Recursively check if exc, nested sub-exceptions, cause, or context match target string."""
+    if exc is None:
+        return False
+    if target in repr(exc) or target in str(exc):
+        return True
+    if hasattr(exc, "exceptions"):
+        try:
+            if any(_matches_exception_text(sub, target) for sub in exc.exceptions):
+                return True
+        except Exception:
+            pass
+    cause = getattr(exc, "__cause__", None)
+    if cause and _matches_exception_text(cause, target):
+        return True
+    context = getattr(exc, "__context__", None)
+    if context and _matches_exception_text(context, target):
+        return True
+    return False
+
+
+def _is_goaway_exception(exc: BaseException | None) -> bool:
+    """Check if exception or any nested sub-exception represents a Google Live API GoAway signal."""
+    return _matches_exception_text(exc, "GoAway")
+
+
 class SessionStatus(str, Enum):
     STOPPED = "stopped"
     CONNECTING = "connecting"
@@ -167,6 +193,7 @@ class GeminiSession:
         self._state = SessionState()
         self._stop_event = asyncio.Event()
         self._attempt = 0
+        self._reconnect_count: int = 0
         self._session_epoch: int = 0
         self._resumption_handle: str | None = None
         self._audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=500)
@@ -434,6 +461,7 @@ class GeminiSession:
         self._has_verified_output = False
         self._session_epoch += 1
         self._resumption_handle = None
+        self._reconnect_count = 0
         self.clear_drift_state()
         self._drain_audio_queue()
         self._task = asyncio.create_task(self._run_with_retry())
@@ -454,7 +482,7 @@ class GeminiSession:
                 pass
         self._task = None
         self._drain_audio_queue()
-        self._emit(status=SessionStatus.STOPPED, last_event="Paused (clean standby)")
+        self._emit(status=SessionStatus.STOPPED, last_event="Paused (clean standby)", reconnect_count=self._reconnect_count)
         operator_events.add("gemini", "Gemini translation paused (clean standby)")
 
     async def resume_clean(self) -> None:
@@ -499,11 +527,13 @@ class GeminiSession:
                 pass
         self._task = None
         self._resumption_handle = None
+        self._reconnect_count = 0
         self.clear_drift_state()
         self._drain_audio_queue()
         model_resolver.unlock_session()
         self._emit(status=SessionStatus.STOPPED,
-                   last_event="Stopped by operator")
+                   last_event="Stopped by operator",
+                   reconnect_count=0)
         operator_events.add("gemini", "Gemini session stopped")
 
     async def send_audio(self, chunk: bytes) -> None:
@@ -529,7 +559,7 @@ class GeminiSession:
                     self._emit(
                         status=SessionStatus.CONNECTING,
                         last_event=f"Connecting to {candidate}",
-                        reconnect_count=0,
+                        reconnect_count=self._reconnect_count,
                     )
                     server_log.info("Attempting initial connection with candidate [%d/%d]: %s", idx + 1, len(candidates), candidate)
                     operator_events.add("gemini", f"Connecting to {candidate}")
@@ -549,18 +579,20 @@ class GeminiSession:
             if connected_model is None:
                 err_msg = f"All candidate models failed: {', '.join(candidates)}"
                 server_log.error(err_msg)
-                self._emit(status=SessionStatus.FAILED, last_event=err_msg)
+                self._emit(status=SessionStatus.FAILED, last_event=err_msg, reconnect_count=self._reconnect_count)
                 operator_events.add("error", "Gemini connection failed for all candidates", {"candidates": candidates})
                 return
 
         # Phase 2: In-session loop with exponential backoff on GoAway / errors using locked model
         locked_model = model_resolver.locked_model or model_resolver.fallback_model
+        is_first_connect = True
 
         while not self._stop_event.is_set():
             current_epoch = self._session_epoch
             try:
                 is_resume = self._resumption_handle is not None and not is_clean_resume
-                if self._attempt > 0 or is_resume:
+                is_reconnect = (not is_first_connect and not is_clean_resume) or is_resume
+                if self._attempt > 0 or is_reconnect:
                     status = SessionStatus.RECONNECTING
                     event_msg = f"Reconnecting to {locked_model} (attempt {self._attempt})" if self._attempt > 0 else f"Reconnecting to {locked_model} (resuming session)"
                     if self._attempt > 0:
@@ -572,12 +604,14 @@ class GeminiSession:
                     event_msg = f"Attempting connection to {locked_model}"
                     operator_events.add("gemini", f"Attempting connection to {locked_model}")
 
-                self._emit(status=status, last_event=event_msg, reconnect_count=self._attempt)
+                self._emit(status=status, last_event=event_msg, reconnect_count=self._reconnect_count)
                 server_log.info(event_msg)
                 session_log.debug(event_msg)
 
-                await self._run_session(model=locked_model, is_reconnect=(self._attempt > 0 or is_resume), epoch=current_epoch)
+                await self._run_session(model=locked_model, is_reconnect=is_reconnect, epoch=current_epoch, is_clean_resume=is_clean_resume)
                 self._attempt = 0  # reset on clean run completion
+                is_first_connect = False
+                is_clean_resume = False
                 if self._stop_event.is_set():
                     return
 
@@ -589,7 +623,7 @@ class GeminiSession:
                 self._emit(
                     status=SessionStatus.FAILED,
                     last_event=err_msg,
-                    reconnect_count=self._attempt
+                    reconnect_count=self._reconnect_count
                 )
                 operator_events.add("error", "Gemini configuration error — session stopped", {"error": str(e), "model": locked_model})
                 return
@@ -600,10 +634,10 @@ class GeminiSession:
                 raise
 
             except Exception as e:
-                if "1000" in str(e) and self._stop_event.is_set():
+                if _matches_exception_text(e, "1000") and self._stop_event.is_set():
                     return
 
-                is_goaway = "GoAway" in str(e)
+                is_goaway = _is_goaway_exception(e)
                 if is_goaway:
                     delay = 0.2
                     server_log.info("GoAway received — reconnecting immediately in %.1fs", delay)
@@ -616,7 +650,7 @@ class GeminiSession:
                         self._emit(
                             status=SessionStatus.FAILED,
                             last_event=f"Translation unavailable: {e}",
-                            reconnect_count=self._attempt
+                            reconnect_count=self._reconnect_count
                         )
                         operator_events.add("error", "Gemini failed: max reconnects reached",
                                             {"error": str(e), "attempts": self._attempt, "model": locked_model})
@@ -693,7 +727,7 @@ class GeminiSession:
                 ),
             )
 
-    async def _run_session(self, model: str, is_reconnect: bool, epoch: int) -> None:
+    async def _run_session(self, model: str, is_reconnect: bool, epoch: int, is_clean_resume: bool = False) -> None:
         config = self._build_config(model)
         is_resuming = self._resumption_handle is not None
 
@@ -711,10 +745,12 @@ class GeminiSession:
                 model=model, config=config
             ) as session:
                 self._attempt = 0
+                if is_reconnect and not is_clean_resume:
+                    self._reconnect_count += 1
                 self._emit(
                     status=SessionStatus.CONNECTED,
                     last_event="Connected to Gemini",
-                    reconnect_count=0,
+                    reconnect_count=self._reconnect_count,
                 )
                 server_log.info("[%s] Gemini Live session connected successfully on model: %s (epoch %d)", self.tag, model, epoch)
                 operator_events.add("gemini", f"Live translation active [{self.target_language_code}] ({model})")
@@ -733,9 +769,9 @@ class GeminiSession:
                 return
             raise
         except Exception as e:
-            if "1000" in str(e) and (self._stop_event.is_set() or epoch != self._session_epoch):
+            if _matches_exception_text(e, "1000") and (self._stop_event.is_set() or epoch != self._session_epoch):
                 return
-            log_fn = server_log.info if "GoAway" in str(e) else server_log.error
+            log_fn = server_log.info if _is_goaway_exception(e) else server_log.error
             log_fn(
                 "[%s] SESSION_FAILURE: model=%s type=%s message=%s (epoch=%d)",
                 self.tag,

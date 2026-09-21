@@ -5,6 +5,37 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.2] - 2026-09-21
+
+### Changed
+- **Operator Header Language Switcher & Layout**:
+  - Reverted the operator interface language switcher to the clean 2-pill toggle `en` / `한`.
+  - Removed the `🔒 잠금` button from the operator header to eliminate horizontal layout congestion and overlap.
+  - Shortened status monitor labels: "통역 모델", "언어 오류 복구", "통역", "HTTPS" for compact space conservation.
+  - Added responsive left panel width scaling (`@media (max-width: 1024px)`) reducing main column width by 1 inch (~96px to 556px max-width) for windowed and split-screen setups.
+  - Deduplicated status icons and emojis on the audio listen button and service status pill.
+
+### Fixed
+- **Telemetry Invariants & Mobile Background Margins (`app/broadcast.py`)**:
+  - Defined explicit timing constants `MOBILE_BACKGROUND_THROTTLE_INTERVAL_S = 60.0` and `CLIENT_INACTIVE_TTL_S = 120.0` (2:1 margin) to prevent mobile browser background timer throttling from dropping active listeners.
+  - Enforced additive identity invariant `local + public + unknown == total` with bounded eventual consistency.
+  - Added operational warning log when classified telemetry exceeds active SSE streams (`total_classified > total_sse`).
+- **Cumulative Reconnection Tracking (`app/gemini_session.py`)**:
+  - Added recursive exception unwrapping (`_is_goaway_exception`, `_matches_exception_text`) to detect GoAway and clean 1000 WebSocket closures within Python 3.11 `asyncio.TaskGroup` `ExceptionGroup` hierarchies.
+  - Preserved cumulative `reconnect_count` across clean pause/resume cycles.
+- **Frontend Localization Parity & Offline Dynamic Sync (`app/static/js/operator.js`, `app/server.py`)**:
+  - Added bilingual spans for audio input level meter (`입력 레벨 — 신호 없음` / `Input Level — No Signal`).
+  - Added focus guard and unchanged state check to model dropdown re-render (`renderModelDropdown()`), directly callable from `setOperatorUiLanguage()`.
+  - Added `Cache-Control: no-cache, no-store, must-revalidate` to `/admin` and build-id cache-busting to `operator.css`.
+- **Documentation & User Guide Updates (`how_to_use.html`, `README.md`)**:
+  - Updated user guide (`how_to_use.html`) status badge table to match the 3 header badges (`오디오`, `통역`, `HTTPS`) and noted the `en` / `한` language switcher.
+  - Corrected `zeroconf` dependency in conda installation commands and closed open markdown code fences in `README.md`.
+
+### Added
+- **Automated Bilingual Parity & Harness Test Suites (`tests/`)**:
+  - `tests/test_bilingual_parity.py`: Zero-dependency HTML parser scanning all templates to verify every Hangul character is enclosed within a `data-lang="ko"` element with a `data-lang="en"` sibling.
+  - `tests/test_attendee_harness.py`: Automated invariant and throttle verification suite.
+
 ## [3.2.1] - 2026-09-20
 
 ### Fixed

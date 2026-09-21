@@ -92,9 +92,7 @@ async function checkAuth() {
     const res = await fetch('/api/auth/status');
     const data = await res.json();
     const modalEl = document.getElementById('auth-modal');
-    const authControls = document.getElementById('header-auth-controls');
     if (data.auth_enabled) {
-      if (authControls) authControls.style.display = data.authenticated ? 'inline-flex' : 'none';
       if (!data.authenticated) {
         if (modalEl) {
           modalEl.classList.remove('hidden');
@@ -109,23 +107,12 @@ async function checkAuth() {
         }
       }
     } else {
-      if (authControls) authControls.style.display = 'none';
       if (modalEl) {
         modalEl.classList.add('hidden');
         modalEl.style.display = 'none';
       }
     }
   } catch {}
-}
-
-const btnOperatorLogout = document.getElementById('btn-operator-logout');
-if (btnOperatorLogout) {
-  btnOperatorLogout.addEventListener('click', async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-    } catch {}
-    checkAuth();
-  });
 }
 
 async function submitAuth() {
@@ -152,6 +139,7 @@ async function submitAuth() {
       loadDevices();
       pollEvents();
       startStatusPoll();
+      checkAuth();
     } else {
       if (errMsg) {
         errMsg.textContent = '암호가 일치하지 않습니다.';
@@ -375,6 +363,7 @@ function setOperatorUiLanguage(lang, syncToServer = false) {
   }
   updateDriftUI(autoDriftCorrectionEnabled);
   renderAudioButton();
+  if (typeof renderModelDropdown === 'function') renderModelDropdown();
   if (typeof updateSourceUI === 'function') updateSourceUI();
   if (typeof renderSelectedTargets === 'function') renderSelectedTargets();
   if (typeof pollStatus === 'function') pollStatus();
@@ -394,7 +383,7 @@ function updateControlBar(st) {
 
   if (!isRunning && stateStr === 'stopped') {
     serviceStatusPill.className = 'service-status-pill status-stopped';
-    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '○ Standby (STOPPED)' : '○ 대기 중'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? 'Standby (STOPPED)' : '대기 중'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
@@ -415,7 +404,7 @@ function updateControlBar(st) {
   }
   else if (stateStr === 'starting') {
     serviceStatusPill.className = 'service-status-pill status-transient';
-    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Connecting Translation…' : '⟳ 번역 연결 중...'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? 'Connecting Translation…' : '번역 연결 중...'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
@@ -481,7 +470,7 @@ function updateControlBar(st) {
     const timeStr = formatDuration(pauseSec);
 
     serviceStatusPill.className = 'service-status-pill status-paused';
-    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? `⏸ Paused ${timeStr}` : `⏸ 일시정지 ${timeStr}`}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? `Paused ${timeStr}` : `일시정지 ${timeStr}`}</span>`;
 
     if (pillSub) {
       pillSub.style.display = 'block';
@@ -516,7 +505,7 @@ function updateControlBar(st) {
   }
   else if (sessionStatus === 'reconnecting' || sessionStatus === 'connecting') {
     serviceStatusPill.className = 'service-status-pill status-transient';
-    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? '⟳ Reconnecting Translation…' : '⟳ 번역 다시 연결 중...'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="spinner-icon"></span><span class="status-text">${isEn ? 'Reconnecting Translation…' : '번역 다시 연결 중...'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
@@ -536,7 +525,7 @@ function updateControlBar(st) {
   }
   else {
     serviceStatusPill.className = 'service-status-pill status-running';
-    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? '● Live (RUNNING)' : '● 번역 중'}</span>`;
+    if (statusMain) statusMain.innerHTML = `<span class="status-dot"></span><span class="status-text">${isEn ? 'Live (RUNNING)' : '번역 중'}</span>`;
     if (pillSub) pillSub.style.display = 'none';
 
     if (btnPrimaryAction) {
@@ -702,8 +691,71 @@ if (autoStopSelect) {
 // ============================================================
 // MODEL RESOLVER & AUTO DRIFT RECOVERY
 // ============================================================
+const MODEL_TAG_LABELS = {
+  default_rec: { ko: '', en: '' },
+  default:     { ko: '', en: '' },
+  rec:         { ko: '', en: '' },
+  verified:    { ko: '검증됨', en: 'Verified' },
+  new:         { ko: '새 모델', en: 'New' },
+};
+
+function renderModelDropdown(modelsInfo) {
+  const sel = document.getElementById('model-select');
+  if (!sel) return;
+  const isEn = getOperatorUiLanguage() === 'en';
+  const currentLangKey = isEn ? 'en' : 'ko';
+  const langRendered = sel.getAttribute('data-lang-rendered');
+
+  if (modelsInfo) {
+    const currentOpts = Array.from(sel.options).map(o => o.value);
+    const newModels = modelsInfo.available_models || [modelsInfo.fallback_model];
+    const modelsChanged = JSON.stringify(currentOpts) !== JSON.stringify(newModels);
+
+    // Skip rebuilding if user currently has dropdown focused
+    if (document.activeElement === sel && sel.options.length > 0) return;
+
+    // Skip if models unchanged and language matches
+    if (!modelsChanged && langRendered === currentLangKey && sel.options.length > 0) {
+      const targetVal = modelsInfo.preferred_model || modelsInfo.active_model;
+      if (targetVal && sel.value !== targetVal && document.activeElement !== sel) {
+        sel.value = targetVal;
+      }
+      return;
+    }
+
+    sel.innerHTML = '';
+    sel.setAttribute('data-lang-rendered', currentLangKey);
+    newModels.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      let tag = 'new';
+      if (name === modelsInfo.fallback_model && name === modelsInfo.preferred_model) tag = 'default_rec';
+      else if (name === modelsInfo.fallback_model) tag = 'default';
+      else if (name === modelsInfo.preferred_model) tag = 'rec';
+      else if (name === modelsInfo.last_known_good_model) tag = 'verified';
+
+      opt.setAttribute('data-tag', tag);
+      const tagLabel = MODEL_TAG_LABELS[tag] ? (isEn ? MODEL_TAG_LABELS[tag].en : MODEL_TAG_LABELS[tag].ko) : '';
+      opt.textContent = tagLabel ? `${name} — ${tagLabel}` : name;
+      if (name === modelsInfo.preferred_model || name === modelsInfo.active_model) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } else {
+    if (langRendered === currentLangKey) return;
+    sel.setAttribute('data-lang-rendered', currentLangKey);
+    Array.from(sel.options).forEach(opt => {
+      const tag = opt.getAttribute('data-tag');
+      if (tag && MODEL_TAG_LABELS[tag]) {
+        const tagLabel = isEn ? MODEL_TAG_LABELS[tag].en : MODEL_TAG_LABELS[tag].ko;
+        opt.textContent = tagLabel ? `${opt.value} — ${tagLabel}` : opt.value;
+      }
+    });
+  }
+}
+
 const modelSelect = document.getElementById('model-select');
 if (modelSelect) {
+  renderModelDropdown();
   modelSelect.addEventListener('change', async (e) => {
     const preferred = e.target.value;
     try {
@@ -1217,39 +1269,7 @@ async function pollStatus() {
 
       if (sel) {
         sel.disabled = st.service_running || isTestingModel;
-        const currentOpts = Array.from(sel.options).map(o => o.value);
-        const newModels = m.available_models || [m.fallback_model];
-        const isEn = getOperatorUiLanguage() === 'en';
-        const langRendered = sel.getAttribute('data-lang-rendered');
-        const currentLangKey = isEn ? 'en' : 'ko';
-        if (JSON.stringify(currentOpts) !== JSON.stringify(newModels) || langRendered !== currentLangKey || sel.options.length === 0) {
-          sel.innerHTML = '';
-          sel.setAttribute('data-lang-rendered', currentLangKey);
-          newModels.forEach(name => {
-            const opt = document.createElement('option');
-            opt.value = name;
-            let label = name;
-            if (name === m.fallback_model && name === m.preferred_model) {
-              label += isEn ? ' — Default · Recommended' : ' — 기본 · 권장';
-            } else if (name === m.fallback_model) {
-              label += isEn ? ' — Default' : ' — 기본';
-            } else if (name === m.preferred_model) {
-              label += isEn ? ' — Recommended' : ' — 권장';
-            } else if (name === m.last_known_good_model) {
-              label += isEn ? ' — Last Verified' : ' — 최근 검증됨';
-            } else {
-              label += isEn ? ' — New Model' : ' — 새 모델 · 확인 중';
-            }
-            opt.textContent = label;
-            if (name === m.preferred_model || name === m.active_model) opt.selected = true;
-            sel.appendChild(opt);
-          });
-        } else if (document.activeElement !== sel) {
-          const targetVal = m.preferred_model || m.active_model;
-          if (targetVal && sel.value !== targetVal) {
-            sel.value = targetVal;
-          }
-        }
+        renderModelDropdown(m);
       }
     }
 
@@ -1433,15 +1453,15 @@ function renderAudioButton() {
         <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
       </svg>
       <span class="text">
-        <span data-lang="ko">🔊 정지</span>
-        <span data-lang="en">🔊 Stop</span>
+        <span data-lang="ko">정지</span>
+        <span data-lang="en">Stop</span>
       </span>
     `;
   } else {
     btnAudio.className = 'btn-playback-mini off';
     btnAudio.title = `Click to spot-check ${displayName} audio`;
-    const labelKo = isSelectorVisible ? '🎧 듣기' : `🎧 ${nameKo} 듣기`;
-    const labelEn = isSelectorVisible ? '🎧 Listen' : `🎧 Listen to ${nameEn}`;
+    const labelKo = isSelectorVisible ? '듣기' : `${nameKo} 듣기`;
+    const labelEn = isSelectorVisible ? 'Listen' : `Listen to ${nameEn}`;
     btnAudio.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>

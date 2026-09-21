@@ -21,8 +21,8 @@
       </div>
       <div class="modern-badge status-blue" id="ss-translation">
         <span class="dot"></span>
-        <span data-lang="ko">실시간 자막</span>
-        <span data-lang="en">Captions</span>
+        <span data-lang="ko">통역</span>
+        <span data-lang="en">Translation</span>
         <span class="ss-tip">
           <strong data-lang="ko">Translation (자막 스트림)</strong>
           <strong data-lang="en">Translation (Caption Stream)</strong><br>
@@ -32,8 +32,8 @@
       </div>
       <div class="modern-badge status-blue" id="ss-public">
         <span class="dot"></span>
-        <span data-lang="ko">공용 HTTPS</span>
-        <span data-lang="en">Public HTTPS</span>
+        <span data-lang="ko">HTTPS</span>
+        <span data-lang="en">HTTPS</span>
         <span class="ss-tip">
           <strong data-lang="ko">Public HTTPS (외부 접속 링크)</strong>
           <strong data-lang="en">Public HTTPS (Cloudflare Tunnel)</strong><br>
@@ -43,13 +43,8 @@
       </div>
     </div>
     <div class="header-lang-switch">
-      <button type="button" class="header-lang-btn" id="btn-ui-en" onclick="setOperatorUiLanguage('en')">English</button>
-      <button type="button" class="header-lang-btn" id="btn-ui-ko" onclick="setOperatorUiLanguage('ko')">한국어</button>
-    </div>
-    <div class="header-auth-controls" id="header-auth-controls" style="{% if auth_enabled and authenticated %}display: inline-flex;{% else %}display: none;{% endif %} align-items: center; margin-left: 6px;">
-      <button type="button" id="btn-operator-logout" class="header-lang-btn" style="font-size: 11px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px;" title="Lock console">
-        🔒 <span data-lang="ko">잠금</span><span data-lang="en">Lock</span>
-      </button>
+      <button type="button" class="header-lang-btn" id="btn-ui-en" onclick="setOperatorUiLanguage('en')">en</button>
+      <button type="button" class="header-lang-btn" id="btn-ui-ko" onclick="setOperatorUiLanguage('ko')">한</button> {# i18n-exempt #}
     </div>
   </div>
 </header>

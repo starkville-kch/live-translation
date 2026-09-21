@@ -81,8 +81,6 @@ def test_admin_unauthenticated_html_renders_auth_modal(monkeypatch):
         # Auth modal is visible (not hidden) in initial HTML payload
         assert 'id="auth-modal"' in html
         assert 'id="auth-modal" class="" style="display: flex;"' in html
-        # Logout lock button is hidden when unauthenticated
-        assert 'id="header-auth-controls" style="display: none;' in html
 
 
 def test_admin_authenticated_html_does_not_block_console(monkeypatch):
@@ -99,8 +97,6 @@ def test_admin_authenticated_html_does_not_block_console(monkeypatch):
         html = res.text
         # Auth modal is hidden
         assert 'id="auth-modal" class="hidden" style="display: none;"' in html
-        # Logout lock button is visible
-        assert 'id="header-auth-controls" style="display: inline-flex;' in html
 
 
 def test_privileged_api_rejects_unauthenticated_request(monkeypatch):

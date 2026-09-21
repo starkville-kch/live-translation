@@ -1,6 +1,7 @@
 """
 tests/test_gemini_multilingual.py — Unit Tests for Language-Neutral GeminiSession & CaptionEvent
 """
+import asyncio
 import pytest
 from unittest.mock import MagicMock
 from google.genai import types
@@ -10,6 +11,8 @@ from app.gemini_session import (
     GeminiSession,
     TranscriptEntry,
     evaluate_drift_score,
+    _is_goaway_exception,
+    _matches_exception_text,
 )
 
 
@@ -266,5 +269,64 @@ def test_evaluate_drift_score_any_autodetect():
             expected_source="any",
             target_language="en",
         ) == 0
+
+
+def test_is_goaway_exception_direct_and_grouped():
+    # Direct exception
+    assert _is_goaway_exception(RuntimeError("GoAway")) is True
+    assert _is_goaway_exception(Exception("Normal error")) is False
+    assert _is_goaway_exception(None) is False
+
+    # ExceptionGroup (Python 3.11 TaskGroup)
+    eg = ExceptionGroup("TaskGroup failures", [RuntimeError("GoAway")])
+    assert _is_goaway_exception(eg) is True
+
+    # Nested ExceptionGroup
+    nested_eg = ExceptionGroup("Outer", [
+        ValueError("other error"),
+        ExceptionGroup("Inner", [RuntimeError("GoAway")])
+    ])
+    assert _is_goaway_exception(nested_eg) is True
+
+    # Chained cause
+    try:
+        try:
+            raise RuntimeError("GoAway")
+        except RuntimeError as inner:
+            raise ValueError("wrapper") from inner
+    except ValueError as outer:
+        assert _is_goaway_exception(outer) is True
+
+
+def test_matches_exception_text_close_code_1000():
+    assert _matches_exception_text(Exception("Connection closed with code 1000 OK"), "1000") is True
+    assert _matches_exception_text(Exception("Connection closed with code 1006"), "1000") is False
+
+    eg = ExceptionGroup("group", [Exception("code 1000")])
+    assert _matches_exception_text(eg, "1000") is True
+
+
+def test_reconnect_count_lifecycle():
+    async def _run():
+        session = GeminiSession(on_caption=MagicMock())
+        assert session.state.reconnect_count == 0
+        assert session._reconnect_count == 0
+
+        # Simulate unexpected reconnections
+        session._reconnect_count = 2
+        session._emit(reconnect_count=session._reconnect_count)
+        assert session.state.reconnect_count == 2
+
+        # Pause clean preserves reconnect_count
+        await session.pause_clean()
+        assert session.state.reconnect_count == 2
+        assert session._reconnect_count == 2
+
+        # Stop resets reconnect_count to 0
+        await session.stop()
+        assert session.state.reconnect_count == 0
+        assert session._reconnect_count == 0
+
+    asyncio.run(_run())
 
 
