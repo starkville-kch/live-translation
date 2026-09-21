@@ -244,13 +244,12 @@ logging:
   2. **운영자 콘솔 언어 타겟 패널 연동 (`_language_targets.html`)**: `✦ 자동 감지 모드` 토글 버튼, 소스 프리셋 바 (`Korean + English`, `Korean only`, `English only`), 언어 충돌 방지 뱃지.
   3. **소스 언어 전환 및 세션 프롬프트 동적 조정**: 단일 언어 소스 시 해당 타겟 언어 자동 제외 및 다중 소스/자동 감지 시 전체 타겟 개방.
 
-### Phase 26 — 텔레메트리 불변식 보장, GoAway 예외 언래핑 & 운영자 콘솔 레이아웃 정밀화 (Release v3.2.2) [✅ 완료]
+### Phase 26 — 텔레메트리 불변식 보장, GoAway 예외 언래핑 & 다국어 검증 자동화 (Release v3.2.2) [✅ 완료]
 - **완료 일자**: 2026-09-21
 - **주요 산출물**:
   1. **텔레메트리 120초 마진 및 불변식 보장**: 모바일 백그라운드 타이머 스로틀링(60초) 대응 120초 TTL (2:1 마진) 적용, `local + public + unknown == total` 덧셈 항등식 보장.
   2. **Python 3.11 `ExceptionGroup` 재귀 언래핑**: `asyncio.TaskGroup` 예외 계층에서 GoAway 및 1000 정상 종료 코드를 재귀 감지하여 누적 재연결 카운터 보존.
-  3. **운영자 헤더 레이아웃 정밀화**: `en` / `한` 간결 토글 복원, 불필요한 잠금 버튼 제거로 가로 겹침 해소, 1024px 화면 대응 반응형 좌측 패널 1인치 축소.
-  4. **템플릿 한글 전수 검사 자동화 (`tests/test_bilingual_parity.py`)**: 모든 템플릿 텍스트의 한/영 이중 언어 태그 누락 방지.
+  3. **템플릿 한글 전수 검사 자동화 (`tests/test_bilingual_parity.py`)**: 모든 템플릿 텍스트의 한/영 이중 언어 태그 누락 방지.
 
 ### Phase 27 — 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
 - **목표**: Cloudflare Zero Trust 대시보드를 수동으로 탐색하여 토큰을 발급받는 복잡한 초기 진입 장벽을 제거하고, 설정 마법사(`SKC_setup.exe`) 및 초기 구동 시 터널 생성 및 공용 HTTPS 연결을 원클릭으로 자동화.
