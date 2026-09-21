@@ -237,11 +237,20 @@ logging:
   5. **자발적 셧다운 수명주기 (`app/server.py`, `main.py`)**: `shutdown_event` 및 `SKCUvicornServer`를 통한 SSE/WS 스트림 0.5초 조기 종료로 Ctrl+C ASGI Traceback 제거.
   6. **오프라인 린팅 & 패키징 (`eslint.config.mjs`, `SKC_translation.spec`)**: 로컬 `eslint: 10.9.1` 기반 `no-undef` 검증, `jinja2` 패키징 보완.
 
-### Phase 25 — 자동 소스 언어 감지 및 다중 화자 모드 (Auto Source Language Detection / Multi-Speaker Mode) [⏳ 계획 중]
-- **상세 아키텍처 및 구현 계획**: [`.agent/phase25-auto-source-language.md`](file:///d:/Desktop/church/live_translation/SKC_live_translation_B/.agent/phase25-auto-source-language.md) 참조.
-- **주요 과제**:
-  - 한국어/영어 코드 스위칭 및 다중 화자 예배(한/영 번갈아 발화) 환경에서 입력 언어를 실시간으로 자동 감지 및 세션 프롬프트 동적 조정.
-  - 소스 언어 전환 시 컨텍스트 오염 방지 및 지연 최소화.
+### Phase 25 — 자동 소스 언어 감지 및 다중 화자 모드 (Auto Source Language Detection / Multi-Speaker Mode) [✅ 완료]
+- **완료 일자**: 2026-09-06 (Release v3.2.0)
+- **주요 산출물**:
+  1. **대칭형 다중 소스 선택 (`ko+en`, 복합 세트) 및 제약 없는 `any` 자동 감지 모드**: 한국어/영어 동시 수용 및 임의 언어 실시간 감지 파이프라인.
+  2. **운영자 콘솔 언어 타겟 패널 연동 (`_language_targets.html`)**: `✦ 자동 감지 모드` 토글 버튼, 소스 프리셋 바 (`Korean + English`, `Korean only`, `English only`), 언어 충돌 방지 뱃지.
+  3. **소스 언어 전환 및 세션 프롬프트 동적 조정**: 단일 언어 소스 시 해당 타겟 언어 자동 제외 및 다중 소스/자동 감지 시 전체 타겟 개방.
+
+### Phase 26 — 텔레메트리 불변식 보장, GoAway 예외 언래핑 & 운영자 콘솔 레이아웃 정밀화 (Release v3.2.2) [✅ 완료]
+- **완료 일자**: 2026-09-21
+- **주요 산출물**:
+  1. **텔레메트리 120초 마진 및 불변식 보장**: 모바일 백그라운드 타이머 스로틀링(60초) 대응 120초 TTL (2:1 마진) 적용, `local + public + unknown == total` 덧셈 항등식 보장.
+  2. **Python 3.11 `ExceptionGroup` 재귀 언래핑**: `asyncio.TaskGroup` 예외 계층에서 GoAway 및 1000 정상 종료 코드를 재귀 감지하여 누적 재연결 카운터 보존.
+  3. **운영자 헤더 레이아웃 정밀화**: `en` / `한` 간결 토글 복원, 불필요한 잠금 버튼 제거로 가로 겹침 해소, 1024px 화면 대응 반응형 좌측 패널 1인치 축소.
+  4. **템플릿 한글 전수 검사 자동화 (`tests/test_bilingual_parity.py`)**: 모든 템플릿 텍스트의 한/영 이중 언어 태그 누락 방지.
 
 ### Phase 27 — 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
 - **목표**: Cloudflare Zero Trust 대시보드를 수동으로 탐색하여 토큰을 발급받는 복잡한 초기 진입 장벽을 제거하고, 설정 마법사(`SKC_setup.exe`) 및 초기 구동 시 터널 생성 및 공용 HTTPS 연결을 원클릭으로 자동화.
