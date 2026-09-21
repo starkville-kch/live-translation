@@ -21,6 +21,7 @@ logs/sessions/*
 .agent/skills/
 .agent/handoffs/
 .agent/worktrees/
+.agent/archive/
 .claude/
 var/
 .pytest_cache/
