@@ -113,6 +113,7 @@ def create_distribution_zip(dist_dir: Path, root_dir: Path) -> Path | None:
     exclude_prefixes = ("qr_",)
     exclude_suffixes = (".zip", ".log", ".tmp", ".bak")
     exclude_dirs = {"logs", "var", "__pycache__", ".pytest_cache"}
+    exclude_exact = {".env", "token.txt"}
 
     print(f"\n  [*] Packaging distribution archive: {zip_name} ...")
     t0 = time.time()
@@ -131,6 +132,11 @@ def create_distribution_zip(dist_dir: Path, root_dir: Path) -> Path | None:
 
             for file in sorted(files):
                 file_lower = file.lower()
+                # Security: Strictly exclude secret environment variables & tokens
+                if file in exclude_exact or file_lower in exclude_exact:
+                    continue
+                if file_lower.startswith(".env") and file_lower != ".env.example":
+                    continue
                 if file_lower.endswith(exclude_suffixes):
                     continue
                 if any(file_lower.startswith(p) for p in exclude_prefixes):
@@ -240,7 +246,6 @@ def main():
     _safe_copy(root_dir / "CHANGELOG.md", dist_dir / "CHANGELOG.md")
     _safe_copy(root_dir / "how_to_use.html", dist_dir / "how_to_use.html")
     _safe_copy(root_dir / "cloudflared.exe", dist_dir / "cloudflared.exe")
-    _safe_copy(root_dir / ".env", dist_dir / ".env")
     _safe_copy(root_dir / ".env.example", dist_dir / ".env.example")
 
     zip_file = None

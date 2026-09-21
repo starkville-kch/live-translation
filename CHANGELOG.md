@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Automated Distribution Packaging & Changelog Sync (`build_parallel.py`, `build_exe.bat`)**:
   - Automatically copies `CHANGELOG.md` and `how_to_use.html` to `.agent/dist/` upon build completion.
-  - Automatically generates a clean, standalone distribution archive `SKC_translate_v{version}.zip` in `.agent/dist/` (filtering out runtime logs, internal cache, and temporary files).
+  - Automatically generates a clean, standalone distribution archive `SKC_translate_v{version}.zip` in `.agent/dist/` (strictly excluding `.env`, active secrets, runtime logs, and internal cache; providing only `.env.example`).
   - Added CLI options `--no-zip` and `--package-only` for fast asset packaging without full binary rebuild.
 - **Automated Bilingual Parity & Harness Test Suites (`tests/`)**:
   - `tests/test_bilingual_parity.py`: Zero-dependency HTML parser scanning all templates to verify every Hangul character is enclosed within a `data-lang="ko"` element with a `data-lang="en"` sibling.

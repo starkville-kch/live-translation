@@ -305,9 +305,9 @@ build_exe.bat
    - `CHANGELOG.md` (버전별 릴리즈 변경 내역)
    - `how_to_use.html` (사용자 가이드)
    - `cloudflared.exe` (공식 Cloudflare 바이너리)
-   - `.env` 및 `.env.example`
+   - `.env.example` (템플릿 파일; 보안을 위해 개발자 활성 키가 담긴 `.env`는 복사 및 압축 대상에서 원천 제외)
    - 파일 잠금 충돌(`PermissionError: [Errno 13]`) 방지: 파일 크기가 동일하거나 실행 중인 경우 안전하게 건너뛰며, `build_exe.bat` 시작 시 `taskkill`로 잔여 프로세스를 선제 정리.
 5. **원클릭 배포 압축 파일 자동 생성 (`create_distribution_zip`)**:
    - 빌드 완료 즉시 `CHANGELOG.md`의 최신 버전을 파싱하여 `.agent\dist\SKC_translate_v{version}.zip`을 자동 생성.
-   - 런타임 로그(`logs/`), 내부 캐시(`var/`, `__pycache__`), 동적 생성 QR(`qr_*.png`)을 자동 제외하여 순수 배포 패키지만 격리 압축.
+   - **보안 격리**: 민감한 API 키가 포함된 `.env`, `token.txt`, 런타임 로그(`logs/`), 내부 캐시(`var/`, `__pycache__`), 동적 생성 QR(`qr_*.png`)을 엄격히 제외하고 순수 배포 에셋만 패키징.
    - 옵션: `--no-zip` (압축 건너뛰기), `--package-only` (바이너리 재컴파일 없이 자산 복사 및 배포 압축만 수행).

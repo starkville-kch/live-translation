@@ -15,8 +15,12 @@
 ::   ├── SKC_translation.exe
 ::   ├── SKC_setup.exe
 ::   ├── config.yaml
+::   ├── CHANGELOG.md
+::   ├── how_to_use.html
+::   ├── cloudflared.exe
+::   ├── .env.example
 ::   └── branding/
-::       └── church-logo.png
+::       └── church-logo.webp / church-logo.png
 
 setlocal
 set "OUT_DIR=.agent"
