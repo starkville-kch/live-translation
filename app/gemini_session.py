@@ -27,8 +27,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, NamedTuple
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
 
 from app.config import gemini_api_key, gemini_cfg, translation_cfg
 from app.events import operator_events

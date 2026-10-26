@@ -1155,18 +1155,6 @@ async function pollStatus() {
       updateDriftUI(autoDriftCorrectionEnabled);
     }
 
-    const lvlBar = document.getElementById('level-bar');
-    if (lvlBar) lvlBar.style.width = st.audio.level + '%';
-    const lvlLbl = document.getElementById('level-label');
-    if (lvlLbl) {
-      if (st.audio.level > 0) {
-        const pct = Math.round(st.audio.level) + '%';
-        lvlLbl.innerHTML = `<span data-lang="ko">레벨: ${pct}</span><span data-lang="en">Level: ${pct}</span>`;
-      } else {
-        lvlLbl.innerHTML = `<span data-lang="ko">입력 레벨 — 신호 없음</span><span data-lang="en">Input Level — No Signal</span>`;
-      }
-    }
-
     const statLvlBar = document.getElementById('stat-level-bar');
     if (statLvlBar) statLvlBar.style.width = st.audio.level + '%';
     const statLvlVal = document.getElementById('stat-level-val');

@@ -251,7 +251,20 @@ logging:
   2. **Python 3.11 `ExceptionGroup` 재귀 언래핑**: `asyncio.TaskGroup` 예외 계층에서 GoAway 및 1000 정상 종료 코드를 재귀 감지하여 누적 재연결 카운터 보존.
   3. **템플릿 한글 전수 검사 자동화 (`tests/test_bilingual_parity.py`)**: 모든 템플릿 텍스트의 한/영 이중 언어 태그 누락 방지.
 
-### Phase 27 — 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
+### Phase 27 - 음향 분류기 고도화, UI 미터 간소화 & 툴팁 개선 (Release v3.2.3) [✅ 완료]
+- **완료 일자**: 2026-10-26
+- **주요 산출물**:
+  1. **실제 예배 찬양 음악 감지 고도화 (`app/audio_classifier.py`)**:
+     - 10월 18일 예배 실녹음(82.7분) 음향 데이터 기반 보정.
+     - 1초 창 비트 자기상관이 낮은 찬양/피아노/성가대 특성을 반영하여 스펙트럼 평탄도(`flat > 0.24`), 고주파 에너지 비율(`hf_energy > 0.006`), 엔벨로프 분산(`env_var >= 0.40`) 복합 조건 도입.
+     - 정적 배경 잡음 억제(`env_var < 0.10`) 및 17초 롤링 윈도우 합의 알고리즘(60% 일치)으로 가수의 숨고르기나 짧은 쉼표에 의한 초기화 방지.
+  2. **운영자 콘솔 입력 레벨 미터 단일화 (`app/templates/operator/_service_control.html`, `app/static/js/operator.js`)**:
+     - 장치 선택 박스 하단의 중복 레벨 바를 제거하고, 시스템 상태 모니터 행의 실시간 VU 미터로 단일화.
+  3. **툴팁 오버플로우 및 다국어 렌더링 개선 (`app/static/css/operator.css`, `app/templates/operator.html`)**:
+     - 자막 미리보기 헤더 및 지연 분석 패널의 `overflow: hidden` 제약을 해제하여 툴팁 잘림 방지.
+     - 한글/영어 모드 모두에서 툴팁 팝업이 온전한 블록 레이아웃(`display: block !important`)을 유지하도록 보정.
+
+### Phase 28 - 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
 - **목표**: Cloudflare Zero Trust 대시보드를 수동으로 탐색하여 토큰을 발급받는 복잡한 초기 진입 장벽을 제거하고, 설정 마법사(`SKC_setup.exe`) 및 초기 구동 시 터널 생성 및 공용 HTTPS 연결을 원클릭으로 자동화.
 - **주요 계획 항목**:
   1. **원클릭 터널 프로비저닝 (Cloudflare API 연동)**:

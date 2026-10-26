@@ -57,7 +57,12 @@ from typing import AsyncIterator, Callable
 import numpy as np
 from scipy import signal
 
-import pyaudio
+try:
+    import pyaudio
+    _pa = pyaudio.PyAudio()
+except Exception:
+    pyaudio = None
+    _pa = None
 
 from app.config import audio_cfg, save_audio_device
 from app.events import operator_events
@@ -101,17 +106,21 @@ import json
 import subprocess
 import sys
 
-_pa = pyaudio.PyAudio()
-
 
 def reinit_pyaudio() -> None:
     """Terminate and re-create the global PyAudio instance to refresh device list."""
     global _pa
+    if pyaudio is None:
+        return
     try:
-        _pa.terminate()
+        if _pa is not None:
+            _pa.terminate()
     except Exception:
         pass
-    _pa = pyaudio.PyAudio()
+    try:
+        _pa = pyaudio.PyAudio()
+    except Exception:
+        _pa = None
 def _clean_device_name(raw_name: str) -> str:
     """Strip trailing host API annotations like [MME] or [Windows WASAPI]."""
     import re
@@ -181,6 +190,8 @@ print(json.dumps(devices))
         except Exception as e:
             audio_log.warning("Subprocess hardware rescan failed, falling back to in-process query: %s", e)
 
+    if _pa is None:
+        return []
     devices = []
     for i in range(_pa.get_device_count()):
         try:

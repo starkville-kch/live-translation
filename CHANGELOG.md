@@ -5,6 +5,28 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.3] - 2026-10-26
+
+### Changed
+- **Audio Input Level Meter Deduplication (`app/templates/operator/_service_control.html`, `app/static/js/operator.js`)**:
+  - Removed the duplicate input level meter (`#level-bar` and `#level-label`) positioned beneath the audio device selector.
+  - Preserved the primary, responsive live audio input level meter located in the System Status monitor row (`_status_telemetry.html`).
+  - Updated device selector tooltip text to direct operators to the status monitor level meter.
+
+### Fixed
+- **Audio Classifier Worship Praise Music Detection (`app/audio_classifier.py`)**:
+  - Calibrated acoustic classification features using real 82.7-minute church worship recording (`_새로운 생명_ - 김광일 목사, 10_18_2026.mp4`).
+  - Added spectral flatness (`> 0.24`), high-frequency energy ratio above 2.5 kHz (`> 0.006`), and dynamic envelope variance (`>= 0.40`) to recognize church praise songs, acoustic piano, and hymns where beat autocorrelation over 1-second windows remains below 0.35.
+  - Added stationary ambient noise suppression (`env_var < 0.10` and `beat < 0.35`) returning `uncertain` for constant noise.
+  - Replaced strict uninterrupted streak hysteresis with rolling window consensus (60% agreement over 17 seconds), preventing brief singer pauses or breaths from resetting the classifier to `— 판별 중`.
+  - Maintained full compatibility with synthetic test fixtures in `tests/test_audio_classifier.py`.
+- **Operator Tooltip Styling & Language Parity (`app/static/css/operator.css`, `app/templates/operator.html`, `app/templates/operator/_status_telemetry.html`)**:
+  - Removed `overflow: hidden` from `.preview-header-row h2` and `.telemetry-panel` so tooltips for "실시간 자막 미리보기" and "📊 네트워크 & 지연 세부 분석" display without edge clipping.
+  - Added dotted underline indicator and `cursor: help` to preview header and telemetry panel labels.
+  - Enforced `display: block !important` on `.tooltiptext` elements under both `html[lang="ko"]` and `html[lang="en"]` to preserve consistent tooltip popup dimensions.
+- **Test Suite Offline Collection Resiliency (`app/audio.py`, `app/gemini_session.py`, `app/model_resolver.py`, `tests/test_gemini_multilingual.py`)**:
+  - Made `pyaudio` and `google.genai` imports defensive with graceful fallbacks during test discovery in environments without audio hardware or live SDKs.
+
 ## [3.2.2] - 2026-09-21
 
 ### Changed

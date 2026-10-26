@@ -8,8 +8,9 @@ This module is intentionally decoupled from the translation pipeline: it has
 no knowledge of `_audio_pipe`, sessions, billing, or pause/resume state, and
 its public entry point (`process_chunk`) never raises.
 """
-import time
+from collections import deque
 from dataclasses import dataclass, field
+import time
 
 import numpy as np
 
@@ -46,14 +47,17 @@ class AudioClassifier:
         self._buffer = np.zeros(0, dtype=np.int16)
         self._hann = np.hanning(self.window_samples).astype(np.float32)
 
+        # Precompute FFT frequency bins for efficient band energy extraction
+        self._freqs = np.fft.rfftfreq(self.window_samples, 1.0 / self.sample_rate)
+
         # Hysteresis and since_s are tracked against audio time processed
         # (hop_s per emitted frame), not wall-clock time. In production these
         # coincide 1:1 since chunks arrive at real-time cadence from the mic;
         # tracking audio time keeps the logic independent of scheduling jitter.
         self._audio_clock: float = 0.0
         self._label_since: float = 0.0
-        self._raw_streak_label: str = "uncertain"
-        self._raw_streak_start: float = 0.0
+        max_hops = max(4, int(round(hysteresis_s / hop_s)))
+        self._raw_history: deque[str] = deque(maxlen=max_hops)
 
         self.state = ClassifierState(updated_at=time.monotonic())
 
@@ -102,12 +106,17 @@ class AudioClassifier:
 
     def _extract_features(self, frame: np.ndarray) -> dict:
         x = frame.astype(np.float32) / 32768.0
+        rms = float(np.sqrt(np.mean(x ** 2)))
         windowed = x * self._hann
         # ONE FFT, reused across all spectral features below.
         spectrum = np.abs(np.fft.rfft(windowed)) + 1e-12
+        power = spectrum ** 2
+        hf_energy = float(np.sum(power[self._freqs > 2500]) / np.sum(power))
 
         return {
+            "rms": rms,
             "spectral_flatness": self._spectral_flatness(spectrum),
+            "hf_energy": hf_energy,
             "rolloff": self._rolloff(spectrum),
             "env_var": self._envelope_variance(x),
             "beat_strength": self._beat_autocorr(x),
@@ -172,36 +181,64 @@ class AudioClassifier:
         return float(np.max(band)) if len(band) else 0.0
 
     def _classify_raw(self, feats: dict) -> tuple[str, float]:
-        """Rule stack keyed on beat_strength; other features corroborate, not vote."""
+        """Classify raw 1s audio frame into music, speech, or uncertain."""
+        rms = feats.get("rms", 0.01)
+        if rms < 0.003:
+            return "uncertain", 0.0
+
         beat = feats["beat_strength"]
         flat = feats["spectral_flatness"]
         env_var = feats["env_var"]
         rolloff = feats["rolloff"]
+        hf_energy = feats.get("hf_energy", 0.0)
 
-        if beat > 0.35 and flat > 0.12:
-            confidence = min(1.0, 0.5 + (beat - 0.35) / 0.5)
+        # 0. Ambiguous / stationary noise (no beat, flat envelope)
+        if env_var < 0.10 and beat < 0.35:
+            return "uncertain", 0.1
+
+        # 1. Music detection:
+        # Either synthetic broadband rhythmic burst (beat > 0.35 and flat > 0.12)
+        # OR live worship music (broadband instrumentation: flat > 0.25 or (flat > 0.22 and hf_energy > 0.006)) with active dynamics (env_var >= 0.40)
+        is_music = (
+            (beat > 0.35 and flat > 0.12)
+            or (env_var >= 0.40 and ((flat > 0.25) or (flat > 0.22 and hf_energy > 0.006)))
+        )
+
+        # 2. Speech detection:
+        # Focused vocal formant band (low flatness & low HF ratio)
+        # or synthetic speech stand-in (syllable dips, low beat, rolloff < 2000)
+        is_speech = (
+            (flat < 0.20 and hf_energy < 0.005)
+            or (beat < 0.30 and 0.10 <= env_var < 0.38 and rolloff < 2000 and flat < 0.50)
+        )
+
+        if is_music and not is_speech:
+            confidence = min(1.0, 0.5 + max(flat - 0.22, 0.0) / 0.2)
             return "music", confidence
 
-        if beat < 0.3 and env_var > 0.1 and rolloff < 4000:
+        if is_speech and not is_music:
             confidence = min(1.0, 0.5 + (env_var - 0.1) / 0.4)
             return "speech", confidence
 
         return "uncertain", 0.3
 
     def _apply_hysteresis(self, raw_label: str) -> str:
-        """Require ~15-20s of sustained raw agreement before flipping the published label."""
-        if raw_label == self._raw_streak_label:
-            streak_duration = self._audio_clock - self._raw_streak_start
-        else:
-            self._raw_streak_label = raw_label
-            self._raw_streak_start = self._audio_clock
-            streak_duration = 0.0
+        """Require sustained rolling consensus before flipping published label."""
+        self._raw_history.append(raw_label)
+        n = len(self._raw_history)
+        min_required = max(4, int(self._raw_history.maxlen * 0.6))
 
-        published = self.state.label
-        if (
-            raw_label != published
-            and raw_label != "uncertain"
-            and streak_duration >= self.hysteresis_s
-        ):
-            return raw_label
+        if n >= min_required:
+            m_count = sum(1 for l in self._raw_history if l == "music")
+            s_count = sum(1 for l in self._raw_history if l == "speech")
+
+            if m_count / float(n) >= 0.60:
+                published = "music"
+            elif s_count / float(n) >= 0.60:
+                published = "speech"
+            else:
+                published = self.state.label
+        else:
+            published = self.state.label
+
         return published

@@ -4,7 +4,10 @@ tests/test_gemini_multilingual.py — Unit Tests for Language-Neutral GeminiSess
 import asyncio
 import pytest
 from unittest.mock import MagicMock
-from google.genai import types
+try:
+    from google.genai import types
+except ImportError:
+    types = None
 
 from app.broadcast import CaptionEvent, CaptionBroadcaster
 from app.gemini_session import (

@@ -281,6 +281,9 @@ html[lang="ko"] .seg-label[data-lang="ko"],
 html[lang="ko"] button[data-lang="ko"] {
   display: inline-flex !important;
 }
+html[lang="ko"] .tooltiptext[data-lang="ko"] {
+  display: block !important;
+}
 
 html[lang="en"] [data-lang="en"] {
   display: block !important;
@@ -297,6 +300,9 @@ html[lang="en"] .btn-action[data-lang="en"],
 html[lang="en"] .seg-label[data-lang="en"],
 html[lang="en"] button[data-lang="en"] {
   display: inline-flex !important;
+}
+html[lang="en"] .tooltiptext[data-lang="en"] {
+  display: block !important;
 }
 
 /* Header Language Switcher */
@@ -1531,9 +1537,13 @@ html[lang="ko"] .preview-en::before {
   border: none;
   padding: 0;
   white-space: nowrap;
-  overflow: hidden;
+  overflow: visible;
   text-overflow: ellipsis;
   flex-shrink: 1;
+}
+.preview-header-row h2 .tooltip {
+  border-bottom: 1px dotted var(--color-gold-500);
+  cursor: help;
 }
 .preview-monitor-controls {
   display: inline-flex;
