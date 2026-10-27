@@ -1598,36 +1598,46 @@ async def get_status(request: Request = None):
 async def get_latest_youtube_chapters(request: Request = None):
     """Return YouTube chapter markers from current live session, cache, or most recent session folder."""
     if manager and manager.is_running:
-        chapters = compute_youtube_chapters(list(manager.classifier_transitions), _runtime_seconds())
+        rt = _runtime_seconds()
+        if rt < 120.0:
+            return JSONResponse({
+                "status": "live",
+                "session_id": "live",
+                "milestones": {},
+                "youtube_player_chapters": "0:00 예배 시작",
+                "inline_description": "",
+            })
+        chapters = compute_youtube_chapters(list(manager.classifier_transitions), rt)
         return JSONResponse({"status": "live", "session_id": "live", **chapters})
 
-    if _last_session_chapters:
+    if _last_session_chapters and _last_session_chapters.get("milestones"):
         return JSONResponse({"status": "cached", **_last_session_chapters})
 
     session_root = Path(logging_cfg().get("log_dir", "logs")) / "sessions"
     if session_root.exists():
         subdirs = sorted([d for d in session_root.iterdir() if d.is_dir()], reverse=True)
         for sdir in subdirs:
-            ch_json = sdir / "youtube_chapters.json"
-            if ch_json.exists():
-                try:
-                    data = json.loads(ch_json.read_text(encoding="utf-8"))
-                    return JSONResponse({"status": "archived", "session_id": sdir.name, **data})
-                except Exception:
-                    continue
             sess_json = sdir / "session.json"
             if sess_json.exists():
                 try:
                     m = json.loads(sess_json.read_text(encoding="utf-8"))
-                    trans = m.get("audio_class_transitions", [])
                     rt = float(m.get("runtime_seconds", 0.0))
+                    if rt < 600.0:  # Skip short test runs
+                        continue
+                    ch_json = sdir / "youtube_chapters.json"
+                    if ch_json.exists():
+                        data = json.loads(ch_json.read_text(encoding="utf-8"))
+                        if data.get("milestones"):
+                            return JSONResponse({"status": "archived", "session_id": sdir.name, **data})
+                    trans = m.get("audio_class_transitions", [])
                     chapters = compute_youtube_chapters(trans, rt)
-                    return JSONResponse({"status": "derived", "session_id": sdir.name, **chapters})
+                    if chapters.get("milestones"):
+                        return JSONResponse({"status": "derived", "session_id": sdir.name, **chapters})
                 except Exception:
                     continue
 
     return JSONResponse({
-        "status": "empty",
+        "status": "idle",
         "milestones": {},
         "youtube_player_chapters": "0:00 예배 시작",
         "inline_description": "",

@@ -1342,10 +1342,17 @@ async function pollStatus() {
       ssSet('ss-public', 'status-blue');
     }
 
+    const prevServiceRunning = _serviceRunning;
     _serviceRunning = Boolean(st.service_running);
     _paused = Boolean(st.paused);
     updateControlBar(st);
     updateLanguageTargets(st);
+
+    if (prevServiceRunning && !_serviceRunning) {
+      updateChaptersPreview();
+    } else if (_serviceRunning && ++_chaptersPollCount % 15 === 0) {
+      updateChaptersPreview();
+    }
 }
 
 
@@ -2411,6 +2418,7 @@ if (btnSaveManage) {
 // YOUTUBE CHAPTERS
 // ============================================================
 let _lastChaptersText = '0:00 예배 시작';
+let _chaptersPollCount = 0;
 
 async function updateChaptersPreview() {
   try {

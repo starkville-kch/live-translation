@@ -48,3 +48,19 @@ def test_compute_youtube_chapters_worship_flow():
     assert "광고: 0:20" in res["inline_description"]
     assert "찬양: 4:14" in res["inline_description"]
     assert "설교시작: 27:14" in res["inline_description"]
+
+
+def test_no_duplicate_or_premature_sermon_on_short_speech():
+    # Scenario: service just started or brief test run with speech at 86s (1:26)
+    transitions = [
+        {"t": 86.0, "label": "speech"},
+    ]
+    res = compute_youtube_chapters(transitions, runtime=400.0)
+
+    # Announcements may be detected, but sermon MUST NOT be detected at the exact same 1:26 timestamp
+    player_chapters = res["youtube_player_chapters"].splitlines()
+    assert "1:26 설교 말씀" not in player_chapters
+    # Chapters must have no duplicate lines or timestamps
+    timestamps = [line.split()[0] for line in player_chapters]
+    assert len(timestamps) == len(set(timestamps))
+

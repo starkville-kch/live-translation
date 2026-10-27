@@ -50,21 +50,36 @@ def compute_youtube_chapters(transitions: List[Dict[str, Any]], runtime: float =
             "label": label,
         })
 
-    # Announcements (광고): first speech segment within first 10 minutes
-    ad_seg = next((s for s in segments if s["label"] == "speech" and s["start"] < 600), None)
+    # Announcements (광고): first substantial speech segment (>= 20s) starting after 0:10 within first 15 minutes
+    ad_seg = next(
+        (s for s in segments if s["label"] == "speech" and s["dur"] >= 20.0 and 10.0 <= s["start"] < 900.0),
+        None,
+    )
 
-    # Praise (찬양): first substantial music segment (> 60s) within first 30 minutes
-    praise_seg = next((s for s in segments if s["label"] == "music" and s["dur"] >= 60 and s["start"] < 1800), None)
+    # Praise (찬양): first substantial music segment (>= 60s) within first 35 minutes
+    praise_seg = next(
+        (s for s in segments if s["label"] == "music" and s["dur"] >= 60.0 and s["start"] < 2100.0),
+        None,
+    )
 
-    # Sermon (설교시작): longest speech segment in service (must be >= 5 minutes)
-    speech_segs = [s for s in segments if s["label"] == "speech" and s["dur"] >= 300]
+    # Sermon (설교시작): longest speech segment in service
+    # Must be distinct from announcements, start after 5 minutes (300s), and last at least 10 minutes (600s)
+    ad_start = ad_seg["start"] if ad_seg else -1.0
+    speech_segs = [
+        s for s in segments
+        if s["label"] == "speech"
+        and s is not ad_seg
+        and s["dur"] >= 600.0
+        and s["start"] >= 300.0
+        and s["start"] > (ad_start + 30.0)
+    ]
     sermon_seg = max(speech_segs, key=lambda s: s["dur"]) if speech_segs else None
 
-    # Response hymn (결단찬양): first music segment after sermon begins (must be >= 60s)
+    # Response hymn (결단찬양): first music segment after sermon begins (must be >= 45s)
     resp_seg = None
     if sermon_seg:
         resp_seg = next(
-            (s for s in segments if s["label"] == "music" and s["start"] > sermon_seg["start"] and s["dur"] >= 60),
+            (s for s in segments if s["label"] == "music" and s["start"] > sermon_seg["start"] and s["dur"] >= 45.0),
             None,
         )
 
@@ -90,16 +105,27 @@ def compute_youtube_chapters(transitions: List[Dict[str, Any]], runtime: float =
             "time_str": format_time_str(resp_seg["start"]),
         }
 
-    # Format 1: Official YouTube Player Chapters (must start with 0:00)
-    player_chapters = ["0:00 예배 시작"]
-    if ad_seg and round(ad_seg["start"]) > 5:
-        player_chapters.append(f"{milestones['announcements']['time_str']} 광고")
+    # Format 1: Official YouTube Player Chapters (must start with 0:00, strictly ascending >= 10s gap)
+    candidate_chapters = [(0.0, "0:00 예배 시작")]
+    if ad_seg:
+        candidate_chapters.append((ad_seg["start"], f"{milestones['announcements']['time_str']} 광고"))
     if praise_seg:
-        player_chapters.append(f"{milestones['praise']['time_str']} 찬양")
+        candidate_chapters.append((praise_seg["start"], f"{milestones['praise']['time_str']} 찬양"))
     if sermon_seg:
-        player_chapters.append(f"{milestones['sermon']['time_str']} 설교 말씀")
+        candidate_chapters.append((sermon_seg["start"], f"{milestones['sermon']['time_str']} 설교 말씀"))
     if resp_seg:
-        player_chapters.append(f"{milestones['response_hymn']['time_str']} 결단 찬양")
+        candidate_chapters.append((resp_seg["start"], f"{milestones['response_hymn']['time_str']} 결단 찬양"))
+
+    # Sort strictly by timestamp
+    candidate_chapters.sort(key=lambda c: c[0])
+
+    player_chapters = []
+    last_t = -999.0
+    for t, line in candidate_chapters:
+        # YouTube requires at least 10 seconds between chapters and no duplicate timestamps
+        if t == 0.0 or (t - last_t >= 10.0):
+            player_chapters.append(line)
+            last_t = t
 
     # Format 2: Inline description format for bulletin/website
     desc_lines = []
