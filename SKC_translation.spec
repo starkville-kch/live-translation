@@ -112,6 +112,8 @@ a = Analysis(
         "pytest", "_pytest", "google.genai.tests",
         "tkinter", "matplotlib", "pandas", "jupyter",
         "IPython", "PyQt5", "PyQt6", "wx",
+        "torch", "torchvision", "torchaudio",
+        "cv2", "tokenizers", "transformers", "h5py",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

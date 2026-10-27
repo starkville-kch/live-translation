@@ -51,6 +51,8 @@ a = Analysis(
         "matplotlib", "pandas", "jupyter", "IPython",
         "PyQt5", "PyQt6", "wx", "scipy", "pyaudio",
         "uvicorn", "fastapi", "sse_starlette",
+        "torch", "torchvision", "torchaudio",
+        "cv2", "tokenizers", "transformers", "h5py",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
