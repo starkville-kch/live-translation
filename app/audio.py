@@ -436,6 +436,11 @@ class AudioCapture:
         Raises _DirectSoundError if the device uses DirectSound.
         Raises Exception for any other open/setup failure.
         """
+        if _pa is None:
+            audio_log.error("PyAudio is not initialized or audio hardware is unavailable.")
+            self._emit(status=AudioStatus.DISCONNECTED, level_rms=0.0)
+            raise RuntimeError("PyAudio is not initialized")
+
         device_info = (_pa.get_device_info_by_index(self._device_index)
                        if self._device_index is not None
                        else _pa.get_default_input_device_info())
