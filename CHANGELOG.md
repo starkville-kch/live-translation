@@ -7,13 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.2.3] - 2026-10-26
 
+### Added
+- **Automated YouTube Chapter Extraction (`app/chapters.py`, `tests/test_chapters.py`)**:
+  - Automatically identifies liturgy milestones (광고, 찬양, 설교시작, 결단찬양) from real-time audio classifier transitions.
+  - Generates official YouTube player chapters format starting at 0:00 (for video description chapter markers and scrub bar).
+  - Generates inline liturgy description timestamps for weekly bulletins and website announcements.
+  - Automatically exports `youtube_chapters.txt` and `youtube_chapters.json` upon service completion.
+  - Exposes REST API endpoint `GET /api/session/latest/chapters` returning live, cached, or archived session chapter metadata.
+  - Added interactive YouTube Chapters preview card and one-click clipboard copy button to the Operator Dashboard (`app/templates/operator.html`, `app/static/js/operator.js`).
+
 ### Changed
+- **Header Guide Link & Panel Vertical Balance (`app/templates/operator.html`, `app/templates/operator/_header_status.html`, `app/static/css/operator.css`)**:
+  - Moved the volunteer guide link from a standalone card in the right column into the sticky header bar beside the language toggle (`en` / `한`), styled with an inline book vector SVG icon.
+  - Removed the redundant guide card from the right column, allowing the new YouTube Chapters card to occupy the top right position without pushing the Attendee Access QR code or Event Log downward.
+  - Rebalanced the vertical heights of the left panel (service control, telemetry, live preview) and right panel (chapters, languages, QR, events).
+- **Multi-Target Cost Scaling Tooltips (`app/templates/operator/_session_metrics.html`, `app/templates/operator/_language_targets.html`)**:
+  - Added bilingual tooltips to "추정 비용" (Est. Cost) and "통역 언어 (출력)" explaining that each target language executes an independent concurrent AI streaming session, scaling total API cost proportionally by the number of active output targets.
 - **Audio Input Level Meter Deduplication (`app/templates/operator/_service_control.html`, `app/static/js/operator.js`)**:
+
   - Removed the duplicate input level meter (`#level-bar` and `#level-label`) positioned beneath the audio device selector.
   - Preserved the primary, responsive live audio input level meter located in the System Status monitor row (`_status_telemetry.html`).
   - Updated device selector tooltip text to direct operators to the status monitor level meter.
 
 ### Fixed
+- **PyInstaller Binary Discovery in Spec File (`SKC_translation.spec`)**:
+  - Replaced hard-coded `skc_build` conda path for `_portaudio` C-extension with dynamic environment discovery across `sys.prefix`.
 - **Audio Classifier Worship Praise Music Detection (`app/audio_classifier.py`)**:
   - Calibrated acoustic classification features using real 82.7-minute church worship recording (`_새로운 생명_ - 김광일 목사, 10_18_2026.mp4`).
   - Added spectral flatness (`> 0.24`), high-frequency energy ratio above 2.5 kHz (`> 0.006`), and dynamic envelope variance (`>= 0.40`) to recognize church praise songs, acoustic piano, and hymns where beat autocorrelation over 1-second windows remains below 0.35.

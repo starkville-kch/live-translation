@@ -111,6 +111,7 @@ from app.operator_auth import (
     set_auth_cookie,
     verify_password,
 )
+from app.chapters import compute_youtube_chapters
 from app.translation_manager import TranslationManager
 
 # Gemini 3.5 Live Translate pricing (Paid Tier):
@@ -151,6 +152,7 @@ _qr_png_cache: bytes | None = None
 _last_session_runtime: float = 0.0
 _last_session_billed_seconds: float = 0.0
 _last_session_targets: list[str] = []
+_last_session_chapters: Optional[dict] = None
 _auto_restart_attempt = 0
 _auto_restart_reason = ""
 _auto_restart_task: asyncio.Task | None = None
@@ -573,6 +575,11 @@ def _write_session_log() -> Optional[str]:
             },
             "audio_class_transitions": list(manager.classifier_transitions),
         }
+        chapters = compute_youtube_chapters(list(manager.classifier_transitions), runtime)
+        global _last_session_chapters
+        _last_session_chapters = chapters
+        session_manifest["youtube_chapters"] = chapters
+
         (session_dir / "session.json").write_text(json.dumps(session_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
         # ── 2. transcript.jsonl ───────────────────────────────────────────
@@ -633,7 +640,19 @@ def _write_session_log() -> Optional[str]:
         ]
         (session_dir / "summary.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
-        server_log.info("Session exported: %s (canonical 4-file format, %d turns, %d active targets)",
+        # ── 5. youtube_chapters.txt & youtube_chapters.json ───────────────
+        yt_txt = [
+            "# YouTube Player Chapters (Official)",
+            chapters.get("youtube_player_chapters", "0:00 예배 시작"),
+            "",
+            "# YouTube Description Inline",
+            chapters.get("inline_description", ""),
+            "",
+        ]
+        (session_dir / "youtube_chapters.txt").write_text("\n".join(yt_txt), encoding="utf-8")
+        (session_dir / "youtube_chapters.json").write_text(json.dumps(chapters, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        server_log.info("Session exported: %s (canonical 5-file format, %d turns, %d active targets)",
                         session_dir, len(consolidated_turns), len(manager.sessions))
         return f"logs/sessions/{ts}"
     except Exception as e:
@@ -1572,6 +1591,47 @@ async def get_status(request: Request = None):
         "local_translation_status": "ready",
         "public_https_status": (tunnel_mgr.status if tunnel_mgr else ("available" if tunnel_ready else "unavailable")),
     }
+
+
+
+@app.get("/api/session/latest/chapters")
+async def get_latest_youtube_chapters(request: Request = None):
+    """Return YouTube chapter markers from current live session, cache, or most recent session folder."""
+    if manager and manager.is_running:
+        chapters = compute_youtube_chapters(list(manager.classifier_transitions), _runtime_seconds())
+        return JSONResponse({"status": "live", "session_id": "live", **chapters})
+
+    if _last_session_chapters:
+        return JSONResponse({"status": "cached", **_last_session_chapters})
+
+    session_root = Path(logging_cfg().get("log_dir", "logs")) / "sessions"
+    if session_root.exists():
+        subdirs = sorted([d for d in session_root.iterdir() if d.is_dir()], reverse=True)
+        for sdir in subdirs:
+            ch_json = sdir / "youtube_chapters.json"
+            if ch_json.exists():
+                try:
+                    data = json.loads(ch_json.read_text(encoding="utf-8"))
+                    return JSONResponse({"status": "archived", "session_id": sdir.name, **data})
+                except Exception:
+                    continue
+            sess_json = sdir / "session.json"
+            if sess_json.exists():
+                try:
+                    m = json.loads(sess_json.read_text(encoding="utf-8"))
+                    trans = m.get("audio_class_transitions", [])
+                    rt = float(m.get("runtime_seconds", 0.0))
+                    chapters = compute_youtube_chapters(trans, rt)
+                    return JSONResponse({"status": "derived", "session_id": sdir.name, **chapters})
+                except Exception:
+                    continue
+
+    return JSONResponse({
+        "status": "empty",
+        "milestones": {},
+        "youtube_player_chapters": "0:00 예배 시작",
+        "inline_description": "",
+    })
 
 
 

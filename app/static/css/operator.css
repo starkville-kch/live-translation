@@ -305,7 +305,34 @@ html[lang="en"] .tooltiptext[data-lang="en"] {
   display: block !important;
 }
 
-/* Header Language Switcher */
+/* Header Actions & Language Switcher */
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+.header-guide-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}
+.header-guide-link:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.45);
+}
 .header-lang-switch {
   display: inline-flex;
   align-items: center;
@@ -313,7 +340,6 @@ html[lang="en"] .tooltiptext[data-lang="en"] {
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 20px;
   padding: 2px;
-  margin-left: 12px;
   gap: 2px;
   flex-shrink: 0;
 }
@@ -1709,5 +1735,37 @@ html[lang="ko"] .preview-en::before {
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
+
+/* ============================================================
+   YOUTUBE CHAPTERS CARD
+   ============================================================ */
+.yt-chapters-box {
+  font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.6;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 6px 0 8px 0;
+  max-height: 100px;
+  overflow-y: auto;
+  color: var(--color-navy-900);
+  white-space: pre-line;
+  user-select: text;
+  word-break: break-all;
+}
+.yt-chapters-box::-webkit-scrollbar {
+  width: 4px;
+}
+.yt-chapters-box::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+
 
 

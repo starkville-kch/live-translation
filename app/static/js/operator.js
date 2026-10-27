@@ -2408,6 +2408,59 @@ if (btnSaveManage) {
 }
 
 // ============================================================
+// YOUTUBE CHAPTERS
+// ============================================================
+let _lastChaptersText = '0:00 예배 시작';
+
+async function updateChaptersPreview() {
+  try {
+    const res = await fetch('/api/session/latest/chapters');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.youtube_player_chapters) {
+      _lastChaptersText = data.youtube_player_chapters;
+      const previewEl = document.getElementById('yt-chapters-preview');
+      if (previewEl) {
+        previewEl.innerText = data.youtube_player_chapters;
+      }
+    }
+  } catch (_) {}
+}
+
+const btnCopyChapters = document.getElementById('btn-copy-chapters');
+if (btnCopyChapters) {
+  btnCopyChapters.addEventListener('click', async () => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(_lastChaptersText);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = _lastChaptersText;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      const prevHtml = btnCopyChapters.innerHTML;
+      const isEn = getOperatorUiLanguage() === 'en';
+      btnCopyChapters.innerHTML = `
+        <svg style="width: 13px; height: 13px; color: var(--color-success);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span style="color: var(--color-success); font-weight: 700;">${isEn ? 'Copied to Clipboard!' : '클립보드 복사 완료!'}</span>
+      `;
+      setTimeout(() => {
+        btnCopyChapters.innerHTML = prevHtml;
+      }, 2000);
+    } catch (e) {
+      console.warn('Clipboard copy failed:', e);
+    }
+  });
+}
+
+// ============================================================
 // INITIALIZATION
 // ============================================================
 setOperatorUiLanguage(_currentUiLang);
@@ -2417,6 +2470,7 @@ loadLanguageConfiguration();
 connectSSE();
 startStatusPoll();
 startEventPoll();
+updateChaptersPreview();
 
 
 

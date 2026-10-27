@@ -133,7 +133,8 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 | `app/model_resolver.py` | Model discovery, candidate classification, 5-tier lifecycle, fallback cascade | Understanding model selection and fallback |
 | `app/gemini_session.py` | Gemini Live WebSocket session runner, anti-contamination boundaries, drift watchdog | Understanding Gemini Live integration |
 | `app/audio_classifier.py` | Observer-only NumPy heuristic speech/music classifier (beat-autocorr anchored, hysteresis-gated) | Understanding the `audio_class` operator badge / session label track |
-| `docs/PLAN.md` | 시스템 개요, 파일 맵, 단계별 개발 현황(0–26 완료, 27 계획), 신뢰성 요구사항, 설정 참조 | 아키텍처 및 시스템 사양 확인 시 |
+| `app/chapters.py` | Automated liturgy milestone detection, official YouTube player chapters, and inline description export | Understanding YouTube chapters and session exports |
+| `docs/PLAN.md` | 시스템 개요, 파일 맵, 단계별 개발 현황(0–27 완료, 28 계획), 신뢰성 요구사항, 설정 참조 | 아키텍처 및 시스템 사양 확인 시 |
 | `docs/TECHNICAL.md` | 코드 레벨: FastAPI 라우트, Gemini 세션, 오디오 파이프라인, asyncio 패턴 | 코드 수정 및 디버깅 시 |
 | `docs/WALKTHROUGH.md` | 세션별 빌드 기록, 검증 프로토콜 결과, 기술적 회고 | 과거 기술 의사결정 및 이슈 추적 시 |
 | `docs/BUILD_EXE.md` | PyInstaller 빌드 기록, spec 설정, 단일 실행 파일 패키징 | 독립 실행 파일 재빌드 시 |

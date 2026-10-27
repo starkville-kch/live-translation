@@ -85,16 +85,24 @@ hiddenimports += [
     "app.operator_auth",
 ]
 
+# Dynamically discover pyaudio binary extension in active environment
+pyaudio_binaries = []
+try:
+    site_pyaudio = Path(sys.prefix) / "Lib" / "site-packages" / "pyaudio"
+    pyd_matches = list(site_pyaudio.glob("_portaudio*.pyd"))
+    if pyd_matches:
+        pyaudio_binaries = [(str(pyd_matches[0]), "pyaudio")]
+    else:
+        fallback_pyd = Path(r"D:\Program_Files\miniconda3\envs\skc_build\Lib\site-packages\pyaudio\_portaudio.cp311-win_amd64.pyd")
+        if fallback_pyd.exists():
+            pyaudio_binaries = [(str(fallback_pyd), "pyaudio")]
+except Exception:
+    pass
+
 a = Analysis(
     ["main.py"],
     pathex=["."],
-    binaries=[
-        # conda's PyAudio statically links PortAudio into the .pyd — include it explicitly
-        (
-            r"D:\Program_Files\miniconda3\envs\skc_build\Lib\site-packages\pyaudio\_portaudio.cp311-win_amd64.pyd",
-            "pyaudio",
-        ),
-    ],
+    binaries=pyaudio_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

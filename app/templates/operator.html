@@ -147,20 +147,31 @@
 
   <div class="col-right">
 
-    <!-- Guide link -->
-    <div class="card">
+    <!-- YouTube Chapters Card -->
+    <div class="card" id="card-youtube-chapters">
       <h2>
         <span class="tooltip tooltip-left">
-          <span data-lang="ko">📖 사용 가이드</span>
-          <span data-lang="en">📖 Volunteer Guide</span>
-          <span class="tooltiptext" data-lang="ko">번역 시스템 운영 방법, 장치 설정, 문제 해결 방법을 안내하는 운영자 가이드입니다.</span>
-          <span class="tooltiptext" data-lang="en">Operator guide covering setup, device configuration, and troubleshooting.</span>
+          <svg style="width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; color: #ef4444;" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
+          </svg>
+          <span data-lang="ko">유튜브 챕터</span>
+          <span data-lang="en">YouTube Chapters</span>
+          <span class="tooltiptext" data-lang="ko">오디오 분석을 기반으로 유튜브 플레이어 챕터 및 주보용 타임스탬프를 자동 생성합니다.</span>
+          <span class="tooltiptext" data-lang="en">Automatically generated YouTube player chapters and timestamps from audio logs.</span>
         </span>
       </h2>
-      <a href="/help" target="_blank" style="font-size:13px; color:var(--color-gold-500); text-decoration:underline; font-weight:600; display:block; margin-top:4px;">
-        <span data-lang="ko">가이드 열기 →</span>
-        <span data-lang="en">Open Guide (Help) →</span>
-      </a>
+      <div id="yt-chapters-preview" class="yt-chapters-box">
+        <span data-lang="ko">0:00 예배 시작</span>
+        <span data-lang="en">0:00 Service Start</span>
+      </div>
+      <button id="btn-copy-chapters" class="secondary" type="button" style="width: 100%; font-size: 11px; font-weight: 700; padding: 6px 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+        <svg style="width: 13px; height: 13px; flex-shrink: 0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <span data-lang="ko">챕터 복사 (클립보드)</span>
+        <span data-lang="en">Copy Chapters (Clipboard)</span>
+      </button>
     </div>
 
 

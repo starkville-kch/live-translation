@@ -263,6 +263,11 @@ logging:
   3. **툴팁 오버플로우 및 다국어 렌더링 개선 (`app/static/css/operator.css`, `app/templates/operator.html`)**:
      - 자막 미리보기 헤더 및 지연 분석 패널의 `overflow: hidden` 제약을 해제하여 툴팁 잘림 방지.
      - 한글/영어 모드 모두에서 툴팁 팝업이 온전한 블록 레이아웃(`display: block !important`)을 유지하도록 보정.
+  4. **자동 유튜브 챕터 마커 추출 및 세션 연동 (`app/chapters.py`, `app/server.py`)**:
+     - 오디오 분류기 전이 데이터를 분석하여 예배 순서(광고, 찬양, 설교시작, 결단찬양)를 자동 감지.
+     - 유튜브 공식 플레이어 챕터 포맷(`0:00 예배 시작\n...`) 및 주보/웹사이트용 인라인 타임스탬프 포맷 생성.
+     - 서비스 종료 시 `youtube_chapters.txt` 및 `youtube_chapters.json` 자동 저장 및 `GET /api/session/latest/chapters` API 제공.
+     - 운영자 콘솔 내 실시간 챕터 미리보기 및 원클릭 클립보드 복사 지원.
 
 ### Phase 28 - 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
 - **목표**: Cloudflare Zero Trust 대시보드를 수동으로 탐색하여 토큰을 발급받는 복잡한 초기 진입 장벽을 제거하고, 설정 마법사(`SKC_setup.exe`) 및 초기 구동 시 터널 생성 및 공용 HTTPS 연결을 원클릭으로 자동화.
