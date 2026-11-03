@@ -119,7 +119,7 @@
 
 * **운영자 콘솔 변경 사항**:
   * 상태 표시 스트립을 `<header>` 행 안으로 통합했습니다 (로고 좌측, 5개 알약 배지 중앙, 우측 여백). `position: sticky`를 적용하여 스크롤 시에도 타이틀과 상태 표시가 고정됩니다. 전체 한 행 높이 절감.
-  * "Live Translation Console" 레이블과 Stopped/Live/Paused/Error 뱃지를 제거했습니다. 상태 스트립만으로 상태 전달이 충분합니다.
+  * "Live Translation Console" 레이블과 Stopped/Live/Paused/Error 배지를 제거했습니다. 상태 스트립만으로 상태 전달이 충분합니다.
   * CSS 미디어 쿼리로 반응형 타이틀을 구현: 760px 이상에서는 "Starkville Korean Church (PCA)", 미만에서는 "SKC (PCA)"로 자동 전환되어 좁은 화면에서 상태 알약이 줄바꿈되는 것을 방지합니다.
   * 상태 모니터를 4열 그리드(2쌍 × 3행)에서 6열 그리드(3쌍 × 2행)로 압축, 한 행을 추가 절감.
   * 모든 카드 헤딩, 통계 레이블, 제어 버튼(Start, Pause, Stop, Exit System, Auto-Stop)에 한국어/영어 양국어 툴팁을 추가했습니다.
@@ -152,7 +152,7 @@
   * **PublicHostGuard 보안 경계 (`app/server.py`)**: 공인 도메인 접근 시 관리자 라우트 및 제어 API 404 차단, 참석자 라우트만 안전하게 통과.
   * **운영자 인증 (`app/operator_auth.py`)**: HMAC-SHA256 HttpOnly 세션 쿠키 기반 보안 세션 관리.
   * **지연 텔레메트리 아코디언 (`app/templates/operator.html`)**: 상세 RTT/AI 처리 지연을 접이식 아코디언으로 보관하고, 대시보드 3x2 그리드에 공용 체감 지연(~1.1s) 표시.
-  * **2열 데스크톱 설정 마법사 (`setup_gui.py` / `SKC_setup.exe`)**: 1060×670 px 레이아웃으로 한 화면에 교회 정보, Gemini API 검증, Cloudflare 터널 및 준비도 배지를 집약.
+  * **2열 데스크톱 설정 마법사 (`setup_gui.py` / `SKC_setup.exe`)**: 1060×670 px 레이아웃으로 한 화면에 교회 정보, Gemini API 검증, Cloudflare 터널 및 준비상태 배지를 집약.
   * **병렬 멀티스레드 빌더 (`build_parallel.py`, `build_exe.bat`)**: CPU 코어 활용 병렬 빌드로 빌드 시간 50% 단축.
   * **포트 8080 표준화**: 포트 80 충돌 위험 영구 제거.
 

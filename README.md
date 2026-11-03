@@ -6,8 +6,8 @@
 ---
 
 언어 선택 / Select Language:
-- 🇰🇷 [한국어 — 실시간 예배 번역 시스템](#korean-section)
-- 🇺🇸 [English — Live Translation System](#english-section)
+- 🇰🇷 [한국어: 실시간 예배 번역 시스템](#korean-section)
+- 🇺🇸 [English: Live Translation System](#english-section)
 
 ***
 
@@ -26,47 +26,47 @@
 
 ## 1. 시스템 소개
 
-예배용 실시간 다국어 동시 통역 시스템입니다. 단일 마이크 오디오 입력을 캡처하고 Google Gemini Live API를 통해 다중 타겟 언어(영어, 중국어, 스페인어, 우크라이나어 등 70+ 언어)로 동시 번역하여 로컬 WiFi 및 공인 HTTPS 접속 참석자의 모바일 브라우저로 자막과 음성을 스트리밍합니다. 설교 특화 도메인 어휘 편향(Vocabulary Biasing), 사후 2분 용어 검토 모달, 주석 보존 설정 엔진, 그리고 인트라넷/인터넷 네트워크 적응형 모드를 탑재하여 스탁빌 한인 교회(PCA) 및 다문화 예배 환경에 최적화되었습니다.
+예배용 실시간 다국어 동시 통역 시스템입니다. 마이크로 들어온 오디오를 Google Gemini Live API로 70개 이상 언어(영어, 중국어, 스페인어, 우크라이나어 등)로 실시간 번역해 현장 Wi-Fi나 공용 HTTPS로 접속한 참석자 스마트폰 브라우저에 자막과 음성을 전달합니다. 설교 맞춤 어휘 편향(Vocabulary Biasing), 예배 후 2분 어휘 검토, 주석을 보존하는 설정 엔진, 인트라넷과 인터넷 환경에 맞춘 적응형 모드를 갖춰 스탁빌 한인 교회(PCA)를 비롯한 다문화 예배 환경에 맞춰 쓸 수 있습니다.
 
 ---
 
 ## 2. 문서 가이드 디렉토리
 
-시스템 운영, 유지보수 및 편집을 위한 모든 세부 문서는 아래 개별 가이드로 분리되어 관리됩니다. 필요한 가이드의 링크를 클릭하여 확인하십시오.
+시스템 운영과 유지보수에 필요한 모든 문서는 아래 가이드로 분리해 관리합니다. 필요한 문서의 링크를 눌러 확인하세요.
 
 ### 👥 1. 봉사자 및 운영자용
 
-* **봉사자 운영 매뉴얼 (Operator Manual)** — 마이크 입력 확인, 시작/일시정지/종료 조작, QR 코드 제공 안내
+* **봉사자 운영 매뉴얼 (Operator Manual)** - 마이크 입력 확인, 시작/일시정지/종료 조작, QR 코드 제공 안내
   * **[🖥️ 웹 브라우저 가이드 (how_to_use.html)](how_to_use.html)**
 
 ### 🛠️ 2. 기술 유지보수자용
 
-* **기술 유지보수 및 아키텍처 플랜 (Architecture Plan)** — 파일 구조, 단계별 개발 현황, 기술 스택, 설정 참고
+* **기술 유지보수 및 아키텍처 플랜 (Architecture Plan)** - 파일 구조, 단계별 개발 현황, 기술 스택, 설정 참고
   * **[📖 docs/PLAN.md](docs/PLAN.md)**
 
-* **개발 빌드 및 히스토리 로그 (Build Walkthrough)** — 세션별 개발 기록, 검증 프로토콜, 기술 의사결정 회고
+* **개발 빌드 및 히스토리 로그 (Build Walkthrough)** - 세션별 개발 기록, 검증 프로토콜, 기술 의사결정 회고
   * **[📖 docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)**
 
-* **기술 참고서 (Technical Reference)** — FastAPI 라우트, Gemini Live 세션, 오디오 파이프라인, asyncio 패턴
+* **기술 참고서 (Technical Reference)** - FastAPI 라우트, Gemini Live 세션, 오디오 파이프라인, asyncio 패턴
   * **[📖 docs/TECHNICAL.md](docs/TECHNICAL.md)**
 
-* **단일 실행 파일 빌드 기록 (Build Executable Guide)** — PyInstaller spec 설정, frozen exe 코드 변경
+* **단일 실행 파일 빌드 기록 (Build Executable Guide)** - PyInstaller spec 설정, frozen exe 코드 변경
   * **[📖 docs/BUILD_EXE.md](docs/BUILD_EXE.md)**
 
 ### 🔐 3. 운영 및 소유권 관리
 
 * **사이트 운영 및 비밀키 관리**
-  * **API 키 발급 및 등록**: [Google AI Studio](https://aistudio.google.com/)에서 API 키를 발급받고 결제 정보(Billing)를 등록해야 합니다. 무료 키는 60분 연속 가동 시 분당 한도 초과로 자막 중단이 발생할 수 있습니다.
-  * **환경 변수 파일 설정**: 발급받은 키는 프로젝트 루트 디렉토리의 `.env` 파일에 `GEMINI_API_KEY=your_key` 형태로 저장하여 보안을 관리합니다.
-  * **로컬 인프라 제어**: `config.yaml` 파일을 통해 로컬 PC의 입력 믹서 인덱스 등을 지정합니다.
-  * **소유권 이양**: 교회 시스템의 영속성을 위해 GitHub 권한과 Google Billing 소유권을 다음 유지보수자에게 안전하게 인계하는 원칙을 정의합니다.
+  * **API 키 발급 및 등록**: [Google AI Studio](https://aistudio.google.com/)에서 API 키를 발급받고 결제 정보(Billing)를 등록해야 합니다. 무료 키는 60분 연속 가동 시 분당 사용 한도를 초과해 자막이 끊길 수 있습니다.
+  * **환경 변수 파일 설정**: 발급받은 키는 프로젝트 루트 폴더의 `.env` 파일에 `GEMINI_API_KEY=your_key` 형식으로 저장해 안전하게 관리합니다.
+  * **로컬 인프라 제어**: `config.yaml` 파일에서 로컬 PC의 입력 믹서 번호 등을 지정합니다.
+  * **소유권 이양**: 교회 시스템이 계속 안정적으로 운영되도록 GitHub 권한과 Google Billing 소유권을 다음 관리자에게 안전하게 넘기는 절차를 안내합니다.
 
 ---
 
 ## 3. 사용자 및 관리자 화면 구성
 
 ### 1. 관리자 제어 콘솔 (`/admin`)
-참석자용 공용 HTTPS QR 코드 생성, 오디오 입력 기기 설정, 다국어 UI 토글(`[ English | 한국어 ]`), 및 제미나이 번역 엔진의 시작/일시정지/종료 제어 등을 담당하는 중앙 관리 화면입니다.
+참석자용 공용 HTTPS QR 코드 생성, 오디오 입력 기기 설정, 다국어 UI 전환(`[ English | 한국어 ]`), 제미나이 번역 엔진 시작/일시정지/종료 제어를 맡는 중앙 관리 화면입니다.
 
 ![Operator Console](app/operator_screen.png)
 
@@ -74,15 +74,15 @@
   * **언어 선택기 (`[ English | 한국어 ]`)**: 상단 헤더에서 운영자 인터페이스 언어를 영어 또는 한국어로 실시간 전환합니다.
   * **오디오 장치 설정 (Audio Device Index)**: 현재 Windows PC에 연결된 오디오 입력 장치를 드롭다운에서 선택하고 레벨 미터로 입력 감도를 확인합니다.
   * **제어 스위치 (Start / Pause / Stop)**:
-    * `Start`를 눌러 AI 번역 세션을 열고, 예배 도중 잠시 멈출 때는 `Pause`를, 예배 종료 시엔 `Stop`을 눌러 자막 텍스트 저장을 수행합니다.
+    * `Start`를 눌러 AI 번역을 시작하고, 예배 도중 잠시 멈출 때는 `Pause`를, 예배가 끝나면 `Stop`을 눌러 자막 텍스트를 저장합니다.
   * **상태 모니터 & 텔레메트리 (Status & Telemetry)**: 제미나이 AI 처리 지연(Latency), 현장 Wi-Fi 및 공용 HTTPS 접속자 수, RTT 네트워크 품질을 실시간 모니터링합니다.
-  * **음성 통역 모니터 (Audio Monitor)**: 관리자가 헤드폰이나 이어폰을 착용하고 실제 참석자들에게 송출되는 실시간 영어 번역 음성 스트림을 서버 PC에서 실시간으로 모니터링하고 볼륨을 제어합니다.
-  * **공용 HTTPS QR 코드 & 링크 (Attendee Access)**: Cloudflare Tunnel 기반 공용 보안 QR 코드를 제공하여 LTE/5G 모바일 환경에서도 즉시 접속할 수 있으며, 터널 미사용 시 현장 Wi-Fi 단독 모드로 자동 전환됩니다.
-  * **설교 어휘 검토 (2-Min Review)**: 예배 종료(Stop) 후 시스템을 닫기 전, 설교 중 감지된 고유명사 및 신앙 어휘를 확인하고 사전에 등록하여 다음 예배 인식률을 지속적으로 향상시킵니다.
-  * **반응형 3열 대시보드**: 넓은 화면에서 오디오/자막, 입력/언어, QR/로그가 3열로 균형 배치되어 운영 편의성을 극대화합니다.
+  * **음성 통역 모니터 (Audio Monitor)**: 관리자가 헤드폰이나 이어폰을 착용하고 참석자에게 송출되는 영어 번역 음성을 서버 PC에서 직접 모니터링하며 볼륨을 조절합니다.
+  * **공용 HTTPS QR 코드 & 링크 (Attendee Access)**: Cloudflare Tunnel 기반 공용 보안 QR 코드로 LTE/5G 모바일 환경에서도 즉시 접속할 수 있으며, 터널을 쓰지 않을 때는 현장 Wi-Fi 단독 모드로 자동 전환됩니다.
+  * **설교 어휘 검토 (2-Min Review)**: 예배 종료(Stop) 후 프로그램을 닫기 전, 설교 중 나온 고유명사와 신앙 용어를 확인해 사전에 등록합니다. 다음 예배에서 인식 정확도를 꾸준히 높일 수 있습니다.
+  * **반응형 3열 대시보드**: 넓은 화면에서는 오디오와 자막, 입력과 언어, QR과 로그가 3열로 정돈되어 편리하게 관리할 수 있습니다.
 
 ### 2. 참석자 자막 및 오디오 수신 페이지 (`/live`)
-예배당 내 참석자들이 스마트폰 브라우저를 통해 실시간 번역 자막을 읽고 원문을 대조하며 음성을 청취하는 페이지입니다.
+예배당 참석자가 스마트폰 브라우저에서 실시간 번역 자막을 읽고, 원문을 대조하며 통역 음성을 듣는 페이지입니다.
 
 
 ![Attendee Caption Page](app/user_screen.png)
@@ -90,27 +90,27 @@
 * **주요 요소 설명**:
   * **하단 정렬 자막 스트림 (Bottom-aligned Captions)**: 새로 추가되는 자막 텍스트 라인이 화면 하단에 차례대로 흘러나오며 자연스러운 눈높이를 제공합니다.
   * **글꼴 크기 슬라이더 (Font Size Slider)**: 시력에 맞춰 실시간으로 자막 크기를 세밀하게 조절합니다.
-  * **오디오 활성화 버튼 (Audio Playback Control)**: 이어폰을 소지한 사용자가 실시간 AI 통역 오디오(Orus 보이스)를 들을 수 있도록 실시간 웹소켓 PCM 버퍼링 오디오 채널을 키고 끕니다.
+  * **오디오 활성화 버튼 (Audio Playback Control)**: 이어폰을 낀 참석자가 AI 통역 음성(Orus 보이스)을 들을 수 있도록 웹소켓 실시간 오디오 스트림을 켜고 끕니다.
   * **상태 인디케이터 (Status Badge)**: `● Live` 혹은 `● Reconnecting` 배지를 통해 연결 상태를 실시간으로 확인합니다.
 
 ---
 
 ### 3. 초기 설정 마법사 (`SKC_setup.exe`)
-비개발자 및 봉사자가 별도의 코드나 터미널 명령어 조작 없이, 한 화면에서 교회 정보, Gemini API 키, 로컬 Wi-Fi 주소 및 Cloudflare 공용 접속 설정을 원클릭으로 검증하고 저장할 수 있는 데스크톱 GUI 설정 도구입니다.
+교회 정보, Gemini API 키, 로컬 Wi-Fi 주소, Cloudflare 공용 접속 설정을 한 화면에서 검증하고 저장하는 데스크톱 설정 도구입니다. 코드나 터미널 명령어를 다루지 않는 봉사자도 쉽게 사용할 수 있습니다.
 
 ![Desktop Setup Wizard](app/setup_screen.png)
 
 * **주요 영역 설명**:
-  * **1. 교회 정보 및 로컬 네트워크 (Church & Local Network)**: 교회 정식 명칭, 참석자 모바일 상단 바용 약칭(Short Name), 로컬 mDNS 접속 호스트명(`http://skc.local:8080`), 로고 이미지 선택, 및 공용 접속 보안용 운영자 비밀번호(`SKC_OPERATOR_PASSWORD`)를 지정합니다.
-  * **2. Google Gemini API 연동**: API 키 발급 및 결제 연동 가이드 링크를 제공하며, `[⚡ Test Connection & Model Availability]` 버튼을 통해 실시간 번역 모델 통신 가능 여부를 즉시 사전 진단합니다.
-  * **3. 공용 HTTPS 및 Cloudflare 터널 (선택 사항)**: LTE/5G 모바일 참석자를 위한 외부 접속 주소와 터널 토큰을 설정하며, `cloudflared.exe` 바이너리를 원클릭으로 자동 다운로드할 수 있습니다.
-  * **준비도 배지 & 원클릭 저장**: 하단의 준비도 인디케이터(Local Network, Gemini Configured, Public HTTPS)를 통해 시스템 구동 요건을 확인한 후 `[Save & Finish]`를 누르면 설정이 영구 보존됩니다.
+  * **1. 교회 정보 및 로컬 네트워크 (Church & Local Network)**: 교회 정식 명칭, 참석자 모바일 화면용 약칭(Short Name), 로컬 mDNS 접속 호스트명(`http://skc.local:8080`), 로고 이미지 선택, 공용 접속 보안용 운영자 비밀번호(`SKC_OPERATOR_PASSWORD`)를 설정합니다.
+  * **2. Google Gemini API 연동**: API 키 발급과 결제 등록 안내 링크를 제공하며, `[⚡ Test Connection & Model Availability]` 버튼으로 실시간 번역 모델과 정상 연결되는지 바로 확인합니다.
+  * **3. 공용 HTTPS 및 Cloudflare 터널 (선택 사항)**: LTE/5G로 접속하는 성도를 위해 외부 접속 주소와 Cloudflare 터널 토큰을 설정합니다. 필요한 `cloudflared.exe` 파일도 버튼 클릭 한 번으로 자동 다운로드할 수 있습니다.
+  * **준비상태 배지 & 원클릭 저장**: 하단 준비상태 배지(Local Network, Gemini Configured, Public HTTPS)로 설정 상태를 확인하고 `[Save & Finish]`를 누르면 설정이 안전하게 저장됩니다.
 
 ---
 
 ## 4. 로컬 개발 환경 실행
 
-로컬 개발 환경 설정에 관한 자세한 사양은 기술 유지보수 가이드를 참고하시기 바라며, 아래 핵심 명령어로 즉시 시작할 수 있습니다.
+로컬 개발 환경 설정에 관한 자세한 내용은 기술 가이드를 참고하세요. 아래 명령어로 바로 실행할 수 있습니다.
 
 ```bash
 # 1. 가상 환경 활성화 / Activate Conda Environment
@@ -154,7 +154,7 @@ build_exe.bat
 
 ## 5. 서비스 운영 비용 분석
 
-이 시스템은 Google Gemini 3.5 Live Translate API 유료 티어(Paid Tier) 요금을 기준으로 작동합니다. 아래는 일반적인 교회 주일 예배 운영 시 예상되는 비용 예시입니다.
+Google Gemini 3.5 Live Translate API 유료 요금(Paid Tier) 기준입니다. 주일 예배를 진행할 때 예상되는 비용은 다음과 같습니다.
 
 ### 1. API 요금 기준
 * **입력 오디오 (Input Audio)**: $3.50 / 1M tokens (약 $0.0053 / 분)
@@ -199,21 +199,21 @@ All detailed guides for running, maintaining, and editing the system are managed
 
 ### 👥 1. For Operators & Volunteers
 
-* **Volunteer & Operator Manual** — check mic inputs, start/pause/stop translation, share the QR code
+* **Volunteer & Operator Manual** - check mic inputs, start/pause/stop translation, share the QR code
   * **[🖥️ Interactive HTML Guide (how_to_use.html)](how_to_use.html)**
 
 ### 🛠️ 2. For Technical Maintainers
 
-* **Technical Maintainer & Architecture Plan** — file map, phase history, tech stack, config reference
+* **Technical Maintainer & Architecture Plan** - file map, phase history, tech stack, config reference
   * **[📖 docs/PLAN.md](docs/PLAN.md)**
 
-* **Build Walkthrough & History Log** — chronological sessions, verification protocol, retrospective
+* **Build Walkthrough & History Log** - chronological sessions, verification protocol, retrospective
   * **[📖 docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)**
 
-* **Technical Reference (Code-Level Details)** — FastAPI routes, Gemini Live session, audio pipeline, asyncio patterns
+* **Technical Reference (Code-Level Details)** - FastAPI routes, Gemini Live session, audio pipeline, asyncio patterns
   * **[📖 docs/TECHNICAL.md](docs/TECHNICAL.md)**
 
-* **Single Executable Build Record** — PyInstaller spec decisions, frozen exe code changes
+* **Single Executable Build Record** - PyInstaller spec decisions, frozen exe code changes
   * **[📖 docs/BUILD_EXE.md](docs/BUILD_EXE.md)**
 
 ### 🔐 3. Site Governance & API Key Registry
