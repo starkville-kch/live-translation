@@ -497,6 +497,71 @@
 
   </div>
 
+  <!-- 초기 환경 설정 마법사 / Initial Setup Wizard -->
+  <h2 data-lang="ko">초기 설정 마법사 (Initial Setup Wizard - SKC_setup.exe)</h2>
+  <h2 data-lang="en">Initial Setup Wizard (SKC_setup.exe)</h2>
+
+  <p data-lang="ko">처음 시스템을 설치하거나 교회 정보, API 키, 외부 공용 도메인을 변경할 때는 <code>SKC_setup.exe</code>를 실행하여 직관적인 그래픽 화면에서 설정할 수 있습니다.</p>
+  <p data-lang="en">When setting up for the first time or updating church information, Gemini API keys, or public domains, run <code>SKC_setup.exe</code> to configure all settings through an intuitive desktop GUI.</p>
+
+  <div style="text-align:center; margin: 16px 0 24px 0;">
+    <img src="app/setup_screen.png" alt="Live Translation Setup Wizard" style="max-width:100%; height:auto; border-radius:8px; border:1px solid var(--color-warm-300); box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+  </div>
+
+  <div class="steps" style="margin-bottom:32px;">
+    <div class="step">
+      <div class="step-body">
+        <h3 data-lang="ko">1. 교회 정보 및 로컬 네트워크 (Card 1: Church & Local Network)</h3>
+        <h3 data-lang="en">1. Church Info & Local Network (Card 1)</h3>
+        <p data-lang="ko">
+          교회 정식 명칭, 모바일 화면 상단에 표시될 축약 명칭(Short Name), 로컬 mDNS 주소(기본: <code>skc</code> ➔ <code>http://skc.local:8080</code>), 교회 로고 이미지 파일, 그리고 외부 접속 시 관리자 페이지를 보호할 <strong>운영자 비밀번호</strong>를 설정합니다.
+        </p>
+        <p data-lang="en">
+          Enter the full church name, short name for mobile headers, local mDNS hostname (default: <code>skc</code> ➔ <code>http://skc.local:8080</code>), church logo image, and the <strong>operator password</strong> to secure the console on public networks.
+        </p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-body">
+        <h3 data-lang="ko">2. Google Gemini API 연동 (Card 2: Google Gemini API)</h3>
+        <h3 data-lang="en">2. Google Gemini API Setup (Card 2)</h3>
+        <p data-lang="ko">
+          Google AI Studio에서 발급받은 Gemini API 키를 입력합니다 (결제 정보가 등록된 유료 티어 권장). <strong>[⚡ Test Connection & Model Availability]</strong> 버튼을 누르면 API 키 유효성과 실시간 번역 모델 통신 가능 여부를 즉시 검증합니다.
+        </p>
+        <p data-lang="en">
+          Paste the Gemini API key obtained from Google AI Studio (Paid tier with billing enabled recommended). Click <strong>[⚡ Test Connection & Model Availability]</strong> to immediately verify key validity and live translation model connectivity.
+        </p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-body">
+        <h3 data-lang="ko">3. 공용 인터넷 접속 설정 (Card 3: Public HTTPS / Cloudflare Named Tunnel)</h3>
+        <h3 data-lang="en">3. Public HTTPS & Cloudflare Tunnel Setup (Card 3)</h3>
+        <p data-lang="ko">
+          성도들이 교회 Wi-Fi 없이 LTE/5G 모바일 데이터로도 접속할 수 있도록 지원하는 고급 설정입니다 (선택 사항). 공인 도메인 URL과 Cloudflare 터널 토큰을 입력하며, <code>cloudflared.exe</code> 바이너리가 없을 경우 원클릭 다운로드 버튼으로 즉시 내려받을 수 있습니다.
+        </p>
+        <p data-lang="en">
+          Optional advanced configuration allowing attendees to connect via cellular LTE/5G data. Enter your public domain and Cloudflare tunnel token, with a one-click auto-download button available if <code>cloudflared.exe</code> is missing.
+        </p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-body">
+        <h3 data-lang="ko">4. 준비도 확인 및 저장 (Setup Readiness & Save)</h3>
+        <h3 data-lang="en">4. Check Readiness & Save (Setup Readiness & Save)</h3>
+        <p data-lang="ko">
+          하단 상태 표시줄의 <strong>Local Network</strong>, <strong>Gemini Configured</strong> 배지가 초록색/노란색으로 준비되었는지 확인한 후, <strong>[💾 Save & Finish]</strong> 버튼을 누르면 <code>config.yaml</code>과 <code>.env</code>에 안전하게 저장됩니다.
+        </p>
+        <p data-lang="en">
+          Verify that the <strong>Local Network</strong> and <strong>Gemini Configured</strong> readiness badges show green/yellow, then click <strong>[💾 Save & Finish]</strong> to securely update <code>config.yaml</code> and <code>.env</code>.
+        </p>
+      </div>
+    </div>
+  </div>
+
   <!-- 주일 workflow / Every-service workflow -->
   <h2 data-lang="ko">주일 예배 운용 절차 (Workflow)</h2>
   <h2 data-lang="en">Every-Service Workflow</h2>

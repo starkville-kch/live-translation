@@ -77,7 +77,9 @@
     * `Start`를 눌러 AI 번역 세션을 열고, 예배 도중 잠시 멈출 때는 `Pause`를, 예배 종료 시엔 `Stop`을 눌러 자막 텍스트 저장을 수행합니다.
   * **상태 모니터 & 텔레메트리 (Status & Telemetry)**: 제미나이 AI 처리 지연(Latency), 현장 Wi-Fi 및 공용 HTTPS 접속자 수, RTT 네트워크 품질을 실시간 모니터링합니다.
   * **음성 통역 모니터 (Audio Monitor)**: 관리자가 헤드폰이나 이어폰을 착용하고 실제 참석자들에게 송출되는 실시간 영어 번역 음성 스트림을 서버 PC에서 실시간으로 모니터링하고 볼륨을 제어합니다.
-  * **공용 HTTPS QR 코드 & 링크 (Attendee Access)**: Cloudflare Tunnel 기반 공용 보안 QR 코드를 제공하여 LTE/5G 모바일 환경에서도 즉시 접속할 수 있습니다.
+  * **공용 HTTPS QR 코드 & 링크 (Attendee Access)**: Cloudflare Tunnel 기반 공용 보안 QR 코드를 제공하여 LTE/5G 모바일 환경에서도 즉시 접속할 수 있으며, 터널 미사용 시 현장 Wi-Fi 단독 모드로 자동 전환됩니다.
+  * **설교 어휘 검토 (2-Min Review)**: 예배 종료(Stop) 후 시스템을 닫기 전, 설교 중 감지된 고유명사 및 신앙 어휘를 확인하고 사전에 등록하여 다음 예배 인식률을 지속적으로 향상시킵니다.
+  * **반응형 3열 대시보드**: 넓은 화면에서 오디오/자막, 입력/언어, QR/로그가 3열로 균형 배치되어 운영 편의성을 극대화합니다.
 
 ### 2. 참석자 자막 및 오디오 수신 페이지 (`/live`)
 예배당 내 참석자들이 스마트폰 브라우저를 통해 실시간 번역 자막을 읽고 원문을 대조하며 음성을 청취하는 페이지입니다.
@@ -90,6 +92,19 @@
   * **글꼴 크기 슬라이더 (Font Size Slider)**: 시력에 맞춰 실시간으로 자막 크기를 세밀하게 조절합니다.
   * **오디오 활성화 버튼 (Audio Playback Control)**: 이어폰을 소지한 사용자가 실시간 AI 통역 오디오(Orus 보이스)를 들을 수 있도록 실시간 웹소켓 PCM 버퍼링 오디오 채널을 키고 끕니다.
   * **상태 인디케이터 (Status Badge)**: `● Live` 혹은 `● Reconnecting` 배지를 통해 연결 상태를 실시간으로 확인합니다.
+
+---
+
+### 3. 초기 설정 마법사 (`SKC_setup.exe`)
+비개발자 및 봉사자가 별도의 코드나 터미널 명령어 조작 없이, 한 화면에서 교회 정보, Gemini API 키, 로컬 Wi-Fi 주소 및 Cloudflare 공용 접속 설정을 원클릭으로 검증하고 저장할 수 있는 데스크톱 GUI 설정 도구입니다.
+
+![Desktop Setup Wizard](app/setup_screen.png)
+
+* **주요 영역 설명**:
+  * **1. 교회 정보 및 로컬 네트워크 (Church & Local Network)**: 교회 정식 명칭, 참석자 모바일 상단 바용 약칭(Short Name), 로컬 mDNS 접속 호스트명(`http://skc.local:8080`), 로고 이미지 선택, 및 공용 접속 보안용 운영자 비밀번호(`SKC_OPERATOR_PASSWORD`)를 지정합니다.
+  * **2. Google Gemini API 연동**: API 키 발급 및 결제 연동 가이드 링크를 제공하며, `[⚡ Test Connection & Model Availability]` 버튼을 통해 실시간 번역 모델 통신 가능 여부를 즉시 사전 진단합니다.
+  * **3. 공용 HTTPS 및 Cloudflare 터널 (선택 사항)**: LTE/5G 모바일 참석자를 위한 외부 접속 주소와 터널 토큰을 설정하며, `cloudflared.exe` 바이너리를 원클릭으로 자동 다운로드할 수 있습니다.
+  * **준비도 배지 & 원클릭 저장**: 하단의 준비도 인디케이터(Local Network, Gemini Configured, Public HTTPS)를 통해 시스템 구동 요건을 확인한 후 `[Save & Finish]`를 누르면 설정이 영구 보존됩니다.
 
 ---
 
@@ -174,7 +189,7 @@ build_exe.bat
 
 ## 1. System Overview
 
-This is a real-time multilingual live translation system for church services. It captures audio from a single microphone input, translates it into multiple target languages concurrently (70+ languages, e.g. English, Chinese, Spanish, Ukrainian) using the Google Gemini Live API, and streams captions and audio to attendees' mobile web browsers over local WiFi or public HTTPS. It was originally created for Starkville Korean Church (PCA) but can be easily deployed for any multilingual or multicultural church service.
+This is a real-time multilingual live translation system for church services. It captures audio from a single microphone input, translates it into multiple target languages concurrently (70+ languages, e.g. English, Chinese, Spanish, Ukrainian) using the Google Gemini Live API, and streams captions and audio to attendees' mobile web browsers over local WiFi or public HTTPS. Features domain-specific vocabulary biasing, a post-sermon 2-minute glossary review workflow, comment-preserving configuration persistence, and adaptive intranet/internet network isolation. It was originally created for Starkville Korean Church (PCA) but can be easily deployed for any multilingual or multicultural church service.
 
 ---
 
@@ -225,7 +240,9 @@ This page acts as the central control room for volunteers to generate attendee P
     * Press `Start` to open the AI translation session. Press `Pause` during brief breaks, and `Stop` at the end of the service to save transcripts.
   * **Status & Telemetry**: Real-time display of Gemini AI turn-onset latency, local Wi-Fi / public HTTPS listener counts, and network RTT.
   * **Audio Monitor**: Allows the operator to listen to the real-time translated voice via headphones and adjust volume.
-  * **Public HTTPS QR & Link**: Displays a Cloudflare Tunnel QR code allowing mobile attendees to connect over cellular data (LTE/5G).
+  * **Public HTTPS QR & Link**: Displays a Cloudflare Tunnel QR code allowing mobile attendees to connect over cellular data (LTE/5G), automatically switching to Local Wi-Fi view when tunneling is unconfigured.
+  * **Sermon Vocabulary Review (2-Min Review)**: Before shutting down the system after service, operators can review newly harvested biblical names and theological terms detected during the sermon and approve them into the custom dictionary to enhance speech recognition in future services.
+  * **Responsive 3-Lane Dashboard**: Automatically organizes controls across 3 columns on wide displays for balanced monitoring of audio preview, language configuration, and telemetry/event logs.
 
 ### 2. Attendee Caption Page (`/live`)
 This layout serves real-time English text captions and live translation audio directly to attendees' mobile web browsers, with tap-to-reveal original transcript support.
@@ -238,6 +255,19 @@ This layout serves real-time English text captions and live translation audio di
   * **Font Size Slider**: Allows each attendee to fine-tune caption size to their vision needs in real time.
   * **Audio Playback Control**: Enables attendees with earphones to receive the live AI translation audio (Orus voice) via a real-time WebSocket PCM buffering audio channel.
   * **Status Badge**: Displays `● Live` or `● Reconnecting` to show connection status in real time.
+
+---
+
+### 3. Desktop Setup Wizard (`SKC_setup.exe`)
+A standalone graphical configuration tool designed for volunteers to configure church branding, Gemini API credentials, local Wi-Fi addresses, and Cloudflare public access without touching code or terminal commands.
+
+![Desktop Setup Wizard](app/setup_screen.png)
+
+* **Key Sections**:
+  * **1. Church & Local Network**: Configure the full church name, short name for mobile headers, local mDNS hostname (`http://skc.local:8080`), custom logo image, and the operator password (`SKC_OPERATOR_PASSWORD`) for public access security.
+  * **2. Google Gemini API Setup**: Provides links to Google AI Studio and billing guides, with a one-click `[⚡ Test Connection & Model Availability]` probe to verify API credentials and live translation model readiness.
+  * **3. Public HTTPS & Cloudflare Tunnel (Optional)**: Configure public domains and tunnel tokens for cellular LTE/5G attendee access, complete with a one-click `cloudflared.exe` auto-downloader.
+  * **Readiness Badges & Atomic Save**: Review overall configuration health via bottom readiness indicators (Local Network, Gemini Configured, Public HTTPS) and click `[Save & Finish]` to persist all settings cleanly.
 
 ---
 
