@@ -33,13 +33,21 @@
         <span data-lang="en">※ Multiple selections allowed</span>
       </div>
 
-      <!-- Auto-detect Toggle Button -->
-      <button type="button" id="btn-source-autodetect" class="btn-auto-detect"
-        title="Continuous unconstrained language detection">
-        <span class="autodetect-sparkle">✦</span>
-        <span data-lang="ko">자동 감지 모드</span>
-        <span data-lang="en">Auto-detect (All Languages)</span>
-      </button>
+      <!-- Auto-detect Toggle Button & Tooltip -->
+      <div class="tooltip tooltip-left" style="width: 100%; display: block; margin-bottom: 2px;">
+        <button type="button" id="btn-source-autodetect" class="btn-auto-detect" style="width: 100%; margin-bottom: 0;">
+          <span class="autodetect-sparkle">✦</span>
+          <span data-lang="ko">자동 감지 모드 (모든 언어)</span>
+          <span data-lang="en">Auto-detect Mode (All Languages)</span>
+        </button>
+        <span class="tooltiptext" data-lang="ko" style="width: 270px;">설교자나 강사가 언어를 섞어 쓰시거나 특정 언어로 제한하지 않을 때 사용합니다. Gemini AI가 발화 언어를 스스로 감지하여 선택된 통역 언어로 실시간 번역합니다.</span>
+        <span class="tooltiptext" data-lang="en" style="width: 270px;">Use when speakers alternate languages or speak without restrictions. Gemini AI automatically detects the spoken language and translates into active targets.</span>
+      </div>
+
+      <div class="autodetect-guide-note" style="font-size: 11px; color: var(--color-navy-700); margin: 2px 0 8px 2px; line-height: 1.4;">
+        <span data-lang="ko">💡 설교 중 언어 혼용 시 유용합니다. (클릭하여 켜기/끄기)</span>
+        <span data-lang="en">💡 Useful when speaker alternates languages. (Click to toggle)</span>
+      </div>
 
       <!-- Auto-detect Active Banner -->
       <div id="lang-sources-autodetect-banner" class="lang-sources-autodetect-banner" style="display: none;">

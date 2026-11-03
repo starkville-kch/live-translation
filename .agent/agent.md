@@ -11,6 +11,8 @@ After any major piece of work, update this file and the relevant docs.
 | Build/exe change | `docs/BUILD_EXE.md`, `SKC_translation.spec` |
 | Operator workflow change | `how_to_use.html` |
 
+Language: write this file in English only. Keep Korean only inside backticks when an agent must match exact UI text. Other docs may use Korean.
+
 ---
 
 ## Project Summary
@@ -47,22 +49,22 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 - **`gemini-3.1-flash-live-preview` is banned**: crashes after ~30s of continuous audio (error 1011 keepalive timeout). Do not use as fallback. Confirmed Phase 12 Round 3.
 - **`translation_config` is mandatory, `system_instruction` does nothing**: the translate model requires `translation_config` to activate translation mode. `system_instruction` is accepted by the API but silently ignored by the internal engine. Confirmed Phase 12 Round 2. Don't re-test this.
 - **`turn_complete` removed as a commit trigger**: fires on filler utterances ("um", "uh") in sermon speech → excessive fragmentation. Do not re-introduce. Caption lines are committed after 1.5s silence (`PAUSE_THRESHOLD_S`).
-- **`SessionResumptionConfig` + `SlidingWindow` are mandatory**: without them the session drops every ~10 min. This is not optional.
+- **`SessionResumptionConfig` + `SlidingWindow` are mandatory**. This is not optional. GoAway still closes each connection 9:00 after it opens (see `/docs/TECHNICAL.md`).
 - **Port fallback rejected**: if port is in use, show a message + open browser to running service + exit. Do not silently pick a new port — it would break attendee QR codes and cause audio device conflicts.
 - **Voice pinned to `orus`**: without `SpeechConfig → PrebuiltVoiceConfig(voice_name="orus")`, Gemini picks a random voice on every GoAway reconnect — audibly jarring mid-sermon.
 - **CaptionKit can run in parallel**: Windows shared-mode audio driver allows both apps on the same USB mixer simultaneously. No virtual audio cable needed.
 - **`skc_build` conda env for exe builds**: the `agent` env includes PyTorch (~2.5 GB), producing a 3 GB exe. Use the minimal `skc_build` env for ~70 MB output. See `docs/BUILD_EXE.md` for full details.
 - **Operator vs developer log separation**: runtime events that a volunteer needs to see (Gemini connected, attendee joined, etc.) go to `app/events.py` `OperatorEventLog` (in-memory, polled via `/api/events`). Developer/debug logs go to rotating files `ops.log`/`session.log` in the `logs/` folder. Do not mix these two channels.
 - **`ssSet()` JS helper must walk childNodes**: using `el.textContent = label` on a status pill destroys the nested `<span class="ss-tip">` tooltip on every poll tick. The fix walks `childNodes` to update only the bare text node. Do not rewrite this to use `textContent` directly.
-- **Session retry attempt reset**: The reconnect attempt count (`self._attempt`) in `GeminiSession` is reset to 0 on every successful connection. Without this, GoAway reconnects (every ~10m) accumulate and crash the session after 30 mins.
+- **Session retry attempt reset**: The reconnect attempt count (`self._attempt`) in `GeminiSession` is reset to 0 on every successful connection. Without this, GoAway reconnects (every 9 min) accumulate and crash the session on the third (~27 min).
 - **Pipeline auto-restart loop**: If the session fails completely, `server.py` runs a bounded recovery loop (3 attempts with backoffs 2s, 5s, 15s) flashing status card red and chiming to warn operators before stopping.
-- **Root-cause of 27-minute session disconnect**: A 30-minute continuous run (`16:27`–`16:57`, 76 turns) confirmed Google Gemini Live API enforces a server-side `GoAway` boundary at ~27:05. The auto-recovery reconnected in 2.3s seamlessly with zero manual intervention required.
+- **GoAway timing**: 9:00 per connection; the old "27-minute disconnect" was most likely the third GoAway (unverified). Details: `/docs/TECHNICAL.md`.
 - **mDNS LAN Hostname via Zeroconf**: registered the network.hostname (default: `skc.live` / `skc.local`) dynamically on startup using `python-zeroconf` and unregistered on shutdown. This resolves DHCP reassignment issues across networks (home vs church) without requiring static IP configuration or router reservations.
 - **Dual-URL & Dual-QR operator access**: provided both Public HTTPS and Local Wi-Fi (with mDNS hostname and raw IP fallback) QR codes on the operator console via an interactive segmented pill tab switcher (`[ 🌐 공용 인터넷 | 🏛️ 현장 Wi-Fi ]`), scannable secondary QR thumbnail with quick-toggle action, and a printable side-by-side Dual QR Code modal flyer (`@media print`).
 - **External HTML UI Templates**: Extracted the previously embedded HTML strings from `app/server.py` into separate template files (`app/templates/attendee.html` and `app/templates/operator.html`). Created a dynamic loader (`_read_template`) that caches templates in production (`sys.frozen`) but re-reads them from disk in development, enabling real-time hot-reloading for UI edits without restarting the server. Added both templates to the PyInstaller `.spec` file datas list to ensure they package correctly in single-file executables.
 - **SSE `commit` payload includes `ko` field**: `CaptionBroadcaster` now attaches `self._current_ko` as the `ko` field on every `CaptionEvent(kind="commit")`. `server.py` forwards it in the SSE JSON. The attendee page uses it directly for the Korean tap-reveal feature. This is not a 1:1 sentence match (Gemini streams KO and EN on independent timers) but is the closest alignment achievable without API-side alignment data.
 - **Operator preview duplicate text bug**: on force-commits (150-char boundary), the operator's `enEl` held the full `_current_line` including the remainder that would start the next live pair. Fix: set `enEl.textContent = msg.text` inside the `commit` handler before calling `commitLivePair()`. The attendee page was immune because it reads `msg.text` directly.
-- **GoAway is INFO not ERROR**: `SESSION_FAILURE` in `gemini_session.py._run_session` is logged at `ERROR` for real failures but demoted to `INFO` when `"GoAway"` is in the exception message. GoAway is a normal server-side session refresh, not an error. Do not revert this to blanket `ERROR`.
+- **GoAway is INFO not ERROR**: `SESSION_FAILURE` in `gemini_session.py._run_session` is logged at `ERROR` for real failures but demoted to `INFO` when `_is_goaway_exception()` matches (it unwraps nested `ExceptionGroup`), with a 0.2 s reconnect. GoAway is a normal server-side session refresh, not an error. Do not revert this to blanket `ERROR`.
 - **Attendee paragraph grouping**: commits append to the current `<div>` until the last committed text ends with `.`, `!`, or `?`, then a new paragraph begins. This prevents visual fragmentation from the 1.5s silence-based commit cadence. The `data-last` attribute on each paragraph tracks the last appended text for the punctuation check.
 - **Two-Executable Distribution (`SKC_Live_Translation.exe` + `SKC_setup.exe`)**: Normal Sunday volunteer operation is completely isolated in `SKC_Live_Translation.exe` (console logs + browser console), while initial and occasional configuration (church identity, hostname, Google AI Studio key/billing setup, and connection test) is handled via `SKC_setup.exe` (windowed Tkinter wizard). Eliminates Python and batch script runtime dependencies for recipient churches.
 - **Defensive & Atomic Config Persistence**: `update_gemini_api_key` modifies only `GEMINI_API_KEY` in `.env` while preserving all other environment variables and comments. All YAML and `.env` writes use atomic temporary file replacement (`os.replace`) to prevent corruption. Raw API keys are never exposed in log outputs, error strings, or visible entry fields.
@@ -104,6 +106,9 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 - **QR Network-Type Badge (`app/server.py` `_build_qr`)**: A small navy circular badge with a white glyph (globe for Public HTTPS, ascending signal bars for Local Wi-Fi) is drawn at the bottom-right of the center-logo buffer so the two QR variants are visually distinguishable. Drawn with plain PIL primitives (no emoji font dependency — not guaranteed present/color-capable in the frozen exe) and sized/positioned to stay fully inside the existing quiet-zone buffer so it never touches real QR modules or affects scannability.
 - **Operator Authentication (`app/operator_auth.py`)**: Privileged operations require HMAC-SHA256 signed session cookies (`SameSite=Strict`, `HttpOnly`).
 - **Telemetry Latency Decomposition & Listener Accuracy (`/ws/telemetry`, `app/broadcast.py`, `app/server.py`, `app/templates/attendee.html`)**: Decomposed telemetry into Gemini Processing Latency (AI turn-onset), Local/Public WebSocket RTT, and Public End-to-End Latency (~1.1s). Emits an immediate `latency_ping` on WebSocket connect to prevent a 10s initial blind spot. Accepts `rtt_ms >= 0` so sub-millisecond local pings are not dropped. Classifies single-label hostnames (`skc`), `.local`, `.lan`, and `skc.live` as local. Maintains the eventual consistency invariant `local + public + unknown == total`.
+- **Comment-Preserving In-Place Config Persistence**: config.yaml updates use an in-place regex replacement engine in pp/config.py to preserve comments, spacing, and structure. Do not use yaml.dump(dict) to save config.yaml as it strips all user comments. Uses exponential backoff retry loop to avoid transient Windows file-locking issues.
+- **Adaptive Local Network Separation**: Network configuration is split into intranet (LAN Wi-Fi) and internet (Cloudflare Tunnel). When public tunneling is disabled or no tunnel token is present, the operator dashboard gracefully collapses public tabs and telemetry, displaying a clean single-column Local Wi-Fi view (http://skc.local:8080).
+- **Post-Sermon 2-Minute Glossary Review**: Domain vocabulary is loaded from config/glossary.yaml and biased into Gemini Live sessions. Sermon transcripts are retained in memory upon session stop so operators can harvest and review new religious terms before application shutdown.
 - **Interacting Timing Constants Margin Rule**: When an inactivity timeout or TTL depends on an external or client-side timing constant (e.g. mobile browser background timer throttling at ~60s), never set them equal. Maintain an explicit safety margin (e.g. 90s TTL vs 60s throttle, 1.5:1 ratio, +50% margin) with both constants documented in comments side-by-side to prevent status flapping.
 - **Strict Bilingual Parity & Encapsulation**: All operator and attendee user-facing strings must provide simultaneous `data-lang="ko"` and `data-lang="en"` parity. JavaScript dynamic updates must maintain bilingual spans or check `getOperatorUiLanguage()` rather than writing bare unlocalized strings. Cross-module calls must use public class methods (no leading underscores). Middleware must stamp `scope["route_scope"]` once at the boundary to eliminate duplicate classifications.
 - **HTML `<option>` Dropdown Dynamic Composition**: HTML forbids child `<span>` tags inside `<option>`. Select dropdowns must carry `data-tag` on `<option>` and compose `option.textContent` in JavaScript on render and language toggle, guarding against focus interruption (`document.activeElement === sel`) and redundant DOM rewrites.
@@ -115,7 +120,8 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 - **Voluntary Streaming Shutdown Lifecycle (`app/server.py`, `main.py`)**: `shutdown_event = asyncio.Event()` signals active SSE/WS streams to exit gracefully within 0.5s. `SKCUvicornServer` intercepts signals to trigger early voluntary drainage, and `main.py` catches `KeyboardInterrupt` at the process level to eliminate ASGI `CancelledError` noise.
 - **Pinned Offline JavaScript Linter (`eslint.config.mjs`, `package.json`)**: `eslint: 10.9.1` is pinned locally in `package.json`. Pytest runs `npx --no-install eslint` to ensure 100% offline reproducibility and prevent undeclared variable bugs (`no-undef`).
 - **Repository Testing Conventions**:
-  - Run Python tests exclusively from the repository root using `python -m pytest tests/...`.
+  - Run Python tests exclusively from the repository root using `python -m pytest tests/...` (or `conda run -n agent python -m pytest tests/...`).
+  - Prefer clean, prefix-matchable command shapes starting directly with `conda run -n agent python -m pytest` without chaining shell variable assignments (e.g. avoid `$env:...; conda`) so security approvals generalize without repetitive re-prompts.
   - Never execute test files directly (`python tests/test_file.py`).
   - Do not modify `sys.path` or add `__main__` pytest wrappers to test files.
   - General verification discipline is governed by the `gemini-antigravity-verification` skill (single run per revision, no loops on pass, diagnose before retrying).
@@ -126,7 +132,7 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 
 | Document | Content | Read when |
 |---|---|---|
-| `docs/STACK.md` | 기술적 의사결정 및 영구 불변 원칙 (Language hints, Clean reset, LKG cascade, Multi-target fanout) | 아키텍처 원칙 및 실패 경험 재발 방지 확인 시 |
+| `docs/STACK.md` | Technical decisions and permanent invariants (language hints, clean reset, LKG cascade, multi-target fanout) | Checking architecture rules and avoiding repeats of past failures |
 | `app/translation_manager.py` | `TranslationManager` — multi-target session lifecycle, audio fanout, failure isolation | Understanding multilingual orchestration |
 | `app/languages.py` | 70+ target language catalog, native display names, validation | Understanding language capabilities |
 | `app/events.py` | `OperatorEventLog` — thread-safe ring buffer, 7 categories, `since(last_id)` API | Understanding operator event plumbing |
@@ -134,12 +140,12 @@ These are the non-obvious decisions that can't be derived by reading the code. D
 | `app/gemini_session.py` | Gemini Live WebSocket session runner, anti-contamination boundaries, drift watchdog | Understanding Gemini Live integration |
 | `app/audio_classifier.py` | Observer-only NumPy heuristic speech/music classifier (beat-autocorr anchored, hysteresis-gated) | Understanding the `audio_class` operator badge / session label track |
 | `app/chapters.py` | Automated liturgy milestone detection, official YouTube player chapters, and inline description export | Understanding YouTube chapters and session exports |
-| `docs/PLAN.md` | 시스템 개요, 파일 맵, 단계별 개발 현황(0–27 완료, 28 계획), 신뢰성 요구사항, 설정 참조 | 아키텍처 및 시스템 사양 확인 시 |
-| `docs/TECHNICAL.md` | 코드 레벨: FastAPI 라우트, Gemini 세션, 오디오 파이프라인, asyncio 패턴 | 코드 수정 및 디버깅 시 |
-| `docs/WALKTHROUGH.md` | 세션별 빌드 기록, 검증 프로토콜 결과, 기술적 회고 | 과거 기술 의사결정 및 이슈 추적 시 |
-| `docs/BUILD_EXE.md` | PyInstaller 빌드 기록, spec 설정, 단일 실행 파일 패키징 | 독립 실행 파일 재빌드 시 |
-| `CHANGELOG.md` | 릴리즈 버전 히스토리 (Version history) | 버전별 변경점 확인 시 |
-| `.agent/archive/` | 완료된 단계별 설계 문서 및 이전 릴리즈 노트 아카이브 (Phase 23, 24, 25 등) | 과거 설계 배경 및 구현 상세 참조 시 |
-| `tests/` | 모델 리졸버, 다국어 라우팅, 장애 격리, 수명주기 셧다운 등 169개 자동화 테스트 스위트 | 테스트 실행 및 코드 검증 시 |
+| `docs/PLAN.md` | System overview, file map, phase status (0-28 done, 29 planned), reliability requirements, config reference | Checking architecture and system specs |
+| `docs/TECHNICAL.md` | Code level: FastAPI routes, Gemini session, audio pipeline, asyncio patterns | Editing or debugging code; GoAway/reconnect facts live here |
+| `docs/WALKTHROUGH.md` | Per-session build history, verification results, technical retrospectives | History doc (global rule): decisions and past issues |
+| `docs/BUILD_EXE.md` | PyInstaller build record, spec settings, single-exe packaging | Rebuilding the standalone exe |
+| `CHANGELOG.md` | Release version history | History doc (global rule): what changed in each version |
+| `.agent/archive/` | Archive of completed phase design docs and earlier release notes (Phases 23, 24, 25, etc.) | Looking up past design background and implementation detail |
+| `tests/` | 180 automated tests: model resolver, multilingual routing, failure isolation, lifecycle shutdown, etc. | Running tests and verifying code |
 
 

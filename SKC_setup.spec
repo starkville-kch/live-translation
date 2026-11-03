@@ -14,7 +14,7 @@ datas += collect_data_files("google.genai")
 datas += collect_data_files("google.auth")
 datas += collect_data_files("certifi")
 datas += [("app/pca-logo-white-small.webp", "app")]
-datas += [("CHANGELOG.md", ".")]
+datas += [("CHANGELOG.md", "."), ("config/config.template.yaml", "config")]
 
 # ── Hidden imports ────────────────────────────────────────────────────────────
 hiddenimports = []

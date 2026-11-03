@@ -25,7 +25,7 @@ datas += collect_data_files("google.auth")
 datas += collect_data_files("certifi")
 datas += collect_data_files("sse_starlette")
 # Bundle glossary config, PCA logo asset, HTML templates, static assets, and language catalog
-datas += [("config/glossary.yaml", "config")]
+datas += [("config/glossary.yaml", "config"), ("config/config.template.yaml", "config")]
 datas += [("app/pca-logo-white-small.webp", "app")]
 datas += [("app/templates", "app/templates")]
 datas += [("app/static", "app/static")]

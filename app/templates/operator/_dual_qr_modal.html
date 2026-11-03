@@ -20,7 +20,7 @@
     <!-- Dual Columns Container -->
     <div class="dual-qr-columns" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:16px; margin-bottom:16px;">
       <!-- Public HTTPS Column -->
-      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.05); display:flex; flex-direction:column; justify-content:space-between;">
+      <div id="modal-qr-public-col" style="{% if not has_public_domain %}display:none; {% endif %}background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.05); display:flex; flex-direction:column; justify-content:space-between;">
         <div>
           <div style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--color-navy-900); background:var(--color-navy-50); border:1px solid var(--color-warm-200); border-radius:20px; padding:3px 10px; margin-bottom:10px;">
             <svg style="width:14px; height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -47,8 +47,8 @@
         </div>
 
         <div>
-          <a id="modal-qr-public-url" href="https://live.starkvillekoreanchurch.org" target="_blank" style="font-size:11px; font-weight:600; color:var(--color-navy-900); word-break:break-all; text-decoration:underline; display:block; margin-bottom:8px;">
-            https://live.starkvillekoreanchurch.org
+          <a id="modal-qr-public-url" href="{{ public_url | default('') }}" target="_blank" style="font-size:11px; font-weight:600; color:var(--color-navy-900); word-break:break-all; text-decoration:underline; display:block; margin-bottom:8px;">
+            {{ public_url | default('') }}
           </a>
           <button type="button" class="secondary no-print" onclick="copyModalUrl('modal-qr-public-url', this)" style="width:100%; padding:6px 10px; font-size:11px; font-weight:700; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; gap:4px;">
             <span data-lang="ko">📋 공용 주소 복사</span>
@@ -58,7 +58,7 @@
       </div>
 
       <!-- Local Wi-Fi Column -->
-      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.05); display:flex; flex-direction:column; justify-content:space-between;">
+      <div id="modal-qr-local-col" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.05); display:flex; flex-direction:column; justify-content:space-between;">
         <div>
           <div style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--color-navy-900); background:#fef9c3; border:1px solid #fde047; border-radius:20px; padding:3px 10px; margin-bottom:10px;">
             <svg style="width:14px; height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -84,8 +84,8 @@
         </div>
 
         <div>
-          <a id="modal-qr-local-url" href="http://skc.local:8080" target="_blank" style="font-size:11px; font-weight:600; color:var(--color-gold-500); word-break:break-all; text-decoration:underline; display:block; margin-bottom:8px;">
-            http://skc.local:8080
+          <a id="modal-qr-local-url" href="{{ local_url | default('http://skc.local:8080') }}" target="_blank" style="font-size:11px; font-weight:600; color:var(--color-gold-500); word-break:break-all; text-decoration:underline; display:block; margin-bottom:8px;">
+            {{ local_url | default('http://skc.local:8080') }}
           </a>
           <button type="button" class="secondary no-print" onclick="copyModalUrl('modal-qr-local-url', this)" style="width:100%; padding:6px 10px; font-size:11px; font-weight:700; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; gap:4px;">
             <span data-lang="ko">📋 현장 주소 복사</span>

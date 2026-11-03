@@ -46,6 +46,7 @@ import time
 from dataclasses import dataclass
 
 from app.events import operator_events
+from app.languages import parse_source_language_codes
 from app.logger import server_log
 
 
@@ -309,7 +310,7 @@ class CaptionBroadcaster:
             cut = self._find_split(self._current_line)
             to_commit = self._current_line[:cut].rstrip()
             remainder = self._current_line[cut:].lstrip()
-            if self._glossary and self._current_source and self.source_lang == "ko" and self.target_lang == "en":
+            if self._glossary and self._current_source and ("ko" in parse_source_language_codes(self.source_lang)) and self.target_lang == "en":
                 to_commit = self._glossary.correct(self._current_source, to_commit)
             if self._commit_task and not self._commit_task.done():
                 self._commit_task.cancel()
@@ -376,7 +377,7 @@ class CaptionBroadcaster:
             await asyncio.sleep(PAUSE_THRESHOLD_S)
             if self._current_line:
                 text = self._current_line
-                if self._glossary and self._current_source and self.source_lang == "ko" and self.target_lang == "en":
+                if self._glossary and self._current_source and ("ko" in parse_source_language_codes(self.source_lang)) and self.target_lang == "en":
                     text = self._glossary.correct(self._current_source, text)
                 self._push(CaptionEvent(
                     kind="commit",

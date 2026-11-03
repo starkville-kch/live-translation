@@ -67,11 +67,10 @@ def test_operator_html_structure_and_accessibility():
     assert 'id="stat-model-status"' in html
     assert 'id="btn-test-selected-model"' in html
 
-    assert 'id="drift-manual"' in html
-    assert 'id="drift-auto"' in html
-    assert 'id="stat-gemini-lat"' in html
-    assert 'id="stat-local-rtt"' in html
-    assert 'id="stat-public-rtt"' in html
+    # Drift recovery toggle and raw telemetry breakdown panel are removed to simplify the operator screen
+    assert 'id="drift-manual"' not in html
+    assert 'id="drift-auto"' not in html
+    assert 'id="telemetry-panel"' not in html
     assert 'id="stat-overall-delay"' in html
     assert 'id="stat-attendees"' in html
     assert 'id="stat-cost"' in html

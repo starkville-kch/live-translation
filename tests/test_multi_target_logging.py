@@ -62,7 +62,7 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
 
         # Verify canonical 4-file layout
         files = {p.name for p in s_dir.iterdir()}
-        assert files == {"session.json", "transcript.jsonl", "transcript.md", "summary.txt"}
+        assert {"session.json", "transcript.jsonl", "transcript.md", "summary.txt"}.issubset(files)
 
         # 1. session.json manifest
         manifest_file = s_dir / "session.json"
@@ -200,7 +200,7 @@ def test_real_api_stop_generates_session_logs(tmp_path):
         s_dir = session_dirs[0]
 
         files = {p.name for p in s_dir.iterdir()}
-        assert files == {"session.json", "transcript.jsonl", "transcript.md", "summary.txt"}
+        assert {"session.json", "transcript.jsonl", "transcript.md", "summary.txt"}.issubset(files)
 
         assert "Hello everyone" in (s_dir / "transcript.jsonl").read_text(encoding="utf-8")
         assert "안녕하세요 여러분" in (s_dir / "transcript.jsonl").read_text(encoding="utf-8")

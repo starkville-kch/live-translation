@@ -153,6 +153,7 @@ _last_session_runtime: float = 0.0
 _last_session_billed_seconds: float = 0.0
 _last_session_targets: list[str] = []
 _last_session_chapters: Optional[dict] = None
+_last_session_transcript: list = []
 _auto_restart_attempt = 0
 _auto_restart_reason = ""
 _auto_restart_task: asyncio.Task | None = None
@@ -255,6 +256,21 @@ def _get_admin_url() -> str:
     return f"{_get_public_base_url()}/admin"
 
 
+def _is_tunnel_configured() -> bool:
+    """Return True only if Cloudflare tunnel is enabled and credentials/service exist."""
+    cfg = network_cfg()
+    if not cfg.get("enable_tunnel", False):
+        return False
+    try:
+        from app.cloudflared_service import CloudflaredService
+        token = CloudflaredService.get_tunnel_token()
+        token_file = CloudflaredService.find_tunnel_token_file()
+        service_running = CloudflaredService()._query() == "running"
+        return bool(token or token_file or service_running)
+    except Exception:
+        return False
+
+
 def _get_live_urls() -> tuple[str, str, str]:
     cfg = network_cfg()
     port = int(cfg.get("port", 8080))
@@ -281,11 +297,11 @@ def _get_live_urls() -> tuple[str, str, str]:
         local_url = f"http://{host}:{port}"
         fallback_url = f"http://{ip_addr}:{port}"
 
-    pub_url = cfg.get("public_url")
+    pub_url = cfg.get("public_url") if _is_tunnel_configured() else ""
     if pub_url:
         public_url = str(pub_url).rstrip('/')
     else:
-        public_url = "https://live.starkvillekoreanchurch.org"
+        public_url = ""
 
     return local_url, fallback_url, public_url
 
@@ -675,12 +691,14 @@ async def lifespan(app: FastAPI):
 
     if not getattr(app.state, "tunnel_manager", None):
         from app.tunnel import CloudflareTunnelManager
+        tunnel_configured = _is_tunnel_configured()
         app.state.tunnel_manager = CloudflareTunnelManager(
             port=port,
-            enabled=cfg.get("enable_tunnel", True),
-            public_url=cfg.get("public_url", ""),
+            enabled=tunnel_configured,
+            public_url=cfg.get("public_url", "") if tunnel_configured else "",
         )
-        app.state.tunnel_manager.start()
+        if tunnel_configured:
+            app.state.tunnel_manager.start()
 
     if hostname:
         import threading
@@ -1049,10 +1067,15 @@ async def auth_logout(response: Response):
 
 # ── Operator control API ───────────────────────────────────────────────────────
 async def _teardown():
-    global _state, _last_session_runtime, _last_session_billed_seconds, _last_session_targets
+    global _state, _last_session_runtime, _last_session_billed_seconds, _last_session_targets, _last_session_transcript
     _last_session_runtime = manager.runtime_seconds if (manager and manager.is_running) else 0.0
     _last_session_billed_seconds = manager.billed_seconds if (manager and manager.is_running) else 0.0
     _last_session_targets = list(manager.active_targets) if (manager and manager.active_targets) else []
+    _last_session_transcript = []
+    if manager and manager.sessions:
+        for s in manager.sessions.values():
+            if s.transcript:
+                _last_session_transcript.extend(s.transcript)
     saved_dir = _write_session_log()
     if saved_dir:
         operator_events.add("info", f"Session logs saved: {saved_dir}")
@@ -1257,6 +1280,48 @@ async def set_auto_drift_correction(request: Request, body: dict):
     server_log.info("Auto drift correction set to: %s (runtime-only)", enabled)
     operator_events.add("config", f"Auto drift correction set to {'ON' if enabled else 'OFF'}")
     return {"ok": True, "auto_drift_correction": enabled, "enabled": enabled}
+
+
+
+# ── Glossary & Vocabulary Harvester Endpoints ─────────────────────────────────
+@app.get("/api/glossary/candidates")
+async def get_glossary_candidates(request: Request = None):
+    if auth_err := _check_auth(request):
+        return auth_err
+    turns = []
+    if manager and manager.sessions:
+        for s in manager.sessions.values():
+            if s.transcript:
+                turns.extend(s.transcript)
+    if not turns and _last_session_transcript:
+        turns = list(_last_session_transcript)
+    candidates = _glossary.extract_candidates(turns) if _glossary else []
+    return {"ok": True, "candidates": candidates, "total_turns": len(turns)}
+
+
+@app.get("/api/glossary/entries")
+async def get_glossary_entries(request: Request = None):
+    if auth_err := _check_auth(request):
+        return auth_err
+    entries = _glossary.get_entries() if _glossary else []
+    return {"ok": True, "entries": entries, "count": len(entries)}
+
+
+@app.post("/api/glossary/add")
+async def add_glossary_entry(request: Request, body: dict):
+    if auth_err := _check_auth(request):
+        return auth_err
+    ko = str(body.get("ko", "")).strip()
+    en = str(body.get("en", "")).strip()
+    category = str(body.get("category", "F")).strip()
+    variants = body.get("variants") or []
+    if not ko or not en:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "ko and en are required"})
+    success = _glossary.add_entry(ko=ko, en=en, category=category, variants=variants) if _glossary else False
+    if success:
+        operator_events.add("config", f"Glossary term added: '{ko}' -> '{en}'")
+        return {"ok": True, "message": f"'{ko}' -> '{en}' 등록 완료", "ko": ko, "en": en}
+    return JSONResponse(status_code=500, content={"ok": False, "error": "Failed to save glossary entry"})
 
 
 @app.post("/api/config/ui-language")
@@ -1472,11 +1537,11 @@ async def get_status(request: Request = None):
     ch = church_cfg()
 
     tunnel_mgr = getattr(app.state, "tunnel_manager", None)
-    tunnel_enabled = tunnel_mgr.enabled if tunnel_mgr else False
+    tunnel_enabled = (tunnel_mgr.enabled and _is_tunnel_configured()) if tunnel_mgr else False
     tunnel_ready = tunnel_mgr.is_ready if tunnel_mgr else False
     tunnel_url = tunnel_mgr.tunnel_url if tunnel_mgr else None
-    public_attendee_url = tunnel_mgr.public_attendee_url if tunnel_mgr else public_url_cfg
-    tunnel_error = tunnel_mgr.error_message if tunnel_mgr else None
+    public_attendee_url = (tunnel_mgr.public_attendee_url if tunnel_mgr else public_url_cfg) if tunnel_enabled else None
+    tunnel_error = tunnel_mgr.error_message if (tunnel_mgr and tunnel_enabled) else None
 
     if tunnel_ready and public_attendee_url and not _tunnel_logged:
         _tunnel_logged = True
@@ -1583,13 +1648,14 @@ async def get_status(request: Request = None):
         "live_url_local": local_url,
         "live_url_fallback": fallback_url,
         "live_url_public": public_attendee_url,
+        "has_public_domain": bool(tunnel_enabled and (public_attendee_url or tunnel_url)),
         "tunnel_enabled": tunnel_enabled,
         "tunnel_ready": tunnel_ready,
         "tunnel_url": tunnel_url,
         "public_attendee_url": public_attendee_url,
         "tunnel_error": tunnel_error,
         "local_translation_status": "ready",
-        "public_https_status": (tunnel_mgr.status if tunnel_mgr else ("available" if tunnel_ready else "unavailable")),
+        "public_https_status": (tunnel_mgr.status if (tunnel_mgr and tunnel_enabled) else "disabled"),
     }
 
 
@@ -1808,6 +1874,8 @@ async def operator_page(request: Request):
     t_cfg = translation_cfg()
     auth_enabled = is_auth_enabled()
     authenticated = is_authenticated(request)
+    local_url, _, public_url_cfg = _get_live_urls()
+    has_public = _is_tunnel_configured()
     content = _read_template(
         "operator.html",
         default_ui_lang=default_lang,
@@ -1816,6 +1884,9 @@ async def operator_page(request: Request):
         auth_enabled=auth_enabled,
         authenticated=authenticated,
         build_id=_SERVER_BUILD_ID,
+        has_public_domain=has_public,
+        local_url=local_url,
+        public_url=(public_url_cfg if has_public else ""),
     )
     return HTMLResponse(
         content=content,

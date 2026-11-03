@@ -72,7 +72,7 @@ Windows PC (본 애플리케이션)
 - 실시간 자막은 SSE(`/stream`) — iOS Safari 백그라운드 전환 시 브라우저 수준 자동 재연결.
 - 번역 오디오는 바이너리 웹소켓(`/audio-stream`) — 오디오 미사용 기기는 트래픽 소모 없음.
 
-- **GoAway 세션 주기 (~9분 및 ~27분 단절 경계)**: Gemini Live 번역 세션은 대략 9분 주기로(주로 ~8-10분 및 ~27분 경계에서 관찰됨) `GoAway` 연결 교체 신호를 보냅니다. 이는 세션 복구 및 재시도 로직을 통해 백그라운드에서 완전히 투명하게 처리되며, 매번 재연결에 성공할 때마다 시도 횟수를 리셋하여 오류 한도 초과를 예방합니다.
+- **GoAway 세션 주기 (연결당 9분)**: Gemini Live는 각 연결을 연 뒤 9분 후 `GoAway` 연결 교체 신호를 보냅니다 (근거: `/docs/TECHNICAL.md`). 이는 세션 복구 및 재시도 로직을 통해 백그라운드에서 완전히 투명하게 처리되며, 매번 재연결에 성공할 때마다 시도 횟수를 리셋하여 오류 한도 초과를 예방합니다.
 - **성공 시 재시도 횟수 초기화**: 성공적으로 연결되면 재시도 횟수(`self._attempt`)를 0으로 리셋하여 GoAway 재연결이 누적되어 한도를 초과하지 않도록 합니다.
 - **제한된 자동 재시작 루프**: Gemini 세션이 완전히 실패하면 `server.py`에서 제한된 복구 루프(3회 시도: 2초, 5초, 15초 대기)가 동작하며, 복구 중에는 프런트엔드에서 경고 알림(차임벨 소리 및 상태 카드 깜빡임)을 제공합니다.
 
@@ -147,7 +147,7 @@ Windows PC (본 애플리케이션)
 
 | 시나리오 | 동작 |
 |----------|------|
-| 정상 10분 WebSocket 경계 | GoAway → 자동 재연결 → 2~3초 내 자막 재개 |
+| 정상 9분 WebSocket 경계 | GoAway → 자동 재연결 → 2~3초 내 자막 재개 |
 | 인터넷 장애 | 지수 백오프 (2초, 4초, 8초), 3회 실패 시 FAILED 상태 |
 | FAILED 상태 | 모든 참석자 SSE에 "번역 불가" 이벤트 전송 |
 | 오디오 장치 연결 해제 | 스트림 읽기 오류 시 `AudioStatus.DISCONNECTED` |
@@ -175,7 +175,7 @@ Windows PC (본 애플리케이션)
 | 12 | 번역 모델 비용/품질 3라운드 벤치마크: `gemini-3.5-live-translate-preview` 최적 확인 | ✅ 완료 |
 | 13 | 단일 실행 파일(.exe): PyInstaller 70MB, `SKC_translation.spec`, `build_exe.bat` | ✅ 완료 |
 | 14 | 운영자 이벤트 로그(`app/events.py`), 상태 스트립, `/api/events`, `/admin/logs` 개발자 진단 | ✅ 완료 |
-| 15 | 제한된 자동 복구(Auto-Restart) 루프, 예외 수신 상세화, 운영자 경고 알림 및 27분 GoAway 근본 원인 규명 완료 | ✅ 완료 |
+| 15 | 제한된 자동 복구(Auto-Restart) 루프, 예외 수신 상세화, 운영자 경고 알림 및 GoAway 재연결 처리 완료 (27분 설명은 2026-11-02 정정, `/docs/TECHNICAL.md`) | ✅ 완료 |
 | 16 | mDNS 호스트네임 광고 (`python-zeroconf`), 동적 URL 리졸버, 운영자 콘솔 주/비상용 접속 주소 표시 | ✅ 완료 |
 | 17 | UI 외부 템플릿 리팩토링: `attendee.html` 및 `operator.html`을 `server.py`에서 분리하고, 개발 환경 실시간 핫 리로드를 위한 동적 로더 구현 | ✅ 완료 |
 | 18 | 운영자 콘솔 UX: 고정 헤더, 상태 스트립 헤더 통합, 반응형 타이틀, 6열 통계 그리드, 전체 요소 툴팁, 사용 가이드 카드. 참석자 화면: 한국어 탭 보기 (백엔드 `ko` 필드), 단락 그루핑, 타임스탬프 제거, 폰트 범위 20–40px. GoAway 로그 INFO 레벨 수정. 운영자 미리보기 중복 텍스트 버그 수정. | ✅ 완료 |
@@ -186,7 +186,9 @@ Windows PC (본 애플리케이션)
 | 23 | HTTPS 공인 접속 및 보안 강화 (Release v3.0.0): Cloudflare Named Tunnel 백그라운드 매니저, PublicHostGuard 미들웨어, 운영자 HMAC-SHA256 세션 인증, 네트워크/AI 지연 분리 텔레메트리, 2열 데스크톱 설정 마법사 (1060x670), 병렬 멀티스레드 빌더 (`build_parallel.py`) 및 포트 8080 표준화 | ✅ 완료 |
 | 25 | 텔레메트리 청취자 정합성 & 운영자 영문 현지화 완전성 (Release v3.2.1): 실시간 텔레메트리 WebSocket 연결 즉시 핑 송신 (10초 블라인드 스팟 제거), 0ms 서브 밀리초 로컬 RTT 수용, 단일 라벨 호스트명 및 로컬 도메인 현장 Wi-Fi 라우트 분류 정상화, 모바일 백그라운드 타이머 스로틀링 마진 보장, 6개 세션 메트릭 대시보드 및 툴팁 100% 한/영 이중 언어 지원 | ✅ 완료 |
 | 26 | 텔레메트리 불변식 보장, GoAway 예외 언래핑 & 운영자 콘솔 레이아웃 정밀화 (Release v3.2.2): 모바일 타이머 스로틀링 120초 마진 및 `local + public + unknown == total` 불변식 보장, Python 3.11 `ExceptionGroup` 재귀 언래핑 및 누적 재연결 카운터, 운영자 콘솔 `en` / `한` 간결 토글 및 반응형 폭 조절 (1024px에서 좌측 1인치 축소), 템플릿 한글 전수 검사 `test_bilingual_parity.py` 자동화 | ✅ 완료 |
-| V0–V26 | 검증 프로토콜 및 자동화 테스트 스위트 (169개 테스트) | ✅ 전체 통과 |
+| 27 | 음향 분류기 고도화, UI 미터 간소화 & 유튜브 챕터 자동화 (Release v3.2.3): 실제 예배 찬양 음향 보정, 입력 레벨 미터 단일화, 툴팁 다국어 렌더링, 유튜브 챕터 마커 자동 추출 및 클립보드 복사 연동 | ✅ 완료 |
+| 28 | 적응형 설교 어휘 편향, 사후 검토 및 주석 보존 설정 (Release v3.3.0): 도메인 특화 어휘 ASR 편향 주입, 사후 2분 어휘 검토 모달 및 용어 하베스팅, 주석 보존 인플레이스 YAML 설정 엔진, 인트라넷/인터넷 네트워크 분리 및 적응형 로컬 모드 | ✅ 완료 |
+| V0–V28 | 검증 프로토콜 및 자동화 테스트 스위트 (180개 테스트) | ✅ 전체 통과 |
 
 ---
 
@@ -204,14 +206,16 @@ gemini:
   preferred_model: gemini-3.5-live-translate-preview
   fallback_model: gemini-3.5-live-translate-preview
   voice: "orus"
-  auto_drift_correction: false
-
-network:
-  host: 0.0.0.0   # 모든 인터페이스 수신 (로컬 + WiFi 참석자)
-  hostname: skc.live
+# 교회 내부 Wi-Fi (현장 접속용)
+intranet:
+  host: 0.0.0.0
   port: 8080
-  public_url: "https://live.starkvillekoreanchurch.org"
+  local_hostname: skc.local
+
+# 공용 인터넷 접속용 (Cloudflare 터널)
+internet:
   enable_tunnel: true
+  public_url: "https://live.starkvillekoreanchurch.org" 
 
 logging:
   log_dir: logs
@@ -269,7 +273,16 @@ logging:
      - 서비스 종료 시 `youtube_chapters.txt` 및 `youtube_chapters.json` 자동 저장 및 `GET /api/session/latest/chapters` API 제공.
      - 운영자 콘솔 내 실시간 챕터 미리보기 및 원클릭 클립보드 복사 지원.
 
-### Phase 28 - 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
+### Phase 28 - 적응형 설교 어휘 편향 및 사전 하베스팅 (Adaptive Sermon Vocabulary Biasing & Glossary Harvesting) (Release v3.3.0) [✅ 완료]
+- **완료 일자**: 2026-11-03
+- **주요 산출물**:
+  1. **ASR 음성인식 어휘 편향 및 전사 프롬프트 통합 (`/app/glossary.py`, `/app/gemini_session.py`, `/config/glossary.yaml`)**: 교회 신앙 용어 및 인명/지명을 실시간 Gemini Live 세션 구성에 편향 주입하여 음성인식 정확도 극대화.
+  2. **예배 후 2분 어휘 검토 모달 및 용어 하베스팅 (`/app/templates/operator/_glossary_modal.html`, `/app/server.py`, `/app/static/js/operator.js`)**: 설교 전사본에서 고빈도 및 종교 고유명사를 자동 추출하여 운영자가 2분 내에 손쉽게 검토 및 등록할 수 있는 대화형 모달 및 수명주기 구현.
+  3. **주석 보존 인플레이스 YAML 설정 엔진 (`/app/config.py`, `/config.yaml`, `/config/config.template.yaml`)**: 파일 덮어쓰기 시 주석 및 구조가 소실되던 기존 `yaml.dump` 방식 대신 정규식 기반 인플레이스 치환 엔진 도입, Windows 파일 잠금 지연 재시도 알고리즘 탑재.
+  4. **네트워크 설정 분리 및 적응형 로컬 모드 (`intranet` / `internet` 분리, `/app/server.py`, `/app/static/js/operator.js`)**: 터널 미사용 시 대시보드를 단일 열 현장 Wi-Fi 전용 뷰(`http://skc.local:8080`)로 자동 전환하고 QR 안내문 아이콘 정합성 확보.
+  5. **운영자 콘솔 반응형 3열 레이아웃 및 툴팁 고도화 (`/app/templates/operator.html`, `/app/templates/operator/_status_telemetry.html`)**: 대형 화면 3열 반응형 전환, 서비스 제어 버튼 및 모델 테스트 버튼 다국어 툴팁 완비, 자동 감지 모드 비활성 스타일 시각적 안정화.
+
+### Phase 29 - 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
 - **목표**: Cloudflare Zero Trust 대시보드를 수동으로 탐색하여 토큰을 발급받는 복잡한 초기 진입 장벽을 제거하고, 설정 마법사(`SKC_setup.exe`) 및 초기 구동 시 터널 생성 및 공용 HTTPS 연결을 원클릭으로 자동화.
 - **주요 계획 항목**:
   1. **원클릭 터널 프로비저닝 (Cloudflare API 연동)**:

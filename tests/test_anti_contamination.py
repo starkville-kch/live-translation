@@ -389,14 +389,21 @@ def test_drain_audio_clients():
     asyncio.run(_run())
 
 
-def test_developer_api_live_config_does_not_include_language_codes():
+def test_developer_api_live_config_language_codes_and_stateless_rollover():
     session = GeminiSession(on_caption=lambda c: None)
     config = session._build_config("gemini-3.5-live-translate-preview")
 
-    # Developer API Live mode rejects language_codes; verify input_audio_transcription is empty
+    # Developer API Live mode in google-genai 2.33 accepts language_codes; verify ["ko", "en"]
     assert config.input_audio_transcription is not None
-    assert config.input_audio_transcription.language_codes is None or config.input_audio_transcription.language_codes == []
+    assert config.input_audio_transcription.language_codes == ["ko", "en"]
     assert config.translation_config.target_language_code == "en"
+    assert config.session_resumption is None
+
+    # Also verify fallback model configuration
+    fallback_config = session._build_config("gemini-2.0-flash")
+    assert fallback_config.input_audio_transcription is not None
+    assert fallback_config.input_audio_transcription.language_codes == ["ko", "en"]
+    assert fallback_config.session_resumption is None
 
 
 def test_auto_drift_toggle_endpoint_runtime_only():
@@ -472,3 +479,4 @@ def test_configuration_value_error_does_not_auto_restart_service():
 
     # Auto restart task should NOT have been created
     assert server_mod._auto_restart_task is None
+

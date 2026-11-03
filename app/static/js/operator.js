@@ -877,7 +877,8 @@ function copyModalUrl(elementId, btn) {
 }
 
 function switchQrMode(mode) {
-  if (mode !== 'public' && mode !== 'local') mode = 'public';
+  if (lastStatusData && !lastStatusData.has_public_domain) mode = 'local';
+  else if (mode !== 'public' && mode !== 'local') mode = 'public';
   currentQrMode = mode;
 
   const radioPublic = document.getElementById('qr-tab-public');
@@ -1222,7 +1223,7 @@ async function pollStatus() {
 
     const overallDelayEl = document.getElementById('stat-overall-delay');
     if (overallDelayEl) {
-      if (st.telemetry && st.telemetry.est_public_delay_s) {
+      if (st.has_public_domain && st.telemetry && st.telemetry.est_public_delay_s) {
         overallDelayEl.textContent = '~' + st.telemetry.est_public_delay_s + ' s';
       } else if (st.telemetry && st.telemetry.est_local_delay_s) {
         overallDelayEl.textContent = '~' + st.telemetry.est_local_delay_s + ' s';
@@ -1333,13 +1334,43 @@ async function pollStatus() {
     else if (st.state === 'failed' || st.session.status === 'failed') ssSet('ss-translation', 'status-red');
     else ssSet('ss-translation', 'status-blue');
 
-    const publicMap = {available:'status-green', reconnecting:'status-yellow', unavailable:'status-red'};
-    if (st.tunnel_ready) {
-      ssSet('ss-public', 'status-green');
-    } else if (st.public_https_status) {
-      ssSet('ss-public', publicMap[st.public_https_status] || 'status-blue');
+    const hasPub = (st.has_public_domain !== false && st.tunnel_enabled !== false);
+    const ssPublic = document.getElementById('ss-public');
+    const qrTabs = document.getElementById('qr-access-tabs');
+    const btnDualKo = document.getElementById('btn-dual-qr-label-ko');
+    const btnDualEn = document.getElementById('btn-dual-qr-label-en');
+    const modalPubCol = document.getElementById('modal-qr-public-col');
+    const telemPubBox = document.getElementById('telemetry-public-box');
+    const telemNetGrid = document.getElementById('telemetry-network-grid');
+
+    if (!hasPub) {
+      if (ssPublic) ssPublic.style.display = 'none';
+      if (qrTabs) qrTabs.style.display = 'none';
+      if (modalPubCol) modalPubCol.style.display = 'none';
+      if (telemPubBox) telemPubBox.style.display = 'none';
+      if (telemNetGrid) telemNetGrid.style.gridTemplateColumns = '1fr';
+      if (btnDualKo) btnDualKo.textContent = '현장 Wi-Fi QR 안내문 인쇄';
+      if (btnDualEn) btnDualEn.textContent = 'Print Local Wi-Fi Poster';
+      if (currentQrMode !== 'local') {
+        switchQrMode('local');
+      }
     } else {
-      ssSet('ss-public', 'status-blue');
+      if (ssPublic) ssPublic.style.display = 'inline-flex';
+      if (qrTabs) qrTabs.style.display = 'flex';
+      if (modalPubCol) modalPubCol.style.display = 'flex';
+      if (telemPubBox) telemPubBox.style.display = 'block';
+      if (telemNetGrid) telemNetGrid.style.gridTemplateColumns = '1fr 1fr';
+      if (btnDualKo) btnDualKo.textContent = '공용 & 현장 QR 둘 다 보기 (인쇄용)';
+      if (btnDualEn) btnDualEn.textContent = 'View Both QR Codes (Printable)';
+
+      const publicMap = {available:'status-green', reconnecting:'status-yellow', unavailable:'status-red'};
+      if (st.tunnel_ready) {
+        ssSet('ss-public', 'status-green');
+      } else if (st.public_https_status) {
+        ssSet('ss-public', publicMap[st.public_https_status] || 'status-blue');
+      } else {
+        ssSet('ss-public', 'status-blue');
+      }
     }
 
     const prevServiceRunning = _serviceRunning;
@@ -1899,11 +1930,13 @@ function updateSourceUI() {
   // Update source status badge symmetrically: "# of sources" or "Auto-detect"
   if (statusBadge) {
     if (_isAutoDetectSource) {
-      statusBadge.textContent = 'Auto-detect';
+      statusBadge.textContent = isEn ? 'Auto-detect' : '자동 감지';
       statusBadge.title = isEn ? 'Auto-detect (All languages)' : '모든 발화 언어 자동 감지';
     } else {
       const count = _selectedSources.length;
-      statusBadge.textContent = `${count} ${count === 1 ? 'source' : 'sources'}`;
+      statusBadge.textContent = isEn
+        ? `${count} ${count === 1 ? 'source' : 'sources'}`
+        : `${count}개 언어`;
       statusBadge.title = _spokenLanguageDisplay || _selectedSources.join(' + ');
     }
   }
@@ -2185,12 +2218,12 @@ function updateLanguageTargets(st) {
     const isAutoDetect = translation ? Boolean(translation.is_auto_detect) : _isAutoDetectSource;
     const srcCodes = translation ? (translation.selected_sources || []) : _selectedSources;
     if (isAutoDetect) {
-      sourceStatusBadge.textContent = 'Auto-detect';
+      sourceStatusBadge.textContent = isEn ? 'Auto-detect' : '자동 감지';
     } else {
       const count = srcCodes.length || _selectedSources.length;
       sourceStatusBadge.textContent = isLocked
-        ? `${count} active`
-        : `${count} ${count === 1 ? 'source' : 'sources'}`;
+        ? (isEn ? `${count} active` : `${count}개 활성`)
+        : (isEn ? `${count} ${count === 1 ? 'source' : 'sources'}` : `${count}개 언어`);
     }
     if (_spokenLanguageDisplay) {
       sourceStatusBadge.title = _spokenLanguageDisplay;
@@ -2482,3 +2515,316 @@ updateChaptersPreview();
 
 
 
+
+
+// ============================================================
+// 2-MINUTE POST-SERMON GLOSSARY & VOCABULARY REVIEW
+// ============================================================
+const modalGlossary = document.getElementById('modal-glossary');
+const btnOpenGlossary = document.getElementById('btn-open-glossary');
+const btnCloseGlossary = document.getElementById('btn-close-glossary-modal');
+const btnDoneGlossary = document.getElementById('btn-done-glossary');
+
+const tabBtnCandidates = document.getElementById('tab-btn-candidates');
+const tabBtnEntries = document.getElementById('tab-btn-entries');
+const tabBtnManual = document.getElementById('tab-btn-manual');
+
+const viewCandidates = document.getElementById('view-glossary-candidates');
+const viewEntries = document.getElementById('view-glossary-entries');
+const viewManual = document.getElementById('view-glossary-manual');
+
+const candidatesLoading = document.getElementById('candidates-loading');
+const candidatesEmpty = document.getElementById('candidates-empty');
+const candidatesList = document.getElementById('candidates-list');
+const candidatesBadge = document.getElementById('candidates-badge');
+
+const btnSaveManualTerm = document.getElementById('btn-save-manual-term');
+const manualKoInput = document.getElementById('manual-ko-input');
+const manualEnInput = document.getElementById('manual-en-input');
+const manualCatSelect = document.getElementById('manual-cat-select');
+const manualAddFeedback = document.getElementById('manual-add-feedback');
+
+function switchGlossaryTab(tab) {
+  if (!viewCandidates || !viewEntries || !viewManual) return;
+  const isEn = getOperatorUiLanguage() === 'en';
+
+  // Reset tab button styles
+  [tabBtnCandidates, tabBtnEntries, tabBtnManual].forEach(btn => {
+    if (btn) {
+      btn.style.background = '#f8fafc';
+      btn.style.color = '#475569';
+      btn.style.borderColor = '#cbd5e1';
+    }
+  });
+
+  viewCandidates.style.display = 'none';
+  viewEntries.style.display = 'none';
+  viewManual.style.display = 'none';
+
+  if (tab === 'candidates') {
+    tabBtnCandidates.style.background = '#e0e7ff';
+    tabBtnCandidates.style.color = '#3730a3';
+    tabBtnCandidates.style.borderColor = '#c7d2fe';
+    viewCandidates.style.display = 'block';
+    loadGlossaryCandidates();
+  } else if (tab === 'entries') {
+    tabBtnEntries.style.background = '#e0e7ff';
+    tabBtnEntries.style.color = '#3730a3';
+    tabBtnEntries.style.borderColor = '#c7d2fe';
+    viewEntries.style.display = 'block';
+    loadGlossaryEntries();
+  } else if (tab === 'manual') {
+    tabBtnManual.style.background = '#e0e7ff';
+    tabBtnManual.style.color = '#3730a3';
+    tabBtnManual.style.borderColor = '#c7d2fe';
+    viewManual.style.display = 'block';
+    if (manualKoInput) manualKoInput.focus();
+  }
+}
+
+async function loadGlossaryCandidates() {
+  if (!candidatesList) return;
+  const isEn = getOperatorUiLanguage() === 'en';
+  candidatesLoading.style.display = 'block';
+  candidatesEmpty.style.display = 'none';
+  candidatesList.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/glossary/candidates');
+    if (!res.ok) throw new Error('Candidates request failed');
+    const data = await res.json();
+    candidatesLoading.style.display = 'none';
+
+    const list = data.candidates || [];
+    if (candidatesBadge) candidatesBadge.textContent = list.length;
+
+    if (list.length === 0) {
+      candidatesEmpty.style.display = 'block';
+      return;
+    }
+
+    candidatesEmpty.style.display = 'none';
+    list.forEach(c => {
+      const card = document.createElement('div');
+      card.className = 'candidate-card';
+      card.style.background = '#ffffff';
+      card.style.border = '1px solid #e2e8f0';
+      card.style.borderRadius = '6px';
+      card.style.padding = '10px 12px';
+      card.style.display = 'flex';
+      card.style.flexDirection = 'column';
+      card.style.gap = '6px';
+
+      const catLabels = {
+        'A': isEn ? 'Polity / Titles' : '직분/호칭',
+        'B': isEn ? 'Worship / Sacrament' : '예배/성례',
+        'C': isEn ? 'Confession' : '신앙고백',
+        'D': isEn ? 'Reformed Doctrine' : '개혁신학',
+        'F': isEn ? 'Speaker / Konglish' : '외래어/목회자',
+      };
+      const catLabel = catLabels[c.category] || c.category;
+
+      card.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 15px; font-weight: 700; color: #1e293b;">${c.ko}</span>
+            <span style="font-size: 10px; font-weight: 700; background: #f1f5f9; color: #475569; border-radius: 4px; padding: 2px 6px;">${catLabel}</span>
+            <span style="font-size: 11px; color: #64748b; background: #e0f2fe; color: #0369a1; border-radius: 10px; padding: 1px 7px; font-weight: 600;">${c.count}${isEn ? ' times' : '회 발화'}</span>
+          </div>
+          <button type="button" class="btn-skip-candidate secondary" style="font-size: 11px; padding: 3px 8px; border-radius: 4px; color: #94a3b8; border-color: #e2e8f0;">
+            ${isEn ? 'Skip' : '건너뛰기'}
+          </button>
+        </div>
+        ${c.example ? `<div style="font-size: 11px; color: #64748b; font-style: italic; background: #f8fafc; padding: 4px 8px; border-radius: 4px;">"${c.example}"</div>` : ''}
+        <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px;">
+          <input type="text" class="candidate-en-input" value="${c.suggested_en || ''}" placeholder="English translation" style="flex: 1; font-size: 12px; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
+          <button type="button" class="btn-add-candidate btn-action" style="background: #10b981; color: #ffffff; font-size: 11px; font-weight: 700; padding: 5px 12px; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;">
+            ${isEn ? '✓ Add' : '✓ 사전 등록'}
+          </button>
+        </div>
+      `;
+
+      const enInput = card.querySelector('.candidate-en-input');
+      const addBtn = card.querySelector('.btn-add-candidate');
+      const skipBtn = card.querySelector('.btn-skip-candidate');
+
+      addBtn.addEventListener('click', async () => {
+        const enVal = enInput.value.trim();
+        if (!enVal) {
+          enInput.focus();
+          return;
+        }
+        addBtn.disabled = true;
+        addBtn.textContent = '...';
+        try {
+          const resp = await fetch('/api/glossary/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ko: c.ko,
+              en: enVal,
+              category: c.category || 'F',
+            })
+          });
+          if (resp.ok) {
+            addBtn.style.background = '#059669';
+            addBtn.textContent = isEn ? '✓ Added' : '✓ 등록 완료';
+            setTimeout(() => {
+              card.style.transition = 'opacity 0.3s';
+              card.style.opacity = '0';
+              setTimeout(() => card.remove(), 300);
+            }, 600);
+          } else {
+            addBtn.disabled = false;
+            addBtn.textContent = isEn ? 'Failed' : '실패';
+          }
+        } catch (e) {
+          addBtn.disabled = false;
+          addBtn.textContent = isEn ? 'Error' : '오류';
+        }
+      });
+
+      skipBtn.addEventListener('click', () => {
+        card.style.transition = 'opacity 0.2s';
+        card.style.opacity = '0';
+        setTimeout(() => card.remove(), 200);
+      });
+
+      candidatesList.appendChild(card);
+    });
+
+  } catch (err) {
+    candidatesLoading.style.display = 'none';
+    candidatesEmpty.style.display = 'block';
+    console.error('Failed to load glossary candidates:', err);
+  }
+}
+
+async function loadGlossaryEntries() {
+  const entriesList = document.getElementById('entries-list');
+  if (!entriesList) return;
+  const isEn = getOperatorUiLanguage() === 'en';
+  entriesList.innerHTML = `<div style="text-align: center; padding: 20px; font-size: 12px; color: #64748b;">${isEn ? 'Loading entries...' : '사전 항목을 불러오는 중...'}</div>`;
+
+  try {
+    const res = await fetch('/api/glossary/entries');
+    if (!res.ok) throw new Error('Entries fetch failed');
+    const data = await res.json();
+    const list = data.entries || [];
+    if (list.length === 0) {
+      entriesList.innerHTML = `<div style="text-align: center; padding: 20px; font-size: 12px; color: #64748b;">${isEn ? 'No entries registered.' : '등록된 사전 항목이 없습니다.'}</div>`;
+      return;
+    }
+
+    entriesList.innerHTML = '';
+    list.forEach(item => {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.justifyContent = 'space-between';
+      row.style.padding = '6px 10px';
+      row.style.background = '#ffffff';
+      row.style.border = '1px solid #e2e8f0';
+      row.style.borderRadius = '4px';
+      row.style.fontSize = '12px';
+
+      row.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-weight: 700; color: #1e293b;">${item.ko}</span>
+          ${item.variants && item.variants.length > 0 ? `<span style="font-size: 10px; color: #94a3b8;">(${item.variants.join(', ')})</span>` : ''}
+          <span style="font-size: 10px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px;">Cat ${item.category}</span>
+        </div>
+        <div style="font-weight: 600; color: #3b82f6;">${item.en}</div>
+      `;
+      entriesList.appendChild(row);
+    });
+  } catch (e) {
+    entriesList.innerHTML = `<div style="text-align: center; padding: 20px; font-size: 12px; color: #ef4444;">${isEn ? 'Failed to load entries' : '목록 불러오기 실패'}</div>`;
+  }
+}
+
+function openGlossaryModal() {
+  if (modalGlossary) {
+    modalGlossary.classList.remove('hidden');
+    switchGlossaryTab('candidates');
+  }
+}
+
+function closeGlossaryModal() {
+  if (modalGlossary) {
+    modalGlossary.classList.add('hidden');
+  }
+}
+
+if (btnOpenGlossary) {
+  btnOpenGlossary.addEventListener('click', openGlossaryModal);
+}
+if (btnCloseGlossary) {
+  btnCloseGlossary.addEventListener('click', closeGlossaryModal);
+}
+if (btnDoneGlossary) {
+  btnDoneGlossary.addEventListener('click', closeGlossaryModal);
+}
+if (modalGlossary) {
+  modalGlossary.addEventListener('click', (e) => {
+    if (e.target === modalGlossary) closeGlossaryModal();
+  });
+}
+
+if (tabBtnCandidates) {
+  tabBtnCandidates.addEventListener('click', () => switchGlossaryTab('candidates'));
+}
+if (tabBtnEntries) {
+  tabBtnEntries.addEventListener('click', () => switchGlossaryTab('entries'));
+}
+if (tabBtnManual) {
+  tabBtnManual.addEventListener('click', () => switchGlossaryTab('manual'));
+}
+
+if (btnSaveManualTerm) {
+  btnSaveManualTerm.addEventListener('click', async () => {
+    const isEn = getOperatorUiLanguage() === 'en';
+    const koVal = manualKoInput.value.trim();
+    const enVal = manualEnInput.value.trim();
+    const catVal = manualCatSelect.value;
+    if (!koVal || !enVal) {
+      manualAddFeedback.style.display = 'block';
+      manualAddFeedback.style.color = '#ef4444';
+      manualAddFeedback.textContent = isEn ? 'Please enter both Korean and English terms.' : '한국어와 영어 단어를 모두 입력해주세요.';
+      return;
+    }
+
+    btnSaveManualTerm.disabled = true;
+    try {
+      const resp = await fetch('/api/glossary/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ko: koVal,
+          en: enVal,
+          category: catVal,
+        })
+      });
+      if (resp.ok) {
+        manualAddFeedback.style.display = 'block';
+        manualAddFeedback.style.color = '#10b981';
+        manualAddFeedback.textContent = isEn ? `Saved: '${koVal}' -> '${enVal}'` : `등록 성공: '${koVal}' -> '${enVal}'`;
+        manualKoInput.value = '';
+        manualEnInput.value = '';
+        setTimeout(() => {
+          manualAddFeedback.style.display = 'none';
+        }, 3000);
+      } else {
+        manualAddFeedback.style.display = 'block';
+        manualAddFeedback.style.color = '#ef4444';
+        manualAddFeedback.textContent = isEn ? 'Failed to save term.' : '단어 등록에 실패했습니다.';
+      }
+    } catch (e) {
+      manualAddFeedback.style.display = 'block';
+      manualAddFeedback.style.color = '#ef4444';
+      manualAddFeedback.textContent = isEn ? 'Network error.' : '네트워크 오류가 발생했습니다.';
+    } finally {
+      btnSaveManualTerm.disabled = false;
+    }
+  });
+}

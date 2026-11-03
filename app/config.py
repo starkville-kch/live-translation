@@ -61,15 +61,24 @@ Public API
 import os
 import sys
 import tempfile
+import time
 import yaml
 from pathlib import Path
+from typing import Any
 from dotenv import load_dotenv
+
+try:
+    from ruamel.yaml import YAML
+    _HAS_RUAMEL = True
+except ImportError:
+    _HAS_RUAMEL = False
 
 # When running as a PyInstaller frozen exe, __file__ points inside the temp
 # extraction folder. All user-editable files (config.yaml, .env) live next
 # to the exe itself, so use sys.executable's resolved parent directory.
 _ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
 _CONFIG_PATH = _ROOT / "config.yaml"
+_TEMPLATE_CONFIG_PATH = _ROOT / "config" / "config.template.yaml"
 _ENV_PATH = _ROOT / ".env"
 
 load_dotenv(_ENV_PATH)
@@ -81,10 +90,9 @@ DEFAULT_CONFIG = {
         "logo": "branding/church-logo.png",
         "default_ui_language": "ko",
     },
-
     "translation": {
-        "expected_source_language": "ko",
-        "supported_targets": ["en", "uk", "zh"],
+        "expected_source_language": "ko+en",
+        "supported_targets": ["ko", "en", "uk", "zh", "es"],
         "default_active_targets": ["en"],
     },
     "audio": {
@@ -95,7 +103,6 @@ DEFAULT_CONFIG = {
         "sample_rate": 16000,
     },
     "gemini": {
-        "auto_drift_correction": False,
         "context_seed": True,
         "fallback_model": "gemini-3.5-live-translate-preview",
         "preferred_model": "gemini-3.5-live-translate-preview",
@@ -106,20 +113,143 @@ DEFAULT_CONFIG = {
         "log_dir": "logs",
         "max_bytes": 10485760,
     },
-    "network": {
-        "enable_tunnel": True,
+    "intranet": {
         "host": "0.0.0.0",
         "hostname": "skc",
         "port": 8080,
+    },
+    "internet": {
+        "enable_tunnel": True,
         "public_url": "https://live.starkvillekoreanchurch.org",
     },
 }
 
 
 
+import re
+
+
+def _update_yaml_scalar(content: str, section: str, key: str, value: Any) -> str:
+    """Update a single scalar key inside a top-level YAML section while preserving comments and alignment."""
+    val_str = str(value)
+    if isinstance(value, bool):
+        val_str = "true" if value else "false"
+
+    sec_pattern = re.compile(rf"(^{section}:.*?)(?=^[a-zA-Z0-9_-]+:|\Z)", re.MULTILINE | re.DOTALL)
+    match = sec_pattern.search(content)
+    if not match:
+        tail = f"\n{section}:\n  {key}: {val_str}\n"
+        return content.rstrip() + tail
+
+    sec_text = match.group(1)
+    key_pattern = re.compile(
+        rf"^(?P<indent>[ \t]*{key}:[ \t]*)(?P<val>[^\r\n#]+?)(?P<spaces>[ \t]*)(?P<comment>#[^\r\n]*)?$",
+        re.MULTILINE,
+    )
+    m = key_pattern.search(sec_text)
+    if m:
+        indent = m.group("indent")
+        comment = m.group("comment") or ""
+        spaces = m.group("spaces") or "  "
+        if comment:
+            old_len = len(indent) + len(m.group("val")) + len(spaces)
+            new_prefix_len = len(indent) + len(val_str)
+            if old_len > new_prefix_len:
+                spaces = " " * (old_len - new_prefix_len)
+            else:
+                spaces = "  "
+            new_line = f"{indent}{val_str}{spaces}{comment}"
+        else:
+            new_line = f"{indent}{val_str}"
+        new_sec = sec_text[:m.start()] + new_line + sec_text[m.end():]
+        return content[:match.start(1)] + new_sec + content[match.end(1):]
+    else:
+        new_sec = sec_text.rstrip() + f"\n  {key}: {val_str}\n"
+        return content[:match.start(1)] + new_sec + content[match.end(1):]
+
+
+def _update_yaml_list(content: str, section: str, key: str, items: list) -> str:
+    """Update a sequence/list key inside a top-level YAML section while preserving section header comments."""
+    lines = [f"  {key}:"]
+    for item in items:
+        lines.append(f"    - {item}")
+    block = "\n".join(lines)
+
+    sec_pattern = re.compile(rf"(^{section}:.*?)(?=^[a-zA-Z0-9_-]+:|\Z)", re.MULTILINE | re.DOTALL)
+    match = sec_pattern.search(content)
+    if not match:
+        tail = f"\n{section}:\n{block}\n"
+        return content.rstrip() + tail
+
+    sec_text = match.group(1)
+    key_pattern = re.compile(
+        rf"^(?P<indent>[ \t]*){key}:(?:[ \t]*\[[^\r\n#]*\](?P<flow_comment>[ \t]*#[^\r\n]*)?|[ \t]*(?P<comment>#[^\r\n]*)?(?:\r?\n(?P<subindent>[ \t]+)-[^\r\n]*)*)",
+        re.MULTILINE,
+    )
+    m = key_pattern.search(sec_text)
+    if m:
+        indent = m.group("indent")
+        comment = (m.group("comment") or m.group("flow_comment") or "").strip()
+        item_indent = indent + "  "
+        hdr = f"{indent}{key}:"
+        if comment:
+            hdr += f" {comment}"
+        out_lines = [hdr]
+        for item in items:
+            out_lines.append(f"{item_indent}- {item}")
+        new_block = "\n".join(out_lines)
+        new_sec = sec_text[:m.start()] + new_block + sec_text[m.end():]
+        return content[:match.start(1)] + new_sec + content[match.end(1):]
+    else:
+        new_sec = sec_text.rstrip() + f"\n{block}\n"
+        return content[:match.start(1)] + new_sec + content[match.end(1):]
+
+
 def _atomic_yaml_write(path: Path, data: dict) -> None:
-    """Atomically write YAML data using a temporary file in the same directory."""
+    """Atomically write YAML data using a temporary file in the same directory,
+    preserving existing comments and section formatting whenever possible."""
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    base_text = ""
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            base_text = path.read_text(encoding="utf-8")
+        except Exception:
+            base_text = ""
+    elif path.resolve() == _CONFIG_PATH.resolve() and _TEMPLATE_CONFIG_PATH.exists():
+        try:
+            base_text = _TEMPLATE_CONFIG_PATH.read_text(encoding="utf-8")
+        except Exception:
+            base_text = ""
+
+    written_text = ""
+    if base_text:
+        try:
+            text = base_text
+            for sec, val in data.items():
+                if isinstance(val, dict):
+                    for k, v in val.items():
+                        if isinstance(v, list):
+                            text = _update_yaml_list(text, sec, k, v)
+                        else:
+                            text = _update_yaml_scalar(text, sec, k, v)
+            written_text = text
+        except Exception:
+            written_text = ""
+    if base_text:
+        try:
+            text = base_text
+            for sec, val in data.items():
+                if isinstance(val, dict):
+                    for k, v in val.items():
+                        if isinstance(v, list):
+                            text = _update_yaml_list(text, sec, k, v)
+                        else:
+                            text = _update_yaml_scalar(text, sec, k, v)
+            written_text = text
+        except Exception:
+            written_text = ""
+
     temp_file = tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
@@ -128,11 +258,23 @@ def _atomic_yaml_write(path: Path, data: dict) -> None:
         suffix=".tmp",
     )
     try:
-        yaml.dump(data, temp_file, default_flow_style=False, allow_unicode=True)
+        if written_text:
+            temp_file.write(written_text)
+        else:
+            yaml.dump(data, temp_file, default_flow_style=False, allow_unicode=True)
+
         temp_file.flush()
         os.fsync(temp_file.fileno())
         temp_file.close()
-        os.replace(temp_file.name, str(path))
+
+        for attempt in range(5):
+            try:
+                os.replace(temp_file.name, str(path))
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
     except Exception:
         if os.path.exists(temp_file.name):
             try:
@@ -146,6 +288,15 @@ def _ensure_config_file(path: Path | None = None) -> Path:
     config_path = path or _CONFIG_PATH
     if config_path.exists() and config_path.stat().st_size > 0:
         return config_path
+
+    if _TEMPLATE_CONFIG_PATH.exists():
+        try:
+            import shutil
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(_TEMPLATE_CONFIG_PATH, config_path)
+            return config_path
+        except Exception:
+            pass
 
     _atomic_yaml_write(config_path, DEFAULT_CONFIG)
     return config_path
@@ -194,7 +345,16 @@ def audio_cfg() -> dict:
 
 
 def network_cfg() -> dict:
-    return _cfg.get("network", {})
+    """Return unified network configuration supporting either:
+    1. Split sections: 'intranet' (host, port, hostname) and 'internet' (enable_tunnel, public_url)
+    2. Legacy unified section: 'network' (host, port, hostname, enable_tunnel, public_url)
+    """
+    net = dict(_cfg.get("network", {}))
+    if "intranet" in _cfg:
+        net.update(_cfg.get("intranet", {}))
+    if "internet" in _cfg:
+        net.update(_cfg.get("internet", {}))
+    return net
 
 
 def logging_cfg() -> dict:
@@ -235,9 +395,12 @@ def save_church_identity(
     if default_ui_language:
         _cfg["church"]["default_ui_language"] = str(default_ui_language).strip().lower()
 
-    if "network" not in _cfg:
-        _cfg["network"] = {}
-    _cfg["network"]["hostname"] = hostname.strip()
+    if "intranet" in _cfg:
+        _cfg["intranet"]["hostname"] = hostname.strip()
+    elif "network" in _cfg:
+        _cfg["network"]["hostname"] = hostname.strip()
+    else:
+        _cfg["intranet"] = {"hostname": hostname.strip()}
 
     _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
@@ -253,10 +416,14 @@ def save_operator_ui_language(lang: str) -> None:
 
 def save_public_url(public_url: str, enable_tunnel: bool = True) -> None:
     """Save public_url and enable_tunnel to config.yaml atomically."""
-    if "network" not in _cfg:
-        _cfg["network"] = {}
-    _cfg["network"]["public_url"] = public_url.strip()
-    _cfg["network"]["enable_tunnel"] = bool(enable_tunnel)
+    if "internet" in _cfg:
+        _cfg["internet"]["public_url"] = public_url.strip()
+        _cfg["internet"]["enable_tunnel"] = bool(enable_tunnel)
+    elif "network" in _cfg:
+        _cfg["network"]["public_url"] = public_url.strip()
+        _cfg["network"]["enable_tunnel"] = bool(enable_tunnel)
+    else:
+        _cfg["internet"] = {"public_url": public_url.strip(), "enable_tunnel": bool(enable_tunnel)}
     _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
 

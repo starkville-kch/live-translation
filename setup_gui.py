@@ -288,7 +288,7 @@ class SetupApp:
 
         btn_show_pass = ttk.Button(f_pass, text="Show", width=5, command=_toggle_pass_visibility)
         btn_show_pass.pack(side="left", padx=2)
-        ttk.Label(f_pass, text="(Optional: console login)", style="Muted.TLabel").pack(side="left", padx=4)
+        ttk.Label(f_pass, text="(Public tunnel only; leave empty for local Wi-Fi)", style="Muted.TLabel").pack(side="left", padx=4)
 
         # ── CARD 2: Google Gemini API (Top Right) ─────────────────────────────
         card_gemini = tk.Frame(content, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
@@ -371,7 +371,7 @@ class SetupApp:
 
         f_tunnel_hdr = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
         f_tunnel_hdr.pack(fill="x", pady=(0, 6))
-        ttk.Label(f_tunnel_hdr, text="3. PUBLIC HTTPS / CLOUDFLARE NAMED TUNNEL", style="SectionTitle.TLabel").pack(side="left")
+        ttk.Label(f_tunnel_hdr, text="3. PUBLIC HTTPS / CLOUDFLARE NAMED TUNNEL (OPTIONAL - ADVANCED)", style="SectionTitle.TLabel").pack(side="left")
         btn_cf_dash = ttk.Button(
             f_tunnel_hdr,
             text="🌐 Open Cloudflare Zero Trust (Get Token)",
@@ -384,7 +384,7 @@ class SetupApp:
         f_puburl.pack(fill="x", pady=2)
         ttk.Label(f_puburl, text="Public URL:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.entry_public_url = ttk.Entry(f_puburl, font=("Segoe UI", 9))
-        self.entry_public_url.insert(0, self.current_network.get("public_url", "https://live.starkvillekoreanchurch.org"))
+        self.entry_public_url.insert(0, self.current_network.get("public_url", ""))
         self.entry_public_url.pack(side="left", fill="x", expand=True)
 
         # Row 2: Tunnel Binary Status + Download
@@ -746,7 +746,7 @@ class SetupApp:
         elif has_env_token or state == "stopped":
             self.lbl_pill_cloudflare.configure(text="🟢 Public HTTPS (Configured)", bg="#dcfce7", fg=COLOR_SUCCESS)
         else:
-            self.lbl_pill_cloudflare.configure(text="⚪ Public HTTPS", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
+            self.lbl_pill_cloudflare.configure(text="⚪ Public HTTPS (Optional)", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
 
     def _start_or_install_service(self):
         # 1. Verify binary exists or offer download

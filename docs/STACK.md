@@ -62,7 +62,7 @@ output_audio_transcription=types.AudioTranscriptionConfig()
 ### 결정
 오류 유형을 명확히 구분하여 불필요한 재연결 및 서비스 재시작 루프를 차단합니다:
 
-- **일시적 네트워크 오류 (Transient)**: `GoAway`, WebSocket 연결 끊김, 타임아웃 등 → 지수 백오프(Exponential Backoff) 재연결 및 자동 복구 루프 수행.
+- **일시적 네트워크 오류 (Transient)**: WebSocket 연결 끊김, 타임아웃 등 → 지수 백오프(Exponential Backoff) 재연결 및 자동 복구 루프 수행. `GoAway`는 백오프 없이 0.2초 즉시 재연결합니다 (`/docs/TECHNICAL.md`).
 - **치명적 설정/스키마 오류 (Non-retryable)**: `ValueError`, `TypeError` (잘못된 LiveConnectConfig, 지원되지 않는 SDK 필드 등) → **즉시 FAILED 상태로 전이**하고 재시도 및 자동 서비스 재시작을 중단합니다.
 
 ---
@@ -168,3 +168,19 @@ output_audio_transcription=types.AudioTranscriptionConfig()
 - 운영자 인증 모달과 동적 레이아웃은 클라이언트 측 JS 실행 전 서버 사이드 Jinja2 템플릿(`app/templates/operator/_auth_modal.html`)으로 완성되어 전송됩니다.
 - 단일 실행 파일 빌드 시 `jinja2`가 번들에 누락되지 않도록 `requirements.txt`와 `SKC_translation.spec`에 명시적 의존성으로 등록 및 관리합니다.
 
+---
+
+## 8. 적응형 어휘 편향, 인플레이스 YAML 설정 및 네트워크 분리 (Release v3.3.0)
+
+### 1. 설교 어휘 ASR 편향 주입 및 사후 2분 검토 수명주기
+- 범용 사전으로 인식하기 어려운 교회 특화 성경 고유명사 및 신앙 용어를 /config/glossary.yaml에서 로드하여 Gemini 세션 구성에 편향 주입합니다.
+- 설교 종료 후 운영자가 2분 내에 수동 검토할 수 있도록 세션 전사본을 인메모리에 보존하고, 신규 세션 시작 시에만 리셋합니다.
+
+### 2. 주석 보존 인플레이스 YAML 지속성 (Comment-Preserving In-Place Persistence)
+- yaml.dump(dict)는 파일 내 모든 사용자 주석, 빈 줄, 서식 레이아웃을 파괴하므로, 정규식 기반 인플레이스 치환 엔진(_update_yaml_scalar, _update_yaml_list)을 구현하여 원본 주석과 파일 구조를 영구 보존합니다.
+- Windows 환경에서 바이러스 백신이나 동시 프로세스에 의해 os.replace 시 발생하는 일시적 잠금(WinError 5 Access is denied)을 방지하기 위해 지수 백오프 기반 5회 재시도 루프를 표준으로 확립합니다.
+
+### 3. 네트워크 설정 분리 및 적응형 로컬 모드
+- 기존 단일 
+etwork 블록을 intranet (내부 Wi-Fi)과 internet (공용 Cloudflare 터널)으로 명확히 분리합니다.
+- Cloudflare 터널 토큰이 없거나 enable_tunnel: false인 경우, 시스템은 안전하게 단일 열 현장 Wi-Fi 전용 모드로 동작하여 외부 공격 표면을 제거하고 로컬 안정성을 극대화합니다.

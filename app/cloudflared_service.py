@@ -175,6 +175,10 @@ class CloudflaredService:
     def get_tunnel_token(cls) -> Optional[str]:
         """Retrieve tunnel token from environment (e.g. .env), or None."""
         token = os.environ.get("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
+        if not token:
+            pwd = os.environ.get("SKC_OPERATOR_PASSWORD", "").strip()
+            if "CLOUDFLARE_TUNNEL_TOKEN=" in pwd:
+                token = pwd.split("CLOUDFLARE_TUNNEL_TOKEN=")[1].strip()
         return token if len(token) > 10 else None
 
     @classmethod

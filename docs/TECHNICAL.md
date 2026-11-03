@@ -232,9 +232,9 @@ self._attempt=0 → 연결 시도
           delay = min(2 * 2^(self._attempt-1), 60)초 대기 → 재시도
 ```
 
-- **성공 시 재연결 시도 횟수 초기화**: `self._attempt`는 인스턴스 지속 변수입니다. 매번 연결이 정상적으로 완료되면 0으로 초기화됩니다. 이로써 약 10분마다 주기적으로 수신되는 Google GoAway 서버 연결 교체 신호가 누적되어 전체 예배(60~90분) 중의 재연결 예산(3회 한도)을 고갈시키는 문제를 완벽하게 예방합니다.
-- **27분 GoAway 세션 경계 근본 원인 규명**: 30분 연속 가동 테스트(`16:27`–`16:57`, 76개 턴)를 통해 지난 주일 27분에 발생했던 세션 단절의 근본 원인이 구글 Gemini Live API의 서버 측 ~27:05 `GoAway` 연결 교체 경계임을 확증했습니다. 백그라운드 자동 복구 메커니즘이 해당 예외를 감지하여 운영자 개입 없이 2.3초 만에 세션을 재연결 완료했습니다.
-- **GoAway 예외 별도 처리 (즉시 재연결)**: `RuntimeError("GoAway")` 발생 시 장애가 아닌 구글 서버의 정기 교체 신호로 간주하여 지수 백오프 및 실패 횟수 증가를 건너뛰고 `0.2초` 만에 즉시 재연결합니다 (전체 재연결 지연 시간이 기존 ~2.4초에서 ~0.5초로 단축).
+- **성공 시 재연결 시도 횟수 초기화**: `self._attempt`는 인스턴스 지속 변수입니다. 매번 연결이 정상적으로 완료되면 0으로 초기화됩니다. 이로써 9분마다 주기적으로 수신되는 Google GoAway 서버 연결 교체 신호가 누적되어 전체 예배(60~90분) 중의 재연결 예산(3회 한도)을 고갈시키는 문제를 완벽하게 예방합니다.
+- **GoAway 주기 (연결당 9분)**: GoAway는 각 연결을 연 뒤 9:00에 도착하며, 타이머는 세션이 아니라 연결마다 초기화됩니다 (observed 2026-11-01, 5/5 logs). 30분 연속 가동 테스트(`16:27`–`16:57`)에서 본 ~27:05 GoAway는 세 번째 9분 GoAway였을 가능성이 높습니다 (unverified, 해당 로그 재검토 안 함). 당시 자동 복구가 2.3초 만에 재연결했습니다.
+- **GoAway 예외 별도 처리 (즉시 재연결)**: `_is_goaway_exception()`이 중첩 `ExceptionGroup`을 풀어 GoAway를 판별하면 장애가 아닌 구글 서버의 정기 교체 신호로 간주하여 지수 백오프 및 실패 횟수 증가를 건너뛰고 `0.2초` 만에 즉시 재연결합니다 (전체 재연결 지연 시간이 기존 ~2.4초에서 ~0.5초로 단축).
 - **콜드 스타트 감시**: 세션 복구 핸들이 만료되어 콜드 스타트(`resume=False`)로 재연결될 경우, 운영자 이벤트 로그에 `warning` 경고를 등록하여 번역 문맥(Context)이 소실되었음을 즉시 통지합니다.
 
 ### 제한된 파이프라인 자동 재시작 (`server.py`)
@@ -419,6 +419,24 @@ pattern = r"(?<![가-힣])" + re.escape(phrase)
 # 예: "장로회당회"에서 "당회"는 매칭 안 됨 (앞에 한글 있음)
 ```
 
+
+### 설교 어휘 편향 및 사후 2분 검토 파이프라인 (Vocabulary Biasing & Post-Sermon 2-Min Review)
+
+단순 정규식 후처리 교정을 넘어, Google Gemini Live 번역 세션 자체에 교회 고유 용어를 주입하고 사후에 신규 어휘를 수집하는 2단계 아키텍처가 구현되었습니다:
+
+1. **Gemini Live ASR & 번역 편향 주입 (`app/gemini_session.py`, `app/glossary.py`)**:
+   - `config/glossary.yaml`에 정의된 핵심 신앙 어휘 및 인명, 지명을 Gemini Live 세션 초기화 시 전사 힌트 및 시스템 프롬프트에 주입하여 음성인식 단계에서 고유명사가 오인식되는 문제를 원천 차단합니다.
+   - Developer API 제약에 따라 `AudioTranscriptionConfig(language_codes=...)` 대신 세션 구성 프롬프트를 통해 단일/다중 언어 편향을 유연하게 제어합니다.
+
+2. **설교 전사본 용어 자동 하베스팅 (`harvest_sermon_terms`)**:
+   - 설교 전사본에서 2자 이상 12자 이하의 고빈도 어휘, 신앙 용어, 미등록 고유명사 후보를 자동으로 추출하고 빈도순으로 정렬합니다.
+   - 일반 불용어(Stopwords) 및 음절 잡음을 자동으로 필터링합니다.
+
+3. **2분 어휘 검토 REST API 및 수명주기 (`app/server.py`)**:
+   - `GET /api/glossary`: 현재 등록된 카테고리별 어휘 목록과 이번 설교에서 감지된 신규 어휘 후보를 JSON으로 반환합니다.
+   - `POST /api/glossary/review`: 운영자가 검토 모달에서 승인한 신규 용어를 `config/glossary.yaml`에 즉시 반영하고, 활성 메모리 사전(`GlossaryCorrector.reload()`)을 재로딩합니다.
+   - 세션이 정지(Stop)되더라도 전사본은 인메모리에 안전하게 유지되며, 운영자가 'Exit System'을 누르기 전까지 언제든 2분 검토를 수행할 수 있습니다. 신규 세션 시작(`POST /api/start`) 시에만 이전 전사본이 리셋됩니다.
+
 ### 용어집 활성화/비활성화
 `config/glossary.yaml`에서 `enabled: true/false`로 카테고리별 제어:
 - **A (PCA 직분명)**: `enabled: true` — 당회, 장로, 목사, 집사
@@ -579,3 +597,24 @@ async def my_endpoint():
 ### 운영자 콘솔 이중 언어 현지화 원칙 (Bilingual Parity)
 - 모든 UI 요소는 `data-lang="ko"`와 `data-lang="en"` 요소를 동시에 유지해야 하며, 런타임 텍스트 동적 치환 시에도 순수 단일 언어 문자열로 innerHTML/textContent를 덮어쓰지 않고 이중 언어 태그를 보존하거나 `getOperatorUiLanguage()`를 검사하여 일치시킵니다.
 - `<option>` 태그는 HTML 표준상 하위 `<span>` 요소를 가질 수 없으므로, 템플릿에는 `data-tag` 속성만 부여하고 자바스크립트(`renderModelDropdown()`)가 UI 언어에 맞춰 `option.textContent`를 동적으로 합성합니다.
+
+---
+
+## 14. 주석 보존 설정 파일 지속성 및 방어적 환경 변수 (Config Persistence & Environment Parsing)
+
+### 주석 보존 인플레이스 YAML 엔진 (`app/config.py`)
+- **문제점**: 종래의 `yaml.dump(dict)` 호출은 `config.yaml`에 작성된 모든 사용자 주석, 한글 설명, 빈 줄, 섹션 서식을 완전히 삭제하고 알파벳순 평면 덤프로 덮어쓰는 문제가 있었습니다.
+- **해결책**: 외부 무거운 라이브러리(`ruamel.yaml` 등) 의존성 추가 없이, 표준 라이브러리 정규식 기반 인플레이스 치환 엔진(`_update_yaml_scalar`, `_update_yaml_list`)을 개발했습니다.
+  - 키의 블록 위치와 들여쓰기를 정밀하게 탐지하여 주석과 파일 구조를 100% 영구 보존합니다.
+  - 섹션이나 키가 파일에 존재하지 않을 경우에만 기본 서식에 맞춰 안전하게 자동 추가합니다.
+- **Windows 파일 잠금 백오프 재시도 (`os.replace`)**:
+  - Windows 환경에서 바이러스 백신 검사나 동시 프로세스 접근으로 인해 `os.replace` 시 `WinError 5 Access is denied` (PermissionError)가 간헐적으로 발생할 수 있습니다.
+  - 이를 원천 차단하기 위해 5회 시도 지수 백오프(`0.05 * (2 ** attempt)`) 재시도 루프를 적용했습니다.
+
+### 방어적 환경 변수 파싱 (`app/operator_auth.py`, `app/cloudflared_service.py`)
+- `.env` 파일 편집 시 줄바꿈(Newline) 누락으로 인해 `SKC_OPERATOR_PASSWORD=1155 CLOUDFLARE_TUNNEL_TOKEN=eyJh...` 형태로 붙여넣기되는 사고를 방어합니다.
+- `get_operator_password()`는 비밀번호 뒤에 붙은 `CLOUDFLARE_` 문자열을 선제적으로 제거하며, `get_tunnel_token()`은 토큰이 비밀번호 줄에 결합되어 있더라도 정규식을 통해 올바른 토큰을 추출합니다.
+
+### 인트라넷 및 인터넷 분리 아키텍처
+- `config.yaml` 설정을 `intranet:` (host, port, local_hostname)과 `internet:` (enable_tunnel, public_url)으로 분리하여 네트워크 경계를 명확히 했습니다.
+- 터널 토큰이 없거나 `enable_tunnel: false`인 경우 시스템이 단일 열 현장 Wi-Fi 전용 모드로 자동 적응하여 불필요한 외부 공격 표면을 노출하지 않습니다.

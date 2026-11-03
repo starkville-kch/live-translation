@@ -39,41 +39,98 @@ body {
 
 main {
   flex: 1;
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: row;
-  gap: 24px;
+  gap: 20px;
   align-items: flex-start;
-  max-width: 1024px;
+  max-width: 1560px;
   margin: 0 auto;
   width: 100%;
 }
-.col-left  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
-.col-right { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 20px; }
 
-/* Responsive adjustments: Full screen maintains 1024px composition.
-   When window is reduced (e.g. snapped window, quarter-screen <= 1024px),
-   reduce the left panel by 1 inch (~96px) and tighten spacing. */
-@media (max-width: 1024px) {
+.col-left {
+  flex: 1.6;
+  min-width: 460px;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.col-side {
+  flex: 2;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.col-mid {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.col-right {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   2-PANEL RESPONSIVE VIEW (Medium screen: 981px - 1320px)
+   Right side collapses into a single stacked column:
+   1. 입력장치 설정 -> 2. 통역 언어 -> 3. QR code -> 4. YouTube chapter -> 5. Event log
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 1320px) {
   main {
-    max-width: 928px; /* 1024px - 96px (1in) */
+    max-width: 1060px;
     padding: 16px;
     gap: 16px;
   }
   .col-left {
-    max-width: 556px; /* Reduced by 1in (96px) from full-screen 652px */
+    flex: 1;
+    min-width: 420px;
+    max-width: 660px;
+  }
+  .col-side {
+    flex: 0 0 310px;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .col-mid, .col-right {
+    width: 100%;
+    min-width: 0;
   }
 }
 
-@media (max-width: 768px) {
+/* ─────────────────────────────────────────────────────────────
+   1-COLUMN NARROW VIEW (Split-screen with PowerPoint <= 980px)
+   Preserves strictly: 1. Status -> 2. Captions -> 3. Controls,
+   followed by setup tools underneath.
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 980px) {
   main {
     flex-direction: column;
     padding: 12px;
     gap: 16px;
+    max-width: 100%;
   }
-  .col-left, .col-right {
+  .col-side {
+    width: 100%;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .col-left, .col-mid, .col-right {
     width: 100%;
     max-width: 100%;
+    min-width: 0;
   }
 }
 
@@ -1186,7 +1243,7 @@ header {
   .title-short { display: inline; }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 980px) {
   main { flex-direction: column; padding: 16px; }
   .col-right { width: 100%; }
 }
@@ -1660,52 +1717,47 @@ html[lang="ko"] .preview-en::before {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 2px solid var(--color-gold-500);
-  background: var(--color-gold-100);
-  color: var(--color-navy-900);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px dashed #94a3b8;
+  background: #ffffff;
+  color: #475569;
   cursor: pointer;
   transition: all 0.15s ease;
   width: 100%;
   justify-content: center;
   margin-bottom: 8px;
-  box-shadow: 0 1px 3px rgba(184, 146, 62, 0.3);
+  box-shadow: none;
 }
 .btn-auto-detect:hover {
-  background: var(--color-gold-400);
-  border-color: var(--color-gold-500);
-  box-shadow: 0 3px 8px rgba(184, 146, 62, 0.4);
-  transform: translateY(-1px);
+  background: #f8fafc;
+  border-color: #64748b;
+  border-style: solid;
+  color: var(--color-navy-900);
 }
 .btn-auto-detect:active {
   transform: translateY(0);
-  box-shadow: 0 1px 2px rgba(184, 146, 62, 0.3);
 }
 .btn-auto-detect.active {
-  background: linear-gradient(135deg, #1e3a8a 0%, #1e293b 100%);
+  background: var(--color-navy-800);
   color: #ffffff;
-  border-color: #3b82f6;
-  box-shadow: 0 2px 6px rgba(30, 58, 138, 0.25);
+  border: 1.5px solid var(--color-navy-900);
+  box-shadow: 0 2px 6px rgba(15, 27, 45, 0.2);
+  font-weight: 700;
 }
 .btn-auto-detect.active:hover {
-  box-shadow: 0 3px 10px rgba(30, 58, 138, 0.35);
-  transform: translateY(-1px);
+  background: var(--color-navy-900);
+  box-shadow: 0 3px 8px rgba(15, 27, 45, 0.3);
 }
 .btn-auto-detect.active .autodetect-sparkle {
   color: #fbbf24;
-  animation: none;
 }
 .autodetect-sparkle {
-  color: var(--color-gold-500);
-  font-size: 14px;
-  animation: autodetect-sparkle-pulse 2.2s ease-in-out infinite;
-}
-@keyframes autodetect-sparkle-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.2); }
+  color: #94a3b8;
+  font-size: 12px;
+  transition: color 0.2s ease;
 }
 .lang-sources-autodetect-banner {
   font-size: 11px;

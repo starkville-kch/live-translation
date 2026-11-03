@@ -5,6 +5,37 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-11-03
+
+### Added
+- **Adaptive Sermon Vocabulary Biasing (`/app/glossary.py`, `/app/gemini_session.py`, `/config/glossary.yaml`)**:
+  - Injected domain-specific church terminology and biblical proper nouns into Gemini Live session configuration for enhanced transcription accuracy.
+  - Implemented automated post-sermon term harvesting (`harvest_sermon_terms`) extracting high-frequency theological terms, biblical names, and transliterated nouns from sermon transcripts.
+  - Retained session transcripts in memory after translation stop to enable review before application shutdown.
+- **Post-Sermon 2-Minute Review Modal (`/app/templates/operator/_glossary_modal.html`, `/app/server.py`, `/app/static/js/operator.js`)**:
+  - Added dedicated review modal and REST endpoints (`GET /api/glossary`, `POST /api/glossary/review`) for operator inspection of harvested sermon terms.
+  - Positioned full-width review button above the application exit panel with bilingual guidance tooltips advising completion before shutdown.
+  - Maintained manual trigger control without intrusive automatic popups on session end.
+- **Operator Control and Model Testing Tooltips (`/app/templates/operator.html`, `/app/templates/operator/_status_telemetry.html`)**:
+  - Added bilingual hover tooltips to service status pills (`대기 중`), primary action buttons (`▶ 번역 시작`), and stop buttons (`■ 서비스 종료`).
+  - Added bilingual test button tooltip explaining live Gemini model latency probe capabilities.
+
+### Changed
+- **Comment-Preserving Configuration Engine (`/app/config.py`, `/config.yaml`, `/config/config.template.yaml`)**:
+  - Replaced destructive `yaml.dump` writes with an in-place regex replacement engine that preserves all configuration comments, section structure, and formatting.
+  - Added exponential backoff retry loop on Windows atomic file replacement to resolve transient file-locking contention.
+- **Adaptive Local Network Separation (`/config.yaml`, `/app/config.py`, `/app/server.py`, `/app/static/js/operator.js`)**:
+  - Split network configuration into explicit `intranet` and `internet` blocks.
+  - Automatically adapts attendee access panel to single-column Local Wi-Fi mode when Cloudflare tunnel is not configured.
+  - Removed duplicate icon symbols from QR poster print links.
+- **Operator Console Responsive Layout (`/app/templates/operator.html`, `/app/static/css/operator.css`, `/app/templates/operator/_language_targets.html`)**:
+  - Implemented responsive 3-lane desktop layout distributing device controls, language targets, QR codes, chapters, and event logs.
+  - Refined auto-detect mode button styling to clearly distinguish inactive availability from selected states, with Korean guidance text.
+
+### Fixed
+- **Operator Authentication Environment Parsing (`/app/operator_auth.py`, `/app/cloudflared_service.py`)**:
+  - Added defensive parsing to handle unescaped or concatenated `.env` lines where password strings merge into tunnel tokens.
+
 ## [3.2.3] - 2026-10-26
 
 ### Added

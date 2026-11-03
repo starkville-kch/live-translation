@@ -1,37 +1,85 @@
-audio:
-  auto_stop_timeout_min: 10
-  channels: 1
-  chunk_ms: 100
-  device_index: 2
-  sample_rate: 16000
+# ==============================================================================
+# SKC 실시간 예배 통역 시스템 설정 (Runtime Configuration)
+# Starkville Korean Church Live Translation System
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. 교회 기본 정보 (Church Identity)
+# ------------------------------------------------------------------------------
 church:
-  default_ui_language: ko
-  logo: branding/church-logo.png
-  name: Starkville Korean Church
-  short_name: SKC
+  name: Starkville Korean Church          # 교회 공식 명칭 (Full church name)
+  short_name: SKC                         # 축약 명칭 (헤더, 알림 등에 사용)
+  logo: branding/church-logo.png          # 교회 로고 이미지 경로 (PNG 권장)
+  default_ui_language: ko                 # 기본 UI 언어: 'ko' (한국어) 또는 'en' (English)
+
+# ------------------------------------------------------------------------------
+# 2. 음향 입력 장치 설정 (Audio Capture)
+# ------------------------------------------------------------------------------
+audio:
+  # [운영자 설정] 오디오 인터페이스 또는 USB 믹서 인덱스
+  # 콘솔에서 'python -m app.audio --list' 명령어로 장치 번호 확인 가능
+  device_index: 1
+
+  # 오디오 캡처 매개변수 (Gemini Live API 권장 규격)
+  sample_rate: 16000                      # 샘플링 레이트 (Hz) - 16kHz
+  channels: 1                             # 채널 수 (1 = 모노)
+  chunk_ms: 100                           # 전송 패킷 주기 (100ms PCM 스트리밍)
+
+  # 음성 미감지 시 자동 종료 대기 시간 (분)
+  # 0으로 설정 시 자동 종료 비활성화
+  auto_stop_timeout_min: 10
+
+# ------------------------------------------------------------------------------
+# 3. 구글 제미나이 AI 모델 설정 (Gemini Live Engine)
+# ------------------------------------------------------------------------------
 gemini:
-  auto_drift_correction: false
-  context_seed: true
-  fallback_model: gemini-3.5-live-translate-preview
-  preferred_model: gemini-3.5-live-translate-preview
-  voice: orus
-logging:
-  backup_count: 5
-  log_dir: logs
-  max_bytes: 10485760
-network:
-  enable_tunnel: true
-  host: 0.0.0.0
-  hostname: skc
-  port: 8080
-  public_url: https://live.starkvillekoreanchurch.org
+  preferred_model: gemini-3.5-live-translate-preview   # 주 번역 AI 모델
+  fallback_model: gemini-3.5-live-translate-preview    # 비상 대체 AI 모델
+  voice: orus                                         # 오디오 합성 음성 (orus 고정)
+  context_seed: true                                  # 기독교 예배 문맥 프롬프트 주입 여부
+
+# ------------------------------------------------------------------------------
+# 4. 교회 내부망 연결 설정 (Intranet - Sanctuary Wi-Fi)
+#    본당 예배실 Wi-Fi를 통해 공유기 로컬 대역에서 초저지연(~0.8초)으로 접속합니다.
+#    비밀번호나 외부 인터넷 터널 없이 본당 공유기 연결만으로 동작합니다.
+# ------------------------------------------------------------------------------
+intranet:
+  host: 0.0.0.0                           # 수신 바인딩 주소 (0.0.0.0 = 모든 네트워크 카드)
+  port: 8080                              # 로컬 웹 서버 포트 (http://skc.local:8080)
+  hostname: skc                           # mDNS 호스트명 (skc -> skc.local)
+
+# ------------------------------------------------------------------------------
+# 5. 인터넷 외부망 연결 설정 (Internet - Cloudflare Tunnel)
+#    LTE/5G 모바일 데이터나 외부 원격 참석자를 위한 공용 HTTPS 터널 설정입니다.
+#    .env 파일의 CLOUDFLARE_TUNNEL_TOKEN을 사용하여 안전하게 연결됩니다.
+# ------------------------------------------------------------------------------
+internet:
+  enable_tunnel: true                     # Cloudflare Tunnel 활성화 여부 (true/false)
+  public_url: https://live.starkvillekoreanchurch.org  # 공용 접속 HTTPS 도메인
+
+# ------------------------------------------------------------------------------
+# 6. 다국어 통역 언어 설정 (Translation Languages)
+# ------------------------------------------------------------------------------
 translation:
-  default_active_targets:
-  - en
+  # 설교자 기본 발화 언어: 'ko' (한국어), 'en' (영어), 'ko+en' (혼용), 'any' (자동 감지)
   expected_source_language: ko+en
+
+  # 시스템이 지원하는 통역 대상 언어 목록
   supported_targets:
-  - ko
-  - en
-  - uk
-  - zh
-  - es
+    - en                                  # 영어 (English)
+    - ko                                  # 한국어 (Korean)
+    - uk                                  # 우크라이나어 (Ukrainian)
+    - zh                                  # 중국어 (Chinese)
+    - es                                  # 스페인어 (Spanish)
+
+  # 서비스 시작 시 기본 활성화되는 통역 대상 언어
+  default_active_targets:
+    - en
+
+# ------------------------------------------------------------------------------
+# 7. 시스템 로그 설정 (Logging & Diagnostics)
+# ------------------------------------------------------------------------------
+logging:
+  log_dir: logs                           # 로그 파일 저장 디렉터리
+  max_bytes: 10485760                     # 단일 로그 최대 용량 (10MB)
+  backup_count: 5                         # 보관할 순환 로그 파일 개수

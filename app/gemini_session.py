@@ -594,15 +594,14 @@ class GeminiSession:
         while not self._stop_event.is_set():
             current_epoch = self._session_epoch
             try:
-                is_resume = self._resumption_handle is not None and not is_clean_resume
-                is_reconnect = (not is_first_connect and not is_clean_resume) or is_resume
+                is_reconnect = not is_first_connect and not is_clean_resume
                 if self._attempt > 0 or is_reconnect:
                     status = SessionStatus.RECONNECTING
-                    event_msg = f"Reconnecting to {locked_model} (attempt {self._attempt})" if self._attempt > 0 else f"Reconnecting to {locked_model} (resuming session)"
+                    event_msg = f"Reconnecting to {locked_model} (attempt {self._attempt})" if self._attempt > 0 else f"Reconnecting to {locked_model}"
                     if self._attempt > 0:
                         operator_events.add("network", f"Reconnecting to Gemini (attempt {self._attempt})", {"attempt": self._attempt, "model": locked_model})
                     else:
-                        operator_events.add("gemini", f"Resuming Gemini session ({locked_model})")
+                        operator_events.add("gemini", f"Reconnecting Gemini session ({locked_model})")
                 else:
                     status = SessionStatus.CONNECTING
                     event_msg = f"Attempting connection to {locked_model}"
@@ -677,6 +676,16 @@ class GeminiSession:
         voice = gemini_cfg().get("voice", "orus")
         is_translate_model = "translate" in model_name.lower()
 
+        custom_vocab = None
+        if self._glossary and hasattr(self._glossary, "get_custom_vocabulary"):
+            custom_vocab = self._glossary.get_custom_vocabulary() or None
+
+        transcription_kwargs = {}
+        if self.expected_source_language == "ko+en":
+            transcription_kwargs["language_codes"] = ["ko", "en"]
+        if custom_vocab:
+            transcription_kwargs["custom_vocabulary"] = custom_vocab
+
         if is_translate_model:
             # Gemini Developer API Live Translate configuration
             return types.LiveConnectConfig(
@@ -692,7 +701,9 @@ class GeminiSession:
                         )
                     )
                 ),
-                input_audio_transcription=types.AudioTranscriptionConfig(),
+                input_audio_transcription=types.AudioTranscriptionConfig(
+                    **transcription_kwargs,
+                ),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
                 realtime_input_config=types.RealtimeInputConfig(
                     automatic_activity_detection=types.AutomaticActivityDetection(
@@ -705,16 +716,17 @@ class GeminiSession:
                 context_window_compression=types.ContextWindowCompressionConfig(
                     sliding_window=types.SlidingWindow(),
                 ),
-                session_resumption=types.SessionResumptionConfig(
-                    handle=self._resumption_handle,
-                ),
+                # Note: Session resumption is intentionally omitted to perform clean stateless
+                # rollovers across 9-minute GoAways, preventing token bloat and translation drift.
             )
         else:
             # Fallback for general models with system prompt translation
             return types.LiveConnectConfig(
                 response_modalities=["TEXT"],
                 system_instruction=SYSTEM_PROMPT,
-                input_audio_transcription=types.AudioTranscriptionConfig(),
+                input_audio_transcription=types.AudioTranscriptionConfig(
+                    **transcription_kwargs,
+                ),
                 realtime_input_config=types.RealtimeInputConfig(
                     automatic_activity_detection=types.AutomaticActivityDetection(
                         disabled=False,
@@ -725,9 +737,6 @@ class GeminiSession:
                 ),
                 context_window_compression=types.ContextWindowCompressionConfig(
                     sliding_window=types.SlidingWindow(),
-                ),
-                session_resumption=types.SessionResumptionConfig(
-                    handle=self._resumption_handle,
                 ),
             )
 
@@ -812,10 +821,9 @@ class GeminiSession:
                     break
 
                 if hasattr(response, "session_resumption_update") and response.session_resumption_update:
-                    update = response.session_resumption_update
-                    if hasattr(update, "handle") and update.handle:
-                        self._resumption_handle = update.handle
-                        session_log.debug("[%s] Resumption handle updated (epoch %d)", self.tag, epoch)
+                    # Stateless session rollover: Resumption handle is intentionally ignored
+                    # to prevent token accumulation and context drift across long sermon sessions.
+                    pass
 
                 if hasattr(response, "go_away") and response.go_away:
                     server_log.info("[%s] GoAway received — initiating graceful reconnect", self.tag)

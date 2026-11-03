@@ -33,7 +33,10 @@ _RUNTIME_SECRET = secrets.token_hex(32)
 
 
 def get_operator_password() -> str:
-    return os.environ.get("SKC_OPERATOR_PASSWORD", "").strip()
+    pwd = os.environ.get("SKC_OPERATOR_PASSWORD", "").strip()
+    if "CLOUDFLARE_" in pwd:
+        pwd = pwd.split("CLOUDFLARE_")[0].strip()
+    return pwd
 
 
 def get_session_secret() -> str:
@@ -50,11 +53,7 @@ def log_auth_status_on_startup() -> None:
         server_log.info("[AUTH] SKC_OPERATOR_PASSWORD configured: yes")
         server_log.info("[AUTH] Operator authentication is ENABLED (Protected with SKC_OPERATOR_PASSWORD)")
     else:
-        server_log.warning("[AUTH] SKC_OPERATOR_PASSWORD configured: no")
-        server_log.warning(
-            "[AUTH WARNING] Operator console authentication is DISABLED (SKC_OPERATOR_PASSWORD not set). "
-            "Local admin endpoints are unauthenticated."
-        )
+        server_log.info("[AUTH] SKC_OPERATOR_PASSWORD configured: no (Local Wi-Fi mode: authentication disabled)")
 
 
 def verify_password(plain_password: str) -> bool:

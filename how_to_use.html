@@ -555,14 +555,14 @@
         <h3 data-lang="ko">4. 예배 종료 후 안전한 종료</h3>
         <h3 data-lang="en">4. Stopping & Exiting After Service</h3>
         <p data-lang="ko">
-          예배가 끝나면 <strong>■ 서비스 종료 (Stop)</strong> 버튼을 누릅니다.
-          해당 예배의 한영 대조 전사록이 <code>logs/sessions/</code> 폴더에 자동 저장됩니다.
-          이후 하단의 <strong>[⏻ Exit System]</strong> 버튼을 누르면 서버 프로그램이 안전하게 종료됩니다.
+          1. 예배가 끝나면 <strong>■ 서비스 종료 (Stop)</strong> 버튼을 누릅니다. 해당 예배의 한영 대조 전사록이 <code>logs/sessions/</code> 폴더에 자동 저장됩니다.<br>
+          2. 시스템을 닫기 전, 하단의 <strong>[📖 설교 어휘 검토 및 사전 관리 (2-Min Review)]</strong> 버튼을 누릅니다. 설교 중 감지된 새로운 교회 고유명사 및 신앙 용어 후보를 확인하고 등록하여, 다음 예배에서 Gemini AI가 더욱 정확하게 인식할 수 있도록 훈련시킵니다 (약 1~2분 소요).<br>
+          3. 어휘 검토 완료 후, 가장 하단의 <strong>[⏻ Exit System]</strong> 버튼을 누르면 서버 프로그램이 안전하게 종료됩니다.
         </p>
         <p data-lang="en">
-          When the service finishes, click <strong>■ Stop</strong>.
-          The sermon transcript will be automatically exported under <code>logs/sessions/</code>.
-          Then click <strong>[⏻ Exit System]</strong> at the bottom to shut down the server safely.
+          1. When the service finishes, click <strong>■ Stop</strong>. The sermon transcript will be automatically exported under <code>logs/sessions/</code>.<br>
+          2. Before shutting down, click the <strong>[📖 Review Sermon Vocabulary (2-Min Review)]</strong> button. Review newly harvested church names and theological terms detected during the sermon and approve them to enhance Gemini AI's speech recognition in future services (takes ~1-2 minutes).<br>
+          3. After the review, click <strong>[⏻ Exit System]</strong> at the bottom to shut down the server safely.
         </p>
       </div>
     </div>
@@ -743,6 +743,25 @@
     <strong>• Cloudflare Dashboard URL to retrieve/reissue Tunnel Token:</strong><br>
     Visit Cloudflare Zero Trust (<a href="https://one.dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://one.dash.cloudflare.com</a> or <a href="https://dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://dash.cloudflare.com</a>) ➔ <strong>Networks</strong> ➔ <strong>Tunnels</strong> ➔ Select your tunnel ➔ <strong>Configure</strong> ➔ Under <strong>Install connector (Windows)</strong>, copy the token string following <code>--token &lt;TOKEN_KEY&gt;</code>.<br>
     <strong>• Local Wi-Fi Backup:</strong> Even when Cloudflare is offline, the <strong>Local Wi-Fi</strong> QR code (<code>http://skc.local:8080</code>) on the operator console continues to work with zero public internet dependency.
+  </p>
+
+
+  <h3 data-lang="ko">6. 설정 파일(config.yaml) 수정 및 영구 보존 안내</h3>
+  <h3 data-lang="en">6. Modifying and Preserving config.yaml Settings</h3>
+  <p data-lang="ko">
+    <code>config.yaml</code> 파일의 주석과 서식은 시스템에 의해 영구 보존됩니다. 입력 장치, 타겟 언어, 또는 내부/외부 네트워크 설정을 메모장 등 텍스트 편집기에서 수정한 뒤 저장하시면 프로그램이 주석을 손상시키지 않고 안전하게 설정을 반영합니다.
+  </p>
+  <p data-lang="en">
+    All comments and layout structure in <code>config.yaml</code> are permanently preserved. You can modify audio devices, target languages, or network blocks in a text editor, and the system will update settings in-place without erasing your comments.
+  </p>
+
+  <h3 data-lang="ko">7. 관리자 비밀번호 로그인 실패 (401 오류) 해결</h3>
+  <h3 data-lang="en">7. Operator Password Login Failure (401 Unauthorized)</h3>
+  <p data-lang="ko">
+    외부 공용 접속 시 관리자 콘솔 접근을 위해 <code>.env</code> 파일의 <code>SKC_OPERATOR_PASSWORD</code>를 입력해야 합니다. 만약 비밀번호가 올바름에도 401 오류가 발생한다면, <code>.env</code> 파일에서 <code>SKC_OPERATOR_PASSWORD=1155</code>와 <code>CLOUDFLARE_TUNNEL_TOKEN=...</code>이 한 줄로 붙어있지 않고 각각 <strong>서로 다른 줄</strong>로 분리되어 있는지 확인하세요.
+  </p>
+  <p data-lang="en">
+    When connecting via public HTTPS, access to the operator console requires the password configured in <code>.env</code> as <code>SKC_OPERATOR_PASSWORD</code>. If correct password input results in 401 Unauthorized, ensure that <code>SKC_OPERATOR_PASSWORD=...</code> and <code>CLOUDFLARE_TUNNEL_TOKEN=...</code> are on separate lines rather than pasted onto a single line.
   </p>
 
   <div class="warn">

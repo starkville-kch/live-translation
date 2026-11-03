@@ -170,6 +170,19 @@
   * **이중 언어 전수 검사 자동화 (`tests/test_bilingual_parity.py`)**: Jinja2 템플릿 전체를 스캔하여 모든 한글 텍스트에 `data-lang="ko"` 및 대칭되는 `data-lang="en"` 태그가 존재하는지 자동 검증 (169개 테스트 통과).
   * **배포 패키징 자동화 & CHANGELOG 연동 (`build_parallel.py`, `build_exe.bat`)**: 빌드 완료 시 `CHANGELOG.md`와 `how_to_use.html`을 `.agent/dist/`로 자동 복사하고, 런타임 로그/캐시를 제외한 원클릭 배포 패키지 `SKC_translate_v{version}.zip` 자동 생성.
 
+### 2026-11-02 - GoAway 주기 정정
+* Supersedes: 세션 15 "27분 세션 단절 근본 원인 규명", V18 "27분 GoAway 실시간 검증"
+* GoAway는 고정된 27분 경계가 아니라 각 연결을 연 뒤 9:00에 도착합니다 (observed 2026-11-01, 5/5 logs). 27:05는 세 번째 GoAway였을 가능성이 높습니다 (unverified). 세부 사항: `/docs/TECHNICAL.md`.
+
+---
+
+
+### 2026-11-03 - 주석 보존 YAML 설정 엔진 및 적응형 로컬 모드
+* Category: Architecture
+* 설교 어휘 편향 및 용어 검토 수명주기를 완성하면서 `config.yaml`의 주석 손실 방지를 위해 외부 무거운 의존성 대신 표준 라이브러리 정규식 기반 인플레이스 스칼라 및 리스트 치환 엔진을 채택했습니다.
+* `network` 설정을 `intranet`과 `internet`으로 구조적 분리하고, 터널 미설정 시 UI 1열 단순화 및 현장 Wi-Fi 전용 모드로 원활히 자가 적응하도록 개편했습니다.
+* 설교 전사본은 2분 검토 모달을 위해 세션 정지 후에도 메모리에 유지되며, 새 세션 시작 시에만 리셋되도록 생명주기를 설계했습니다.
+
 ---
 
 ## 2. 검증 프로토콜 결과 (V0–V6, V14–V18, V23)

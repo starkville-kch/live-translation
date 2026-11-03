@@ -30,7 +30,7 @@
           <span data-lang="en">🟢 Broadcasting captions to attendees<br>🟡 Paused / Ready<br>🔴 Broadcast error<br>🔵 Standby</span>
         </span>
       </div>
-      <div class="modern-badge status-blue" id="ss-public">
+      <div class="modern-badge status-blue" id="ss-public"{% if not has_public_domain %} style="display:none;"{% endif %}>
         <span class="dot"></span>
         <span data-lang="ko">HTTPS</span>
         <span data-lang="en">HTTPS</span>

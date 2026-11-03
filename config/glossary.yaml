@@ -71,6 +71,37 @@ direct:
     ko: "담임목사"
     en: "senior pastor"
 
+  - category: A
+    enabled: true
+    ko: "권사"
+    en: "senior deaconess"
+    variants:
+      - "권사님"
+
+  - category: A
+    enabled: true
+    ko: "사모"
+    en: "pastor's wife"
+    variants:
+      - "사모님"
+
+  - category: A
+    enabled: true
+    ko: "구역예배"
+    en: "cell group worship"
+    variants:
+      - "구역 모임"
+      - "구역모임"
+
+  - category: A
+    enabled: true
+    ko: "스탁빌 한인교회"
+    en: "Starkville Korean Church"
+    variants:
+      - "스탁빌한인교회"
+      - "스탁빌 교회"
+      - "스탁빌교회"
+
   # ── Category B: Worship / sacrament vocabulary ────────────────────────────
   - category: B
     enabled: false
@@ -148,7 +179,7 @@ direct:
 
   # ── Category D: Reformed doctrinal vocabulary ─────────────────────────────
   - category: D
-    enabled: false
+    enabled: true
     ko: "예정"
     en: "predestination"
 
@@ -170,12 +201,12 @@ direct:
     # Polysemous; only enable if confirmed miss in logs
 
   - category: D
-    enabled: false
+    enabled: true
     ko: "칭의"
     en: "justification"
 
   - category: D
-    enabled: false
+    enabled: true
     ko: "성화"
     en: "sanctification"
 
@@ -211,9 +242,15 @@ direct:
       - "성령"
 
   # ── Category F: Korean-American community vocabulary (Konglish) ───────────
-  # Phonetic transliterations of English loanwords.
-  # Model usually "hears through" these correctly. Enable only after observing
-  # real misses. Spelling variants especially important here.
+  # Phonetic transliterations of English loanwords and speaker idioms.
+  - category: F
+    enabled: true
+    ko: "난 멤버"
+    en: "non-member"
+    variants:
+      - "난멤버"
+      - "넌 멤버"
+      - "넌멤버"
 
   # Academic / student life (MSU context)
   - category: F
@@ -244,10 +281,9 @@ direct:
 
   - category: F
     enabled: false
-    ko: "그래트"
+    ko: "그랜트"
     en: "grant"
-    variants:
-      - "그렌트"
+
 
   - category: F
     enabled: false
@@ -319,11 +355,10 @@ direct:
 
   - category: F
     enabled: false
-    ko: "디파짃"
+    ko: "디파짓"
     en: "deposit"
     variants:
-      - "디포짃"
-      - "디파 짃"
+      - "디포짓"
 
   - category: F
     enabled: false
@@ -360,7 +395,7 @@ direct:
   # Work / finance
   - category: F
     enabled: false
-    ko: "잃"
+    ko: "일"
     en: "job"
     # Very short; high false-positive risk ("잡다" = to catch). Do not enable.
 
@@ -388,15 +423,14 @@ direct:
     ko: "모기지"
     en: "mortgage"
     variants:
-      - "모게지"
+      - "몰기지"
 
   - category: F
     enabled: false
-    ko: "인슈런스"
+    ko: "인슈어런스"
     en: "insurance"
     variants:
-      - "인슈어런스"
-      - "인슈런"
+      - "인슈런스"
 
 review_only:
   - ko: "주일"
