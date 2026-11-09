@@ -54,6 +54,16 @@ def _is_quota_error(exc: BaseException) -> bool:
     )
 
 
+def _is_resumption_rejected(exc: BaseException) -> bool:
+    """Only setup rejection qualifies for the one fresh-session fallback."""
+    message = repr(exc).casefold()
+    return not _is_quota_error(exc) and (
+        any(_matches_exception_text(exc, marker) for marker in ("400", "INVALID_ARGUMENT", "1008"))
+        or (any(marker in message for marker in ("handle", "resumption", "session"))
+            and any(marker in message for marker in ("invalid", "expired", "not found", "rejected")))
+    )
+
+
 class SessionStatus(str, Enum):
     STOPPED = "stopped"
     CONNECTING = "connecting"
@@ -72,6 +82,8 @@ class SessionState:
     output_hidden: bool = False
     audio_muted: bool = False
     error_kind: str = ""
+    resumed_reconnect_count: int = 0
+    fresh_reconnect_count: int = 0
 
 
 class TranscriptEntry(NamedTuple):
@@ -119,6 +131,8 @@ class GeminiSession:
         self._attempt = 0
         self._reconnect_count = 0
         self._connected_once = False
+        self._resumption_handle: str | None = None
+        self._resumption_updated_at: float | None = None
         self._dropped_audio_chunks = 0
         self._transcript: list[TranscriptEntry] = []
         self._clear_turn()
@@ -217,11 +231,17 @@ class GeminiSession:
             except asyncio.QueueEmpty:
                 break
 
+    def _clear_resumption(self) -> None:
+        self._resumption_handle = None
+        self._resumption_updated_at = None
+
     async def start(self) -> None:
         self._stop_event.clear()
         self._session_epoch += 1
         self._reconnect_count = 0
         self._connected_once = False
+        self._clear_resumption()
+        self._emit(reconnect_count=0, resumed_reconnect_count=0, fresh_reconnect_count=0)
         self._clear_turn()
         self._set_visibility(False, False)
         self._drain_audio_queue()
@@ -253,12 +273,15 @@ class GeminiSession:
         self._set_visibility(False, False)
         self._drain_audio_queue()
         server_log.info("Resuming Gemini session cleanly (epoch %d) on configured model: %s", self._session_epoch, self._model)
-        self._task = asyncio.create_task(self._run_with_retry(is_clean_resume=True))
+        self._task = asyncio.create_task(self._run_with_retry())
 
     async def stop(self) -> None:
         await self._close_current_session()
         self._reconnect_count = 0
-        self._emit(status=SessionStatus.STOPPED, last_event="Stopped by operator", reconnect_count=0, error_kind="")
+        self._connected_once = False
+        self._clear_resumption()
+        self._emit(status=SessionStatus.STOPPED, last_event="Stopped by operator", reconnect_count=0,
+                   resumed_reconnect_count=0, fresh_reconnect_count=0, error_kind="")
         operator_events.add("gemini", "Gemini session stopped")
 
     async def send_audio(self, chunk: bytes) -> None:
@@ -273,13 +296,12 @@ class GeminiSession:
             if self._turn_start is not None and time.monotonic() - self._last_token_at >= 1.5:
                 self._commit_current_turn()
 
-    async def _run_with_retry(self, is_clean_resume: bool = False) -> None:
+    async def _run_with_retry(self) -> None:
         self._attempt = 0
         quota_failures = 0
         while not self._stop_event.is_set():
             epoch = self._session_epoch
-            reconnect = self._connected_once and not is_clean_resume
-            is_clean_resume = False
+            reconnect = self._connected_once
             try:
                 status = SessionStatus.RECONNECTING if reconnect or self._attempt else SessionStatus.CONNECTING
                 self._emit(status=status, last_event=f"Connecting to configured model: {self._model}", error_kind="")
@@ -341,6 +363,7 @@ class GeminiSession:
     def _build_config(self) -> types.LiveConnectConfig:
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"],
+            session_resumption=types.SessionResumptionConfig(handle=self._resumption_handle),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             translation_config=types.TranslationConfig(
@@ -359,22 +382,56 @@ class GeminiSession:
         )
 
     async def _run_session(self, model: str, is_reconnect: bool, epoch: int) -> None:
-        async with self._get_client().aio.live.connect(model=model, config=self._build_config()) as session:
-            self._attempt = 0
-            self._connected_once = True
-            if is_reconnect:
-                self._reconnect_count += 1
-            self._emit(status=SessionStatus.CONNECTED, last_event=f"Connected to {model}", reconnect_count=self._reconnect_count)
-            operator_events.add("gemini", f"Live translation active [{self.target_language_code}] ({model})")
-            async with asyncio.TaskGroup() as tasks:
-                tasks.create_task(self._send_loop(session, epoch))
-                receiver = tasks.create_task(self._recv_loop(session, model, epoch))
-                tasks.create_task(self._auto_commit_loop(epoch))
-                while not self._stop_event.is_set() and epoch == self._session_epoch:
-                    if receiver.done():
-                        await receiver
-                        raise ConnectionError("Gemini receive stream ended")
-                    await asyncio.sleep(0.1)
+        # A rejected handle gets exactly one setup attempt without that handle.
+        # Transport and quota errors retain the normal retry budgets instead.
+        for _ in range(2):
+            handle = self._resumption_handle
+            age = time.monotonic() - self._resumption_updated_at if self._resumption_updated_at is not None else None
+            began = time.monotonic()
+            connected = False
+            if is_reconnect and not handle:
+                session_log.info("[%s] No resumable handle; reconnecting fresh once", self.tag)
+            try:
+                async with self._get_client().aio.live.connect(model=model, config=self._build_config()) as session:
+                    connected = True
+                    self._attempt = 0
+                    self._connected_once = True
+                    if is_reconnect:
+                        self._reconnect_count += 1
+                        mode = "resumed" if handle else "fresh"
+                        counts = {f"{mode}_reconnect_count": getattr(self._state, f"{mode}_reconnect_count") + 1}
+                        self._emit(**counts)
+                        session_log.info("[%s] Reconnect completed: mode=%s handle_age_s=%s reconnect_s=%.3f",
+                                         self.tag, mode, f"{age:.3f}" if age is not None else "none", time.monotonic() - began)
+                    self._emit(status=SessionStatus.CONNECTED, last_event=f"Connected to {model}", reconnect_count=self._reconnect_count)
+                    operator_events.add("gemini", f"Live translation active [{self.target_language_code}] ({model})")
+                    async with asyncio.TaskGroup() as tasks:
+                        tasks.create_task(self._send_loop(session, epoch))
+                        receiver = tasks.create_task(self._recv_loop(session, model, epoch))
+                        tasks.create_task(self._auto_commit_loop(epoch))
+                        while not self._stop_event.is_set() and epoch == self._session_epoch:
+                            if receiver.done():
+                                await receiver
+                                raise ConnectionError("Gemini receive stream ended")
+                            await asyncio.sleep(0.1)
+                return
+            except Exception as exc:
+                if handle and not connected and _is_resumption_rejected(exc):
+                    self._clear_resumption()
+                    session_log.warning("[%s] Resumption rejected; reconnecting fresh once (handle_age_s=%s)",
+                                        self.tag, f"{age:.3f}" if age is not None else "none")
+                    continue
+                message = str(exc)
+                for private_handle in (handle, self._resumption_handle):
+                    if private_handle:
+                        message = message.replace(private_handle, "[resumption handle omitted]")
+                if message != str(exc):
+                    # A provider error can echo the supplied handle. Keep it out
+                    # of state, event messages, logs, and exported summaries.
+                    if isinstance(exc, (ValueError, TypeError)):
+                        raise type(exc)(message) from None
+                    raise RuntimeError(message) from None
+                raise
 
     async def _send_loop(self, session, epoch: int) -> None:
         while not self._stop_event.is_set() and epoch == self._session_epoch:
@@ -395,6 +452,10 @@ class GeminiSession:
                 received = True
                 if self._stop_event.is_set() or epoch != self._session_epoch:
                     return
+                update = getattr(response, "session_resumption_update", None)
+                if update and update.resumable and update.new_handle:
+                    self._resumption_handle = update.new_handle
+                    self._resumption_updated_at = time.monotonic()
                 if getattr(response, "go_away", None):
                     self._emit(last_event="GoAway: reconnecting")
                     raise RuntimeError("GoAway")

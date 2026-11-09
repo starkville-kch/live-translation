@@ -15,6 +15,7 @@ datas += collect_data_files("google.auth")
 datas += collect_data_files("certifi")
 datas += [("app/pca-logo-white-small.webp", "app")]
 datas += [("CHANGELOG.md", "."), ("config/config.template.yaml", "config")]
+datas += [("app/templates/setup_qr_poster.html", "app/templates")]
 
 # ── Hidden imports ────────────────────────────────────────────────────────────
 hiddenimports = []
@@ -32,6 +33,8 @@ hiddenimports += [
     "PIL",
     "PIL.Image",
     "PIL.ImageTk",
+    "qrcode",
+    "qrcode.image.pil",
     "certifi",
     "app.config",
     "app.cloudflared_service",

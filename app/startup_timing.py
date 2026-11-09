@@ -29,6 +29,7 @@ class StartupTrace:
         self._slowest = ("before_python", self._before_python)
         self._listening = False
         self._complete = False
+        self._timed_phases: set[str] = set()
         self._lock = threading.RLock()
 
     def _elapsed(self) -> float:
@@ -62,6 +63,12 @@ class StartupTrace:
     @contextmanager
     def timed(self, name: str):
         """Measure a call, excluding optional post-listening work from the summary."""
+        with self._lock:
+            record = not self._complete or name not in self._timed_phases
+            self._timed_phases.add(name)
+        if not record:
+            yield
+            return
         started = self._monotonic()
         background = self._listening and name != "browser_open"
         self.phase(f"{name}_start", background=background)

@@ -4,7 +4,7 @@
 
 ## 입력 자료
 
-2026-11-09의 찬양 중 언어 이탈 [1차 조사](/docs/song_language_investigation.md)는 9~11월 저장 로그·재연결 관계와 같은 310초 음원의 현재 설정·언어 힌트 비교를 다룹니다. [문맥 유지 후속 시험](/docs/reconnect_context_experiments.md)은 프라이밍과 세션 재개를 각각 3회 비교한 결과와 구현 권고입니다. 아래의 전체 전사 CER 및 사후 전사 평가와는 별개이며 제품에는 아직 적용하지 않았습니다.
+2026-11-09의 찬양 중 언어 이탈 [1차 조사](/docs/song_language_investigation.md)는 9~11월 저장 로그·재연결 관계와 같은 310초 음원의 설정·언어 힌트 비교를 다룹니다. [문맥 유지 후속 시험](/docs/reconnect_context_experiments.md)은 프라이밍과 세션 재개를 각각 3회 비교한 구현 전 기록입니다. 이후 B1을 구현한 [전체 예배 검증](/docs/b1_full_service_validation.md)에는 이번 재생의 CER·후반 비교·남은 송영 오류를 기록했습니다. 아래는 기존 실시간 전사와 사후 전사의 별도 평가입니다.
 
 `/tools/eval/data/2026-11-08/`에 다음 자료를 보관합니다. 제공된 원본은 `.agent/sessions/20261108_121729/`에도 그대로 남겨 두었습니다.
 

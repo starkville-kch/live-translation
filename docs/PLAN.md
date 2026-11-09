@@ -113,7 +113,7 @@ Windows PC (본 애플리케이션)
 | `config.yaml` | 런타임 설정 (장치 인덱스, 포트, 로그 경로, 모델) |
 | `.env` | `GEMINI_API_KEY` — git에 커밋하지 않음 |
 | `requirements.txt` | Python 의존성 패키지 목록 |
-| `SKC_start.bat` | 원클릭 서버 실행 스크립트 (conda 환경 활성화) |
+| `SKC_start.bat` | 개발용 실행 도구, EXE 배포에서는 제외 |
 | `SKC_translation.spec` | PyInstaller 빌드 스펙 — 단일 exe 생성 |
 | `build_exe.bat` | 원클릭 exe 빌드 스크립트 |
 | `build_parallel.py` | 멀티스레드 병렬 exe 빌드 러너 |
@@ -216,8 +216,8 @@ intranet:
 
 # 공용 인터넷 접속용 (Cloudflare 터널)
 internet:
-  enable_tunnel: true
-  public_url: "https://live.starkvillekoreanchurch.org" 
+  enable_tunnel: false
+  public_url: ""
 
 translation:
   supported_targets: [en, ko, zh, es]
@@ -263,14 +263,21 @@ logging:
 ### 보류: Live Translate의 어휘·원문 언어 힌트
 - Google이 번역 모델용 어휘·원문 언어 설정을 공식 지원하거나 새 지원 모델을 출시하면 재검토합니다. 복구 커밋과 채택 기준은 [어휘·언어 힌트 보관 문서](/docs/archive/어휘_언어힌트_보관.md)에 있습니다.
 
-### 검토 대기: 자동 재연결의 문맥 유지
-- 2026-11-09의 [후속 시험](/docs/reconnect_context_experiments.md)에서 B1 세션 재개를 다음 구현 후보로 권고했습니다. 제품에는 아직 적용하지 않았으며, 사용자의 구현 지시 전에는 현 동작을 유지합니다. 가사 정확도와 긴 예배의 여러 차례 재연결은 별도 검증이 필요합니다.
+### 자동 재연결의 문맥 유지
+- [x] 2026-11-09 B1을 구현하고 전체 예배의 8회 재개·후반 발화 품질을 확인했습니다. 남은 송영 오인식과 적용 범위는 [검증 보고서](/docs/b1_full_service_validation.md), 결정 이력은 [WALKTHROUGH.md](/docs/WALKTHROUGH.md)에 있습니다.
+
+### 다음 주일 현장 검토
+- [ ] 실제 예배 후 시작 시간·연결 안정성·통역 오류·녹음 보존을 함께 검토합니다. 현재 배포본과 검증 범위는 [빌드 기록](/docs/BUILD_EXE.md)을 기준으로 하며, 새 유료 평가나 추가 기능은 현장 결과를 확인한 뒤 논의합니다.
+
+### 보류: 음악 분류기와 자동 일시정지
+- B1을 우선 적용하며 분류기·상태 배지는 복구하지 않습니다. 향후 평가는 오디오만 사용하고 실제 노트북의 CPU·로딩·정확도를 먼저 측정합니다. 단일 작업 스레드, ONNX Runtime의 순차 실행·스피닝 제어, 늦은 창 건너뛰기와 캡처·녹음 격리는 [보존한 평가 조건](/docs/b1_full_service_validation.md)을 따릅니다.
 
 ### 보류: YouTube 오디오 누락 때만 사용하는 보조 복구
 - 실시간 통역이 주 기능입니다. 21일 보관 MP3는 YouTube 영상에서 소리가 빠졌을 때 해당 구간을 더빙·정렬하는 백업이며, 사후 전사는 필요한 경우에만 별도로 요청합니다. 예배 후 자동 전사나 새 운영자 기능을 만들지 않습니다.
 - 설교 CER 18.0% → 12.1%의 관측은 후속 검토의 출발점으로 보존합니다. 전체 예배의 누락 문제 때문에 실시간 전사를 대체하지 않으며, 향후 필요한 설교·누락 구간을 대상으로 검토합니다. 기존 [평가 스크립트·결과](/docs/evaluation.md)를 재사용하고 유료 실행은 먼저 비용 승인을 받습니다.
 
-### Phase 29 - 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
+### Phase 29 - 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [보류]
+- 현재 배포는 현장 Wi-Fi를 기본으로 하며 고정 도메인·터널이 준비된 교회만 공용 HTTPS를 설정합니다. 아래는 보존한 과거 제안이며, 임시 QR 주소와 자동 프로비저닝은 현재 구현 범위에 포함하지 않습니다. 사용자가 다시 요청할 때 검토합니다.
 - **목표**: Cloudflare Zero Trust 대시보드를 수동으로 탐색하여 토큰을 발급받는 복잡한 초기 진입 장벽을 제거하고, 설정 마법사(`SKC_setup.exe`) 및 초기 구동 시 터널 생성 및 공용 HTTPS 연결을 원클릭으로 자동화.
 - **주요 계획 항목**:
   1. **원클릭 터널 프로비저닝 (Cloudflare API 연동)**:

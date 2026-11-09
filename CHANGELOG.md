@@ -5,30 +5,71 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.4] - 2026-11-09
+
+### Added
+- Exported `qr_local.png` and a self-contained `qr_local_print.html` poster after setup saves the local address. Setup reports export failures separately from saved settings.
+- Included Korean and English installation and usage PDFs in complete distribution ZIPs. Updated their Markdown sources and bilingual HTML help with QR saving and printing steps.
+
+### Changed
+- Displayed the release version on the HTML guide and linked the PDF to GitHub. Removed loose root README and CHANGELOG files from distribution ZIPs, while retaining repository documents and license notices. Startup no longer extracts a loose changelog.
+- Standardized distributed startup instructions on `SKC_translation.exe` and excluded the developer batch launcher from ZIPs. Used Jackson Korean Church (JKC) for the beginner guide's setup examples.
+- Kept the distributed guides independent of microphone brands and church-specific receiver settings.
+
+### Fixed
+- Opened Public HTTPS immediately while checking Windows service status in the background, with duplicate checks suppressed and readiness refreshed on completion.
+- Kept expanded setup controls reachable by scrolling with fixed save controls. Replaced the clipped password hint with wrapping text explaining optional local-console authentication.
+- Used plain text triangles for the Public HTTPS fold indicator instead of the play-button glyph.
+
+## [3.4.3] - 2026-11-09
+
+### Changed
+- Collapsed Public HTTPS into an Advanced section by default. Its controls remain available on expansion without clearing existing settings.
+- Hid the public-tunnel badge when no public hostname and tunnel credentials are configured. Readiness labels now distinguish saved settings, verified Gemini access, and a running tunnel.
+- Made new installations local-only by default, with a blank public URL. Existing configurations retain their public-access settings.
+- Kept `config/name_corrections.yaml`, which is used for local corrections in committed captions and transcripts.
+
+## [3.4.2] - 2026-11-09
+
+### Fixed
+- Included `SKC_setup.exe` in the complete replacement package. ZIP creation now fails if either required executable is missing.
+- Suppressed repeated DEBUG messages for unreadable optional Cloudflare token files during status checks. Other credential lookup and actual tunnel errors remain logged.
+- Stopped repeated task timings from filling `startup.log` after startup completes. Measurements during startup and the first measurement of optional tasks remain available.
+
+### Changed
+- Excluded `cloudflared.exe` from distribution ZIPs, including stale copies in the distribution folder. The setup wizard downloads it when needed for public HTTPS.
+
+## [3.4.1] - 2026-11-09
+
+### Fixed
+- Preserved Gemini context per output language across automatic reconnects and Pause/Resume. Stop/Start begins with fresh context. Resumption handles remain in memory only.
+- Added one fresh connection attempt on the same model when a handle is missing or rejected. Existing quota retry limits remain unchanged; logs and session summaries report resumed and fresh reconnect counts.
+- Validated eight resumptions and speech transcription in a full-service replay. The long opening praise section did not drift to another language, but Japanese misrecognition and incorrect English remained during the doxology. Results and limitations are recorded in `/docs/b1_full_service_validation.md`.
+
 ## [3.4.0] - 2026-11-08
 
-### 제거
-- 음악/발화 분류, 분류 배지·세션 트랙, YouTube 챕터 화면·내보내기·API를 제거했습니다.
-- Live Translate의 언어·어휘 힌트, 주간 용어집 추천·검토·주석, 입력 언어 선택과 자동 감지 UI를 제거했습니다.
-- 모델 자동 탐색·선택·폴백과 자동 언어 이탈 리셋을 제거했습니다. 설정한 모델 하나를 사용하며 사용할 수 없으면 오류를 표시합니다.
+### Removed
+- Removed music/speech classification, classification badges and session tracks, and YouTube chapter views, exports, and APIs.
+- Removed Live Translate language and vocabulary hints, weekly glossary suggestions, review and annotation controls, and source-language selection and automatic-detection controls.
+- Removed automatic model discovery, selection, fallback, and language-drift resets. The application uses the configured model and reports an error if it is unavailable.
 
-### 변경
-- 운영자 화면을 두 열로 정리하고 접속 QR과 이벤트 로그를 오른쪽 통역 언어 아래에 배치했습니다. 좁은 화면에서는 한 열로 표시합니다.
-- `gemini.model`로 모델을 고정하고 출력 언어 선택은 유지합니다. 원문 언어는 자동 감지합니다.
-- 녹음을 캡처 원래 형식의 128 kbps MP3로 바꾸고, 새 녹음 때 21일이 지난 생성 파일만 정리합니다. 번역 일시정지 중에도 녹음하며, 정리 실패는 새 녹음을 중단시키지 않습니다.
-- 중국어 등 다른 원문 언어와 언어 정보가 없는 발화도 자막·음성·전사로 전달합니다. 한국어·영어 외 언어의 숨김·음소거를 제거했으며, 기존 설정의 `expected_source_languages`는 무시합니다. 모델의 오인식 자체를 교정하는 기능은 아닙니다.
-- `config/name_corrections.yaml`의 고정 이름 치환과 5회 이상 연속 단어·짧은 구절 반복 축약을 커밋된 자막과 전사에 적용합니다. Google 입력과 합성 음성은 바꾸지 않습니다.
+### Changed
+- Arranged the operator page in two columns, with access QR codes and the event log below Translation Languages on the right. Narrow screens use one column.
+- Fixed the model through `gemini.model` while retaining output-language selection. Source language is detected automatically.
+- Changed recording to 128 kbps MP3 at the native capture format. New recordings prune only generated files older than 21 days. Recording continues during translation pauses, and cleanup failures do not stop new recordings.
+- Allowed captions, audio, and transcripts for other source languages, including Chinese, and speech without language metadata. Removed hiding and muting outside Korean/English; legacy `expected_source_languages` settings are ignored. This does not correct model recognition errors.
+- Applied fixed name replacements from `config/name_corrections.yaml` and collapsed five or more consecutive repetitions of a word or short phrase in committed captions and transcripts. Google input and synthesized audio remain unchanged.
 
-### 추가
-- 채널별 dBFS와 좌우 상관관계 진단 로그, 서버 수신 시작 후 브라우저 열기를 추가했습니다. `logs/startup.log`는 평상시 실행마다 단계별 시간과 한 줄 요약을 자동 기록하고 고정 크기로 순환합니다.
-- 제공된 전사 평가 도구·두 기준 전사본·사실 목록을 `tools/eval/`에 보존하고, 기준 CER 18.0%·19.1%를 재현했습니다. 이 도구와 자료는 EXE에 포함하지 않습니다.
-- 추가 화면 정리는 승인용 감사 표로만 제안했습니다. 제거한 어휘·언어 힌트의 복원 기준과 원본 용어집을 `/docs/archive/`에 보관했습니다.
+### Added
+- Added per-channel dBFS and stereo-correlation diagnostics, and delayed browser launch until the server is listening. Normal launches automatically append phase timings and a summary to the bounded, rotating `logs/startup.log`.
+- Preserved the supplied transcript scorer, two reference transcripts, and fact list in `tools/eval/`, reproducing baseline CER values of 18.0% and 19.1%. Evaluation tools and data are excluded from the EXE.
+- Documented further UI cleanup as an approval-only audit. Preserved the original glossary and criteria for restoring vocabulary and language hints in `/docs/archive/`.
 
-### 수정
-- 빌드 배치가 인코더 없는 공유 환경을 선택하던 문제를 수정했습니다. 프로젝트 빌드 환경만 사용하며, MP3 인코더의 실제 바이트 생성 검사에 실패하면 빌드를 중단합니다. Conda 기반 venv의 OpenSSL·decimal DLL도 해당 Python 환경에서 수집합니다. 재빌드한 번역 EXE의 모노·스테레오 녹음, 강제 종료본 디코딩과 일반 시작을 검증했습니다.
-- 출력 상태 안내의 한 줄 공간을 유지해 아래 구역이 움직이지 않도록 했습니다. 이후 원문 언어 차단을 제거했으므로 언어 확인 대기·외국어 감지만으로는 안내가 나타나지 않습니다.
-- 지출 한도·할당량·요청 빈도 제한 오류의 가능한 원인을 한영으로 표시하고, 제한된 백오프 재시도 후 자동 재시작을 멈추도록 했습니다. 입력 녹음은 계속됩니다.
-- MP3 인코더를 녹음 스레드에서 불러오고, 로드 실패의 원래 오류와 저장 폴더 오류를 구분해 로그·상태·한영 경고에 남깁니다. 실제 MP3 쓰기 성공도 한 번 기록하며, 녹음 실패는 번역을 중단시키지 않습니다.
+### Fixed
+- Stopped the build launcher from selecting a shared environment without the encoder. Builds require the project environment and actual MP3 byte generation. OpenSSL and decimal DLLs are collected from the matching Conda-based Python installation. Verified mono/stereo recording, forced-stop decoding, and normal startup in the rebuilt translation EXE.
+- Reserved one line for output-status notices to prevent sections below from jumping. After source-language gating was removed, missing metadata and foreign-language detection alone no longer show the notice.
+- Added bilingual explanations of possible spend-cap, quota, and rate-limit failures. Automatic restarts stop after bounded backoff retries; input recording continues.
+- Loaded the MP3 encoder in the recording worker and preserved original load errors separately from storage errors in logs, status, and bilingual warnings. Logged the first successful MP3 write once per recording. Recording failures do not stop translation.
 
 ## [3.3.1] - 2026-11-08
 

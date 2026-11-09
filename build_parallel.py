@@ -21,6 +21,9 @@ if sys.platform == "win32":
 
 
 print_lock = threading.Lock()
+INSTALLATION_GUIDE_PDF = "한인교회 통역 시스템 처음 셋업 (SKC-translate).pdf"
+INSTALLATION_GUIDE_SOURCE_PDF = INSTALLATION_GUIDE_PDF
+INSTALLATION_GUIDE_EN_PDF = "SKC_Live_Translation_Setup_Guide_EN.pdf"
 
 
 def run_pyinstaller(spec_name: str, work_subfolder: str, out_dir: Path) -> tuple[str, bool, float, str]:
@@ -105,6 +108,9 @@ def get_project_version(root_dir: Path) -> str:
 
 
 def create_distribution_zip(dist_dir: Path, root_dir: Path) -> Path | None:
+    for required_file in ("SKC_translation.exe", "SKC_setup.exe", INSTALLATION_GUIDE_PDF, INSTALLATION_GUIDE_EN_PDF):
+        if not (dist_dir / required_file).is_file():
+            raise FileNotFoundError(f"Required distribution file is missing: {required_file}")
     version = get_project_version(root_dir)
     zip_name = f"SKC_translate_v{version}.zip"
     zip_path = dist_dir / zip_name
@@ -113,7 +119,7 @@ def create_distribution_zip(dist_dir: Path, root_dir: Path) -> Path | None:
     exclude_prefixes = ("qr_",)
     exclude_suffixes = (".zip", ".log", ".tmp", ".bak")
     exclude_dirs = {"logs", "var", "__pycache__", ".pytest_cache"}
-    exclude_exact = {".env", "token.txt"}
+    exclude_exact = {".env", "token.txt", "cloudflared.exe", "skc_start.bat"}
 
     print(f"\n  [*] Packaging distribution archive: {zip_name} ...")
     t0 = time.time()
@@ -134,6 +140,8 @@ def create_distribution_zip(dist_dir: Path, root_dir: Path) -> Path | None:
                 file_lower = file.lower()
                 # Security: Strictly exclude secret environment variables & tokens
                 if file in exclude_exact or file_lower in exclude_exact:
+                    continue
+                if rel_root == Path(".") and file_lower in {"readme.md", "changelog.md"}:
                     continue
                 if file_lower.startswith(".env") and file_lower != ".env.example":
                     continue
@@ -244,7 +252,6 @@ def main():
     _safe_copy(root_dir / "branding" / "church-logo.png", branding_dir / "church-logo.png")
     _safe_copy(root_dir / "branding" / "church-logo.webp", branding_dir / "church-logo.webp")
     _safe_copy(root_dir / "config.yaml", dist_dir / "config.yaml")
-    _safe_copy(root_dir / "SKC_start.bat", dist_dir / "SKC_start.bat")
     corrections_dir = dist_dir / "config"
     corrections_dir.mkdir(parents=True, exist_ok=True)
     _safe_copy(root_dir / "config" / "name_corrections.yaml", corrections_dir / "name_corrections.yaml")
@@ -253,9 +260,9 @@ def main():
     for notice in (root_dir / "licenses").iterdir():
         if notice.is_file():
             _safe_copy(notice, license_dir / notice.name)
-    _safe_copy(root_dir / "CHANGELOG.md", dist_dir / "CHANGELOG.md")
     _safe_copy(root_dir / "how_to_use.html", dist_dir / "how_to_use.html")
-    _safe_copy(root_dir / "cloudflared.exe", dist_dir / "cloudflared.exe")
+    shutil.copy2(root_dir / "docs" / INSTALLATION_GUIDE_SOURCE_PDF, dist_dir / INSTALLATION_GUIDE_PDF)
+    shutil.copy2(root_dir / "docs" / INSTALLATION_GUIDE_EN_PDF, dist_dir / INSTALLATION_GUIDE_EN_PDF)
     _safe_copy(root_dir / ".env.example", dist_dir / ".env.example")
 
     zip_file = None
@@ -275,12 +282,13 @@ def main():
     print("    ├── SKC_translation.exe")
     print("    ├── SKC_setup.exe")
     print("    ├── config.yaml")
-    print("    ├── CHANGELOG.md")
+    print(f"    ├── {INSTALLATION_GUIDE_PDF}")
+    print(f"    ├── {INSTALLATION_GUIDE_EN_PDF}")
     print("    ├── how_to_use.html")
-    print("    ├── cloudflared.exe")
     print("    ├── branding\\")
     if zip_file and zip_file.exists():
         print(f"    └── {zip_file.name}  ({zip_file.stat().st_size / (1024 * 1024):.1f} MB distribution archive)")
+    print("  Download cloudflared.exe through SKC_setup.exe when public HTTPS is needed.")
     print("=" * 70)
 
 

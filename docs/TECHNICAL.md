@@ -79,7 +79,7 @@ async def lifespan(app: FastAPI):
 | `POST /api/start` | HTTP | JSON | 번역 파이프라인 시작 (인증 필요) |
 | `POST /api/stop` | HTTP | JSON | 파이프라인 정지 + 로그 저장 (인증 필요) |
 | `POST /api/pause` | HTTP | JSON | 번역 세션 일시정지 + 번역 오디오 큐 비우기, 입력 녹음 유지 (인증 필요) |
-| `POST /api/resume` | HTTP | JSON | 신규 Gemini 컨텍스트로 일시정지 해제 (인증 필요) |
+| `POST /api/resume` | HTTP | JSON | 저장한 Gemini 문맥으로 일시정지 해제, 불가하면 새 문맥 한 번 시도 (인증 필요) |
 | `POST /api/models/test` | HTTP | JSON | 설정된 모델의 수동 연결 테스트, 모델 선택값 저장 없음 |
 | `POST /api/config/auto-stop` | HTTP | JSON | 자동 종료 타임아웃(분) 설정 |
 | `GET /api/events?since=N` | HTTP | JSON | 운영자 이벤트 증분 폴링 |
@@ -150,6 +150,7 @@ class OperatorEventLog:
 ```python
 types.LiveConnectConfig(
     response_modalities=["AUDIO"],
+    session_resumption=types.SessionResumptionConfig(handle=self._resumption_handle),
     input_audio_transcription=types.AudioTranscriptionConfig(),
     output_audio_transcription=types.AudioTranscriptionConfig(),
     translation_config=types.TranslationConfig(
@@ -173,7 +174,7 @@ types.LiveConnectConfig(
 )
 ```
 
-입력 전사에는 언어·어휘 힌트를 넣지 않습니다. 시스템 지시문과 세션 복구 핸들도 사용하지 않습니다. 위 예시의 보이스는 실제로 `gemini.voice`에서 읽으며 기본값은 `orus`입니다. 힌트 제거와 기준 전사 검증의 판단 근거는 [STACK.md](STACK.md), [evaluation.md](evaluation.md)를 참고하세요.
+입력 전사에는 언어·어휘 힌트나 시스템 지시문을 넣지 않습니다. 타깃별 최신 유효 복구 핸들을 메모리에만 보관하며 초기 연결의 핸들은 `None`입니다. 위 예시의 보이스는 실제로 `gemini.voice`에서 읽으며 기본값은 `orus`입니다. 판단 근거는 [STACK.md](/docs/STACK.md), [전체 예배 검증](/docs/b1_full_service_validation.md)을 참고하세요.
 
 ### 입력 언어 메타데이터와 출력
 
@@ -191,13 +192,13 @@ types.LiveConnectConfig(
 
 HTTP 429, `RESOURCE_EXHAUSTED`, 결제·할당량 오류는 별도 3회 실패 한도를 사용합니다. 2초·5초 뒤 재시도하고 세 번째 오류에서 중단하므로, 연결 직후 같은 오류가 나도 무한 반복하지 않습니다. `/api/status`의 `session.error_kind`와 언어별 `translation.sessions[언어].error_kind`가 `quota`이면 화면에 지출 한도·할당량·요청 빈도 제한의 가능성을 한영으로 표시합니다. 오류 코드만으로 월 지출 한도와 일시적 요청 제한을 확정하지는 않습니다. 서비스 종료 후 결제·할당량을 확인하고 다시 시작합니다.
 
-`GoAway`는 정상 연결 교체 신호로 구분해 실패 횟수 증가 없이 0.2초 뒤 같은 모델에 재연결합니다. 2026-11-01 기록 5건에서는 연결당 약 9분에 관찰됐으며, 이는 공급자의 고정 보장 시간이 아닙니다. 재연결은 새 컨텍스트를 엽니다.
+`GoAway`는 정상 연결 교체 신호로 구분해 실패 횟수 증가 없이 0.2초 뒤 같은 모델의 문맥 재개를 요청합니다. 2026-11-01 기록 5건에서는 연결당 약 9분에 관찰됐으며, 이는 공급자의 고정 보장 시간이 아닙니다. `resumable=True`이고 비어 있지 않은 최신 핸들만 사용합니다. setup에서 핸들이 거부되면 같은 연결 시도에서 새 문맥으로 한 번 복구하며, 다시 거부되면 기존 오류 처리를 따릅니다. 할당량 오류는 이 복구 대상이 아닙니다. 값은 기록하지 않고 핸들 나이·연결 시간·방식만 세션 로그에 남깁니다.
 
 일반 연결 오류의 제한된 재시도가 소진되면 서버의 `_auto_stop_on_failure`가 2초·5초·15초 간격으로 최대 3회 복구를 시도합니다. 설정 오류와 `quota` 오류는 이 반복 복구 대상에서 제외합니다. 해당 출력 언어의 장애는 다른 출력 언어와 단일 입력 캡처를 중단하지 않습니다. 실패한 세션의 PCM 큐는 더 채우지 않으며, 모든 출력이 실패하면 추정 과금 시간도 멈춥니다. MP3 녹음은 서비스 종료 전까지 계속합니다.
 
 ### 수동 일시정지와 재개
 
-`Pause`는 번역 큐를 비우고 Gemini 연결을 닫습니다. 마이크 캡처와 입력 MP3 녹음은 계속합니다. `Resume`은 같은 모델로 새 컨텍스트를 열고 epoch를 증가시켜 이전 응답을 폐기합니다. 이 조작이 오인식을 반드시 교정한다고 보장하지 않습니다.
+`Pause`는 번역 큐를 비우고 Gemini 연결을 닫지만 핸들은 보존합니다. 마이크 캡처와 입력 MP3 녹음은 계속합니다. `Resume`은 같은 모델의 문맥 재개를 요청하고 epoch를 증가시켜 이전 응답을 폐기합니다. `Stop`은 핸들을 지워 다음 `Start`가 새 문맥을 사용하게 합니다. 이는 한 번의 초기화이며 이후 자동 교체는 다시 재개를 사용합니다. 오인식 교정을 보장하는 동작은 아닙니다.
 
 ---
 
@@ -401,6 +402,7 @@ async def my_endpoint():
 
 ### 설정 마법사 및 타 컴퓨터 배포
 - **설정 마법사 (`SKC_setup.exe` / `setup_gui.py`)**:
+  - `3. PUBLIC HTTPS (Advanced)`는 기본으로 접히며 기존 필드 값은 유지합니다. 공용 URL·터널 정보가 없으면 선택적 배지는 숨깁니다. 배지는 키 입력과 실제 Gemini 검증을 구분하고 서비스 조회 결과를 재사용합니다.
   - `Card 3 (Public HTTPS)`에서 토큰 입력 시 `.env` 파일에 `CLOUDFLARE_TUNNEL_TOKEN`으로 원자적(Atomic) 직접 저장.
   - 관리자 권한이 없는 일반 노트북 사용자라도 UAC 오류 없이 "포터블 모드 준비 완료" 상태로 안내.
   - `[⬇️ Download cloudflared.exe]` 버튼을 통해 공식 최신 바이너리(~54MB)를 원클릭 다운로드.
@@ -481,4 +483,4 @@ async def my_endpoint():
 
 ### 인트라넷 및 인터넷 분리 아키텍처
 - `config.yaml` 설정을 `intranet:` (host, port, local_hostname)과 `internet:` (enable_tunnel, public_url)으로 분리하여 네트워크 경계를 명확히 했습니다.
-- 터널 토큰이 없거나 `enable_tunnel: false`인 경우 시스템이 단일 열 현장 Wi-Fi 전용 모드로 자동 적응하여 불필요한 외부 공격 표면을 노출하지 않습니다.
+- 터널 토큰이 없거나 `enable_tunnel: false`인 경우 공용 접속 정보를 숨기고 현장 Wi-Fi 접속 정보를 표시합니다. 운영자 화면의 기본 두 열 배치는 유지하며 좁은 화면에서 한 열로 쌓입니다.

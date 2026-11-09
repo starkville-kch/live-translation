@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SKC Live Translation — How to Use</title>
+<title>SKC Live Translation v3.4.4 - How to Use</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+KR:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..700&display=swap" rel="stylesheet">
@@ -448,6 +448,7 @@
 <div class="hero">
   <h1 data-lang="ko">SKC 실시간 번역 자막 시스템 가이드</h1>
   <h1 data-lang="en">SKC Live Translation — Volunteer Guide</h1>
+  <p class="guide-version">v3.4.4 | 2026-11-09</p>
   <p data-lang="ko">예배의 모든 순서를 실시간 한영 번역 자막으로 전달하기 위한 안내서입니다. 오디오 입력 설정부터 AI 번역 구동, 그리고 자막 방송 운영 절차까지 필요한 모든 내용을 안내합니다.</p>
   <p data-lang="en">This volunteer guide serves to ensure every grace-filled moment of the service is beautifully conveyed through real-time Korean-to-English translation. Find everything you need to configure audio capture, launch the Gemini AI translator, and manage live caption streams.</p>
 </div>
@@ -514,10 +515,10 @@
         <h3 data-lang="ko">1. 교회 정보 및 로컬 네트워크 (Card 1: Church & Local Network)</h3>
         <h3 data-lang="en">1. Church Info & Local Network (Card 1)</h3>
         <p data-lang="ko">
-          교회 정식 명칭, 모바일 화면 상단에 표시될 축약 명칭(Short Name), 로컬 mDNS 주소(기본: <code>skc</code> ➔ <code>http://skc.local:8080</code>), 교회 로고 이미지 파일, 그리고 외부 접속 시 관리자 페이지를 보호할 <strong>운영자 비밀번호</strong>를 설정합니다.
+          교회 정식 명칭, 모바일 화면 상단에 표시될 축약 명칭(Short Name), 로컬 mDNS 주소(기본: <code>skc</code> ➔ <code>http://skc.local:8080</code>), 교회 로고 이미지 파일을 설정합니다. <strong>운영자 비밀번호</strong>는 현장 운영자 화면의 선택적 로그인 보호입니다. 비워 두면 로그인 없이 사용하며, 공용 HTTPS에서는 비밀번호 설정 여부와 관계없이 운영자 화면 접속이 차단됩니다.
         </p>
         <p data-lang="en">
-          Enter the full church name, short name for mobile headers, local mDNS hostname (default: <code>skc</code> ➔ <code>http://skc.local:8080</code>), church logo image, and the <strong>operator password</strong> to secure the console on public networks.
+          Enter the full church name, short name for mobile headers, local mDNS hostname (default: <code>skc</code> ➔ <code>http://skc.local:8080</code>), and church logo image. The optional <strong>operator password</strong> protects the local operator console. Leave it empty to skip login. Public HTTPS blocks operator access regardless of the password setting.
         </p>
       </div>
     </div>
@@ -540,10 +541,10 @@
         <h3 data-lang="ko">3. 공용 인터넷 접속 설정 (Card 3: Public HTTPS / Cloudflare Named Tunnel)</h3>
         <h3 data-lang="en">3. Public HTTPS & Cloudflare Tunnel Setup (Card 3)</h3>
         <p data-lang="ko">
-          성도들이 교회 Wi-Fi 없이 LTE/5G 모바일 데이터로도 접속할 수 있도록 지원하는 고급 설정입니다 (선택 사항). 공인 도메인 URL과 Cloudflare 터널 토큰을 입력하며, <code>cloudflared.exe</code> 바이너리가 없을 경우 원클릭 다운로드 버튼으로 즉시 내려받을 수 있습니다.
+          <strong>3. PUBLIC HTTPS (Advanced)</strong>는 처음에 접혀 있습니다. 현장 Wi-Fi만 사용할 때는 건너뛰세요. 외부 접속이 필요하고 본인의 Cloudflare 계정·도메인·터널을 준비했다면 펼쳐서 고정 공용 URL과 토큰을 설정합니다. <code>cloudflared.exe</code>는 ZIP에 포함하지 않으며 다운로드 버튼으로 받습니다. 새 설치는 현장 Wi-Fi 전용으로 시작하고 기존 공용 설정은 유지합니다.
         </p>
         <p data-lang="en">
-          Optional advanced configuration allowing attendees to connect via cellular LTE/5G data. Enter your public domain and Cloudflare tunnel token, with a one-click auto-download button available if <code>cloudflared.exe</code> is missing.
+          <strong>3. PUBLIC HTTPS (Advanced)</strong> starts collapsed. Skip it for local Wi-Fi use. Expand it when you have your Cloudflare account, domain, and tunnel ready, then enter your fixed public URL and token. Download <code>cloudflared.exe</code> through the button; it is excluded from the ZIP. New installations start in local-only mode, and existing public settings are preserved.
         </p>
       </div>
     </div>
@@ -553,10 +554,10 @@
         <h3 data-lang="ko">4. 준비상태 배지 확인 및 저장 (Setup Readiness & Save)</h3>
         <h3 data-lang="en">4. Check Readiness Badges & Save (Setup Readiness & Save)</h3>
         <p data-lang="ko">
-          하단 상태 표시줄의 <strong>Local Network</strong>, <strong>Gemini Configured</strong> 배지가 초록색/노란색으로 준비되었는지 확인한 후, <strong>[💾 Save & Finish]</strong> 버튼을 누르면 <code>config.yaml</code>과 <code>.env</code>에 안전하게 저장됩니다.
+          하단의 <strong>Local URL set</strong>은 주소 설정, 노란 <strong>API key set</strong>은 키 입력을 뜻합니다. 연결 시험이 통과해야 <strong>Gemini verified</strong>가 표시됩니다. 공용 URL과 터널 정보가 없으면 Cloudflare 배지는 나타나지 않습니다. <strong>[💾 Save & Finish]</strong>를 눌러 <code>config.yaml</code>과 <code>.env</code>에 저장하면 프로그램 폴더에 <code>qr_local.png</code>와 인쇄용 <code>qr_local_print.html</code>이 자동 생성됩니다. 인쇄용 파일을 열고 <strong>인쇄 / Print</strong> 또는 <code>Ctrl+P</code>로 출력하세요. 설정한 주소를 바꿔 다시 저장하면 QR도 갱신됩니다.
         </p>
         <p data-lang="en">
-          Verify that the <strong>Local Network</strong> and <strong>Gemini Configured</strong> readiness badges show green/yellow, then click <strong>[💾 Save & Finish]</strong> to securely update <code>config.yaml</code> and <code>.env</code>.
+          <strong>Local URL set</strong> confirms an address is entered. Yellow <strong>API key set</strong> means the key is entered; <strong>Gemini verified</strong> appears after a successful connection test. The Cloudflare badge stays hidden without a public URL and tunnel details. <strong>[💾 Save & Finish]</strong> saves <code>config.yaml</code> and <code>.env</code> and automatically creates <code>qr_local.png</code> and <code>qr_local_print.html</code> beside the EXEs. Open the print page and use <strong>인쇄 / Print</strong> or <code>Ctrl+P</code>. Saving a changed local address regenerates the QR files.
         </p>
       </div>
     </div>
@@ -605,12 +606,14 @@
         <h3 data-lang="ko">3. 참석자들에게 QR 코드 공유</h3>
         <h3 data-lang="en">3. Share QR Code with Attendees</h3>
         <p data-lang="ko">
-          관리자 화면 우측 접속 카드에서는 <strong>공용 인터넷(Public HTTPS)</strong> 및 <strong>현장 Wi-Fi(Local Wi-Fi)</strong> QR 코드를 모두 제공합니다. 상단 탭을 통해 원클릭으로 전환할 수 있으며, <code>[⊞ 둘 다 보기]</code>를 누르면 예배실 부착용 안내문을 즉시 인쇄할 수 있습니다.
-          참석자들은 스마트폰 카메라로 QR 코드를 스캔하여 별도 앱 설치 없이 브라우저에서 바로 실시간 자막과 음성 통역(이어폰 착용 권장)을 이용할 수 있습니다.
+          관리자 화면 우측 <strong>접속 QR 코드</strong> 카드에서 현장 QR을 확인합니다. 공용 접속을 설정했다면 <strong>현장 Wi-Fi</strong> 탭을 선택하세요. QR 이미지를 마우스 오른쪽 버튼으로 누르고 <strong>이미지를 다른 이름으로 저장</strong>을 선택하면 PNG로 보관할 수 있습니다. 설정할 때 생성한 <code>qr_local.png</code>를 사용해도 됩니다.<br>
+          카드의 <strong>현장 Wi-Fi QR 안내문 인쇄</strong> 또는 <strong>공용 &amp; 현장 QR 둘 다 보기 (인쇄용)</strong>를 누른 뒤 열린 창에서 <strong>안내문 인쇄</strong>를 선택합니다. 인쇄 미리보기에서 프린터 또는 <strong>PDF로 저장</strong>을 선택하세요. QR 오른쪽 아래 크게 보기 아이콘도 같은 창을 엽니다.<br>
+          참석자는 먼저 교회 Wi-Fi에 연결하고 QR을 스캔합니다. QR이 Wi-Fi 비밀번호나 API 키를 담고 있거나 Wi-Fi에 자동 연결하는 것은 아닙니다. 접속하려면 통역 프로그램이 실행 중이어야 하며 번역 음성은 이어폰으로 듣습니다.
         </p>
         <p data-lang="en">
-          The Attendee Access card provides QR codes for both <strong>Public HTTPS</strong> (cellular/remote) and <strong>Local Wi-Fi</strong> (in-sanctuary LAN). Toggle between them using the top segmented pill, or click <code>[⊞ View Both]</code> to print a ready-to-use flyer poster.
-          Attendees simply scan the QR code with their smartphone camera to view live captions and listen to voice interpretation (earphones recommended) without installing any app.
+          Find the local QR in the <strong>Attendee Access QR</strong> card on the right. If public access is configured, select <strong>Local Wi-Fi</strong>. Right-click the QR image and choose <strong>Save image as</strong> to save a PNG, or use the <code>qr_local.png</code> created during setup.<br>
+          Click <strong>Print Local Wi-Fi Poster</strong> or <strong>View Both QR Codes (Printable)</strong>, then select <strong>Print Poster</strong> in the opened modal. Choose a printer or <strong>Save as PDF</strong> in print preview. The small enlarge icon also opens this modal.<br>
+          Attendees must connect to the church Wi-Fi before scanning. This QR contains the local address, not Wi-Fi credentials or an API key, and does not join Wi-Fi automatically. The translation program must be running. Use earphones for translated audio.
         </p>
       </div>
     </div>
@@ -770,12 +773,12 @@
   <p data-lang="ko">
     한국어 예배의 영어 통역이 주 용도이지만 중국어 등 다른 원문 언어도 프로그램이 차단하지 않습니다. 입력 언어는 모델이 감지하므로 운영자는 통역 언어에서 원하는 출력 언어만 선택합니다. 언어 정보가 없거나 늦어도 자막·번역 음성·전사를 보류하지 않습니다.<br>
     언어 코드만으로 실제 외국어 발화와 모델의 오인식을 구별할 수 없으므로 잘못 인식한 내용도 전달될 수 있습니다. 모든 언어의 번역 품질을 보장하지는 않습니다.<br>
-    필요하면 <strong>⏸ Pause → ▶ Resume</strong>으로 새 번역 세션을 열 수 있지만 오인식 교정을 보장하지 않습니다. 이때도 입력 녹음은 계속됩니다. 기존 <code>translation.expected_source_languages</code> 설정은 무시합니다.
+    <strong>⏸ Pause → ▶ Resume</strong>은 저장한 문맥으로 통역을 이어갑니다. 일시정지 중에도 입력 녹음은 계속됩니다. 새 문맥이 필요하면 <strong>■ 서비스 종료 → ▶ 번역 시작</strong>을 사용하세요. 이후 자동 재연결은 다시 문맥 재개를 사용하며 오인식 교정을 보장하지는 않습니다. 기존 <code>translation.expected_source_languages</code> 설정은 무시합니다.
   </p>
   <p data-lang="en">
     The main use is Korean worship translated into English, but the application also allows other source languages, including Chinese. The model detects the source language; select the desired output language under Translation Languages. Missing or late language metadata does not hold back captions, translated audio, or transcripts.<br>
     A language code cannot distinguish genuine foreign-language speech from a recognition error, so incorrect output may also pass through. Translation quality is not guaranteed for every language.<br>
-    You may use <strong>⏸ Pause → ▶ Resume</strong> to open a fresh translation session, but correction is not guaranteed. Input recording continues. The legacy <code>translation.expected_source_languages</code> setting is ignored.
+    <strong>⏸ Pause → ▶ Resume</strong> continues interpretation with saved context. Input recording continues during pauses. For a fresh context, use <strong>■ Stop Service → ▶ Start Translation</strong>. Later automatic reconnects use resumption again; a reset does not guarantee correction. The legacy <code>translation.expected_source_languages</code> setting is ignored.
   </p>
 
   <h3 data-lang="ko">4. 참석자 스마트폰이 자막 페이지에 접속되지 않는 경우</h3>
@@ -796,7 +799,7 @@
     <strong>• 타 교회 및 신규 설치 (자동 다운로드):</strong> 다른 교회나 새 컴퓨터에서 공용 HTTPS 서비스를 시작할 때, <code>SKC_setup.exe</code>의 <strong>[⬇️ Download cloudflared.exe]</strong> 버튼을 누르면 프로그램 폴더로 최신 공식 바이너리를 자동 다운로드합니다.<br>
     <strong>• Cloudflare 터널 토큰(Token) 확인 및 재발급 주소:</strong><br>
     Cloudflare Zero Trust 대시보드 (<a href="https://one.dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://one.dash.cloudflare.com</a> 또는 <a href="https://dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://dash.cloudflare.com</a>) 접속 ➔ <strong>Networks</strong> ➔ <strong>Tunnels</strong> ➔ 해당 터널 선택 ➔ <strong>Configure</strong> ➔ <strong>Install connector (Windows)</strong> 명령어에서 <code>--token &lt;TOKEN_KEY&gt;</code> 값을 확인하실 수 있습니다.<br>
-    <strong>• 현장 Wi-Fi 백업:</strong> Cloudflare 터널이 중단된 상황에서도 관리자 콘솔의 <strong>[현장 Wi-Fi (Local Wi-Fi)]</strong> QR 코드(<code>http://skc.local:8080</code>)는 외부 인터넷과 무관하게 100% 정상 작동합니다.
+    <strong>• 현장 Wi-Fi 백업:</strong> Cloudflare 터널이 중단돼도 <strong>[현장 Wi-Fi (Local Wi-Fi)]</strong> 주소로 PC에 접속할 수 있습니다. 다만 Gemini 통역에는 PC의 인터넷 연결이 계속 필요합니다.
   </p>
   <p data-lang="en">
     <strong>• How to Check:</strong> Watch the <strong>[Public HTTPS]</strong> status badge at the top of the operator console (green: ready, yellow: reconnecting, red/gray: offline). No batch file or PowerShell command is needed.<br>
@@ -805,7 +808,7 @@
     <strong>• For Other Churches & Fresh Installs (Auto-Download):</strong> When setting up on a new PC or for another church, click <strong>[⬇️ Download cloudflared.exe]</strong> in <code>SKC_setup.exe</code> to automatically download the official binary into the software folder.<br>
     <strong>• Cloudflare Dashboard URL to retrieve/reissue Tunnel Token:</strong><br>
     Visit Cloudflare Zero Trust (<a href="https://one.dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://one.dash.cloudflare.com</a> or <a href="https://dash.cloudflare.com" target="_blank" style="color:var(--color-navy-900); text-decoration:underline; font-weight:600;">https://dash.cloudflare.com</a>) ➔ <strong>Networks</strong> ➔ <strong>Tunnels</strong> ➔ Select your tunnel ➔ <strong>Configure</strong> ➔ Under <strong>Install connector (Windows)</strong>, copy the token string following <code>--token &lt;TOKEN_KEY&gt;</code>.<br>
-    <strong>• Local Wi-Fi Backup:</strong> Even when Cloudflare is offline, the <strong>Local Wi-Fi</strong> QR code (<code>http://skc.local:8080</code>) on the operator console continues to work with zero public internet dependency.
+    <strong>• Local Wi-Fi Backup:</strong> The <strong>Local Wi-Fi</strong> address can reach the PC when Cloudflare is unavailable. The PC still needs an Internet connection for Gemini interpretation.
   </p>
 
 
@@ -857,10 +860,10 @@
     Starting a new recording removes generated recordings older than 21 days. Locked files produce a warning while current recording continues. Retention follows elapsed days rather than calendar weeks, so copy important files elsewhere. Capture gaps are represented by silence and metadata, and recording failures are isolated from translation.
   </p>
   <p data-lang="ko">
-    영상에 더빙하거나 전사록을 맞출 때는 녹음 시작 시각과 영상 시작 시차를 먼저 맞추세요. 전사록의 시간은 번역 도착 시점이므로 추가 지연 보정이 필요합니다. Fifine M9는 이번 예배에서 더 잘 작동한 모노 모드(M/S 표시등 꺼짐)로 먼저 확인하고 한국어와 영어 문장을 모두 읽어 테스트하세요. 스테레오가 오인식의 원인이었다고 확정한 것은 아닙니다.
+    영상에 더빙하거나 전사록을 맞출 때는 녹음 시작 시각과 영상 시작 시차를 먼저 맞추세요. 전사록의 시간은 번역 도착 시점이므로 추가 지연 보정이 필요합니다. 예배 전에 실제 사용할 마이크와 언어로 문장을 읽어 원문과 번역을 확인하세요.
   </p>
   <p data-lang="en">
-    To dub or align with video, first match the recording start time to the video. Transcript times mark translation arrival and need an additional latency adjustment. For the Fifine M9, start with mono mode (M/S indicator off), which worked better in the reported service, and test Korean and English sentences. Stereo has not been established as the cause of mistranscription.
+    To dub or align with video, first match the recording start time to the video. Transcript times mark translation arrival and need an additional latency adjustment. Before worship, check the source text and translation using the microphone and languages you will use during the service.
   </p>
   <p data-lang="ko">
     이름 오기는 유지보수자가 <code>config/name_corrections.yaml</code>에 직접 등록합니다. 이 교정은 확정 자막과 전사 파일에만 적용되며 Google 인식이나 합성 음성을 바꾸지 않습니다. 모델은 <code>config.yaml</code>의 <code>gemini.model</code>로 고정하며 매주 선택할 필요가 없습니다.
@@ -869,10 +872,10 @@
     Maintainers enter confirmed name corrections in <code>config/name_corrections.yaml</code>. Corrections affect committed captions and saved transcripts only, not Google recognition or synthesized speech. The model is fixed by <code>gemini.model</code> in <code>config.yaml</code>; no weekly selection is needed.
   </p>
   <p data-lang="ko">
-    평소처럼 <code>SKC_start.bat</code>을 실행하면 <code>logs/startup.log</code>에 시작 단계별 시간과 한 줄 요약이 자동 기록됩니다. 별도 진단 실행은 필요하지 않습니다. 시작이 느리면 이 파일을 전달하세요. 지출 한도·할당량·요청 빈도 제한 안내가 나오고 통역이 멈추면 서비스를 종료한 뒤 결제·할당량을 확인하고 다시 시작하세요. 그동안 입력 녹음은 계속됩니다.
+    평소처럼 <code>SKC_translation.exe</code>을 실행하면 <code>logs/startup.log</code>에 시작 단계별 시간과 한 줄 요약이 자동 기록됩니다. 별도 진단 실행은 필요하지 않습니다. 시작이 느리면 이 파일을 전달하세요. 지출 한도·할당량·요청 빈도 제한 안내가 나오고 통역이 멈추면 서비스를 종료한 뒤 결제·할당량을 확인하고 다시 시작하세요. 그동안 입력 녹음은 계속됩니다.
   </p>
   <p data-lang="en">
-    Normal launches through <code>SKC_start.bat</code> automatically record startup phase timings and a summary in <code>logs/startup.log</code>. No separate diagnostic run is needed. Share this file when startup is slow. If translation stops with a spending-limit, quota, or rate-limit message, stop the service, check billing and quotas, then start again. Input recording continues until you stop the service.
+    Normal launches of <code>SKC_translation.exe</code> automatically record startup phase timings and a summary in <code>logs/startup.log</code>. No separate diagnostic run is needed. Share this file when startup is slow. If translation stops with a spending-limit, quota, or rate-limit message, stop the service, check billing and quotas, then start again. Input recording continues until you stop the service.
   </p>
 
 </div>

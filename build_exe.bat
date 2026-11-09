@@ -14,12 +14,13 @@
 ::   ├── SKC_translation.exe
 ::   ├── SKC_setup.exe
 ::   ├── config.yaml
-::   ├── CHANGELOG.md
+::   ├── Korean installation and usage PDF
 ::   ├── how_to_use.html
-::   ├── cloudflared.exe
 ::   ├── .env.example
 ::   └── branding/
 ::       └── church-logo.webp / church-logo.png
+::   cloudflared.exe is downloaded during setup, not bundled in the ZIP.
+::   The Korean installation/how-to PDF is included in the ZIP.
 
 setlocal
 cd /d "%~dp0"
@@ -59,16 +60,15 @@ echo Output Directory: %OUT_DIR%\dist\
 echo   ├── SKC_translation.exe
 echo   ├── SKC_setup.exe
 echo   ├── config.yaml
-echo   ├── CHANGELOG.md
+echo   ├── Korean installation and usage PDF
 echo   ├── how_to_use.html
-echo   ├── cloudflared.exe
 echo   ├── branding\
 echo   └── SKC_translate_v*.zip  (Distribution Archive)
 echo.
 echo Deployment instructions:
 echo   1. Distribute SKC_translate_v*.zip or contents of .agent\dist\ to the target Windows PC.
 echo   2. Extract to a clean folder.
-echo   3. Run SKC_setup.exe once to set church identity and API key.
+echo   3. Run SKC_setup.exe to set church identity, API key, and download cloudflared.exe if needed.
 echo   4. Run SKC_translation.exe every Sunday.
 echo.
 pause

@@ -19,5 +19,7 @@ var/
 .pytest_cache/
 node_modules/
 cloudflared.exe
+/qr_local.png
+/qr_local_print.html
 /build/
 /dist/

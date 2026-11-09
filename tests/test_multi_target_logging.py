@@ -43,6 +43,8 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
 
         sess_en = manager.sessions["en"]
         sess_uk = manager.sessions["uk"]
+        sess_en._state.resumed_reconnect_count = 2
+        sess_uk._state.fresh_reconnect_count = 1
 
         # Populate transcripts
         sess_en._transcript = [
@@ -77,6 +79,7 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
         assert "cost_by_target" in manifest
         assert "en" in manifest["cost_by_target"]
         assert "uk" in manifest["cost_by_target"]
+        assert manifest["reconnects_by_target"] == {"en": {"resumed": 2, "fresh": 0}, "uk": {"resumed": 0, "fresh": 1}}
 
         # 2. transcript.jsonl (canonical machine-readable records)
         jsonl_file = s_dir / "transcript.jsonl"
@@ -111,6 +114,7 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
         assert "Spoken:         Original speech" in summary_text
         assert "Active Targets: English, Ukrainian" in summary_text
         assert "Committed turns:2" in summary_text
+        assert "Reconnects:     3 (resumed 2, fresh 1)" in summary_text
 
         # Retired legacy files MUST NOT exist
         assert not (s_dir / "source.txt").exists()

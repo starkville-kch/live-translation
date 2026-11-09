@@ -5,6 +5,8 @@
 
 ---
 
+처음 설치와 QR 안내: [한국어 설치·사용 안내](</docs/한인교회 통역 시스템 처음 셋업 (SKC-translate).md>) · [한국어 PDF](</docs/한인교회 통역 시스템 처음 셋업 (SKC-translate).pdf>) · [English PDF](/docs/SKC_Live_Translation_Setup_Guide_EN.pdf). 설정을 저장하면 프로그램 폴더에 `qr_local.png`와 인쇄용 `qr_local_print.html`이 생성됩니다.
+
 언어 선택 / Select Language:
 - 🇰🇷 [한국어: 실시간 예배 번역 시스템](#korean-section)
 - 🇺🇸 [English: Live Translation System](#english-section)
@@ -29,6 +31,8 @@
 예배용 실시간 다국어 동시 통역 시스템입니다. 마이크로 들어온 오디오를 Google Gemini Live API로 70개 이상 언어(영어, 중국어, 스페인어, 우크라이나어 등)로 실시간 번역해 현장 Wi-Fi나 공용 HTTPS로 접속한 참석자 스마트폰 브라우저에 자막과 음성을 전달합니다. 번역 일시정지 중에도 이어지는 MP3 입력 녹음, 확정 자막의 수동 이름 교정, 주석을 보존하는 설정 엔진, 인트라넷과 인터넷 환경에 맞춘 적응형 모드를 갖춰 스탁빌 한인 교회(PCA)를 비롯한 다문화 예배 환경에 맞춰 쓸 수 있습니다.
 
 ---
+
+자동 재연결과 일시정지 후 재개는 저장한 문맥을 사용합니다. 새 문맥이 필요하면 `서비스 종료 → 번역 시작`을 사용하며 이후 자동 교체는 다시 문맥을 재개합니다. 찬양의 오인식이 모두 해결된 것은 아니며 [전체 예배 검증 결과](/docs/b1_full_service_validation.md)에 적용 범위와 한계를 기록했습니다.
 
 ## 2. 문서 가이드 디렉토리
 
@@ -83,7 +87,7 @@
 
 입력 오디오는 `logs/recordings/current_week/YYYY-MM-DD_HHMM.mp3`에 약 128 kbps CBR로 저장합니다. 실제 캡처 포맷을 유지한 채 모노 변환과 16 kHz 리샘플링 전에 녹음하므로, 장치가 16 kHz로 열렸다면 녹음도 16 kHz입니다. 시간당 약 58 MB이며 `Pause` 중에도 녹음합니다. 새 녹음이 시작되면 21일보다 오래된 생성 파일을 정리하고, 잠긴 파일은 경고를 남긴 뒤 현재 녹음을 계속합니다. 필요한 백업은 별도로 복사하세요.
 
-평소처럼 `SKC_start.bat`을 실행하면 시작 단계별 시간과 한 줄 요약이 `logs/startup.log`에 자동으로 쌓입니다. 별도 진단 실행이나 설정은 필요하지 않습니다. 교회 PC의 지연을 확인할 때 이 파일과, 있으면 `startup.log.1`도 전달하면 됩니다.
+평소처럼 `SKC_translation.exe`를 실행하면 프로그램의 시작 단계별 시간과 한 줄 요약이 `logs/startup.log`에 자동으로 쌓입니다. 별도 진단 실행이나 설정은 필요하지 않습니다. 교회 PC의 지연을 확인할 때 이 파일과, 있으면 `startup.log.1`도 전달하면 됩니다.
 
 이름 교정은 `config/name_corrections.yaml`에 직접 등록하며 확정 자막과 전사 파일에만 적용합니다. 합성 음성과 Google의 인식 결과는 바뀌지 않습니다. 새 버전의 전사 정확도 개선은 아직 실음성으로 입증되지 않았습니다. 제공된 두 기계 전사본에 대한 기존 라이브 전사 CER는 18.0%, 19.1%입니다. 평가 방법과 한계는 [평가 문서](docs/evaluation.md), 추가 화면 정리 제안은 [운영자 기능 검토표](docs/single_operator_audit.md)를 참고하세요.
 
@@ -107,10 +111,10 @@
 ![Desktop Setup Wizard](app/setup_screen.png)
 
 * **주요 영역 설명**:
-  * **1. 교회 정보 및 로컬 네트워크 (Church & Local Network)**: 교회 정식 명칭, 참석자 모바일 화면용 약칭(Short Name), 로컬 mDNS 접속 호스트명(`http://skc.local:8080`), 로고 이미지 선택, 공용 접속 보안용 운영자 비밀번호(`SKC_OPERATOR_PASSWORD`)를 설정합니다.
+  * **1. 교회 정보 및 로컬 네트워크 (Church & Local Network)**: 교회 정식 명칭, 참석자 모바일 화면용 약칭(Short Name), 로컬 mDNS 접속 호스트명(`http://skc.local:8080`), 로고 이미지 선택, 현장 운영자 화면의 선택적 로그인 비밀번호(`SKC_OPERATOR_PASSWORD`)를 설정합니다.
   * **2. Google Gemini API 연동**: API 키 발급과 결제 등록 안내 링크를 제공하며, `[⚡ Test Connection & Model Availability]` 버튼으로 실시간 번역 모델과 정상 연결되는지 바로 확인합니다.
-  * **3. 공용 HTTPS 및 Cloudflare 터널 (선택 사항)**: LTE/5G로 접속하는 성도를 위해 외부 접속 주소와 Cloudflare 터널 토큰을 설정합니다. 필요한 `cloudflared.exe` 파일도 버튼 클릭 한 번으로 자동 다운로드할 수 있습니다.
-  * **준비상태 배지 & 원클릭 저장**: 하단 준비상태 배지(Local Network, Gemini Configured, Public HTTPS)로 설정 상태를 확인하고 `[Save & Finish]`를 누르면 설정이 안전하게 저장됩니다.
+  * **3. 공용 HTTPS (Advanced)**: 처음에는 접혀 있으며 현장 Wi-Fi만 사용할 때는 건너뜁니다. Cloudflare 계정·도메인·터널이 준비된 경우 펼쳐서 고정 공용 URL과 토큰을 설정하고 `cloudflared.exe`를 다운로드합니다. 새 설치는 현장 Wi-Fi 전용이며 기존 공용 설정은 유지합니다. [Cloudflare 준비 조건](https://developers.cloudflare.com/tunnel/get-started/).
+  * **준비상태 배지와 저장**: `Local URL set`은 주소 입력, 노란 `API key set`은 키 입력 상태이며 연결 시험이 통과하면 `Gemini verified`가 표시됩니다. 공용 URL과 터널 정보가 없으면 Cloudflare 배지는 숨깁니다. `[Save & Finish]`로 저장합니다.
 
 ---
 
@@ -247,12 +251,12 @@ This page acts as the central control room for volunteers to generate attendee P
   * **Status & Telemetry**: Real-time display of Gemini AI turn-onset latency, local Wi-Fi / public HTTPS listener counts, and network RTT.
   * **Audio Monitor**: Allows the operator to listen to the real-time translated voice via headphones and adjust volume.
   * **Public HTTPS QR & Link**: Displays a Cloudflare Tunnel QR code allowing mobile attendees to connect over cellular data (LTE/5G), automatically switching to Local Wi-Fi view when tunneling is unconfigured.
-  * **Configured Model & Output Status**: The model is fixed by `gemini.model`. Confirmed unexpected source language hides current captions; three consecutive completed foreign-language turns mute subsequent translated audio. Expected source language restores output automatically.
+  * **Configured Model & Source Languages**: The model is fixed by `gemini.model`. Source languages are detected automatically, and language metadata does not block captions or audio. Recognition errors can still pass through.
   * **Responsive Two-Column Dashboard**: Status, captions, and controls occupy the left column. Input devices, translation languages, access QR codes, and events stack in the right column; narrow screens use one column.
 
 Input backup uses approximately 128 kbps CBR MP3 at the actual capture rate and channel count before downmixing, including translation pauses. Generated recordings older than 21 days are cleaned up when a new recording starts; locked files produce a warning. Copy important recordings elsewhere. Manual name corrections affect committed captions and saved transcripts only. Existing live-transcript CER against the two supplied machine references is 18.0% and 19.1%; this does not establish improved recognition in the new version. See [evaluation.md](docs/evaluation.md) for commands and limitations.
 
-Normal launches through `SKC_start.bat` automatically append startup phase timings and a summary to `logs/startup.log`. No separate diagnostic run or setting is required. Share that file and `startup.log.1`, if present, when investigating startup delays.
+Run `SKC_translation.exe` as usual. The application automatically appends its startup phase timings and a summary to `logs/startup.log`. No separate diagnostic run or setting is required. Share that file and `startup.log.1`, if present, when investigating startup delays.
 
 ### 2. Attendee Caption Page (`/live`)
 This layout serves real-time English text captions and live translation audio directly to attendees' mobile web browsers, with tap-to-reveal original transcript support.
@@ -274,10 +278,10 @@ A standalone graphical configuration tool designed for volunteers to configure c
 ![Desktop Setup Wizard](app/setup_screen.png)
 
 * **Key Sections**:
-  * **1. Church & Local Network**: Configure the full church name, short name for mobile headers, local mDNS hostname (`http://skc.local:8080`), custom logo image, and the operator password (`SKC_OPERATOR_PASSWORD`) for public access security.
+  * **1. Church & Local Network**: Configure the full church name, short name for mobile headers, local mDNS hostname (`http://skc.local:8080`), custom logo image, and optional local-console password (`SKC_OPERATOR_PASSWORD`).
   * **2. Google Gemini API Setup**: Provides links to Google AI Studio and billing guides, with a one-click `[⚡ Test Connection & Model Availability]` probe to verify API credentials and live translation model readiness.
-  * **3. Public HTTPS & Cloudflare Tunnel (Optional)**: Configure public domains and tunnel tokens for cellular LTE/5G attendee access, complete with a one-click `cloudflared.exe` auto-downloader.
-  * **Readiness Badges & Atomic Save**: Review overall configuration health via bottom readiness indicators (Local Network, Gemini Configured, Public HTTPS) and click `[Save & Finish]` to persist all settings cleanly.
+  * **3. Public HTTPS (Advanced)**: Starts collapsed and can be skipped for local Wi-Fi use. Expand it when your Cloudflare account, domain, and tunnel are ready, then enter a fixed public URL and token and download `cloudflared.exe`. New installations are local-only; existing public settings are preserved. [Cloudflare prerequisites](https://developers.cloudflare.com/tunnel/get-started/).
+  * **Readiness Badges & Save**: `Local URL set` confirms an address is entered. Yellow `API key set` means a key is entered; `Gemini verified` follows a successful connection test. The Cloudflare badge is hidden without a public URL and tunnel details. Click `[Save & Finish]` to save.
 
 ---
 

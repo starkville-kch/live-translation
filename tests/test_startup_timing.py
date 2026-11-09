@@ -78,6 +78,46 @@ def test_new_launch_appends_with_its_own_summary(tmp_path):
     ]
 
 
+def test_runtime_polling_stops_logging_repeated_timings_but_still_runs(tmp_path):
+    path = tmp_path / "startup.log"
+    trace = StartupTrace(path)
+    for _ in range(2):
+        with trace.timed("cloudflared_sc_query"):
+            pass
+    trace.phase("server_listening")
+    trace.complete("browser launch requested")
+    startup_bytes = path.read_bytes()
+    calls = []
+    for index in range(100):
+        with trace.timed("cloudflared_sc_query"):
+            calls.append(index)
+    assert len(calls) == 100
+    assert path.read_bytes() == startup_bytes
+    assert sum(row["phase"] == "cloudflared_sc_query_done" for row in records(path)) == 2
+    with pytest.raises(ValueError, match="runtime failure"):
+        with trace.timed("cloudflared_sc_query"):
+            raise ValueError("runtime failure")
+    assert path.read_bytes() == startup_bytes
+
+
+def test_first_background_timing_can_finish_after_summary_without_repeating(tmp_path):
+    path = tmp_path / "startup.log"
+    trace = StartupTrace(path)
+    trace.phase("server_listening")
+    with trace.timed("cloudflared_sc_query"):
+        trace.complete("browser launch requested")
+    for _ in range(2):
+        with trace.timed("audio_device_enumeration"):
+            pass
+        with trace.timed("cloudflared_sc_query"):
+            pass
+    rows = records(path)
+    assert sum(row["phase"] == "cloudflared_sc_query_done" for row in rows) == 1
+    assert sum(row["phase"] == "audio_device_enumeration_done" for row in rows) == 1
+    assert next(row for row in rows if row["phase"] == "cloudflared_sc_query_done")["after_startup"]
+    assert rows[-1]["after_startup"] and rows[-1]["background"]
+
+
 def test_rotation_keeps_only_one_bounded_backup(tmp_path):
     path = tmp_path / "startup.log"
     backup = path.with_suffix(".log.1")

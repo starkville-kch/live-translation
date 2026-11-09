@@ -9,11 +9,16 @@ local network hostname, Google Gemini API validation, and Cloudflare public acce
 Builds into `SKC_setup.exe` with PyInstaller.
 """
 import os
+import base64
+from html import escape
+from io import BytesIO
 import shutil
+from string import Template
 import sys
 import threading
 import webbrowser
 from pathlib import Path
+from queue import Empty, SimpleQueue
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -49,6 +54,35 @@ COLOR_ERROR = "#c92a2a"
 CLOUDFLARED_DOWNLOAD_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
 
 
+def create_local_qr(app_root: Path, hostname: str, port: int, church_name: str) -> tuple[str, Path, Path]:
+    """Export the saved local attendee address as a PNG and an offline print page."""
+    import qrcode
+
+    host = hostname.strip().rstrip(".")
+    if not host:
+        raise ValueError("Local hostname is required")
+    if not host.lower().endswith(".local"):
+        host += ".local"
+    scheme = "https" if port == 443 else "http"
+    suffix = "" if port in (80, 443) else f":{port}"
+    local_url = f"{scheme}://{host}{suffix}"
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=12, border=4)
+    qr.add_data(local_url)
+    qr.make(fit=True)
+    buffer = BytesIO()
+    qr.make_image(fill_color="black", back_color="white").save(buffer, format="PNG")
+    png = buffer.getvalue()
+    template_path = Path(__file__).resolve().parent / "app/templates/setup_qr_poster.html"
+    poster = Template(template_path.read_text(encoding="utf-8")).substitute(
+        church=escape(church_name), local_url=escape(local_url),
+        qr_data=base64.b64encode(png).decode("ascii"),
+    )
+    png_path, poster_path = app_root / "qr_local.png", app_root / "qr_local_print.html"
+    png_path.write_bytes(png)
+    poster_path.write_text(poster, encoding="utf-8")
+    return local_url, png_path, poster_path
+
+
 def sanitize_tunnel_token(raw_token: str) -> str:
     """Extract clean base64 token if user pasted the entire command or wrapped in quotes."""
     s = raw_token.strip().strip('"').strip("'").strip()
@@ -74,7 +108,7 @@ def sanitize_tunnel_token(raw_token: str) -> str:
 
 
 class SetupApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, *, cloudflared_service: CloudflaredService | None = None):
         self.root = root
         self.root.title("Live Translation Setup")
         self.root.geometry("1060x700")
@@ -86,12 +120,16 @@ class SetupApp:
         self.testing = False
         self.validation_passed = False
         self.is_downloading_cf = False
+        self._public_https_expanded = False
+        self._cloudflared_state = "unknown"
+        self._service_check_pending = False
+        self._service_results: SimpleQueue[str] = SimpleQueue()
 
         # Load existing configuration
         self.current_church = church_cfg()
         self.current_network = network_cfg()
         self.configured_model = gemini_model()
-        self.cloudflared_service = CloudflaredService()
+        self.cloudflared_service = cloudflared_service or CloudflaredService()
 
         # Check existing key and operator password in environment / .env
         self.existing_key = ""
@@ -170,7 +208,7 @@ class SetupApp:
         ttk.Label(f_hdr, text="Live Translation Setup", style="Header.TLabel").pack(anchor="w")
         ttk.Label(
             f_hdr,
-            text="Configure church identity, Google Gemini API credentials, local Wi-Fi address, and Cloudflare public access.",
+            text="Configure church identity, Google Gemini API credentials, and local Wi-Fi access. Public HTTPS is optional.",
             style="SubHeader.TLabel",
         ).pack(anchor="w")
 
@@ -184,7 +222,7 @@ class SetupApp:
         # Setup Readiness (Left side of footer)
         f_readiness = tk.Frame(p_bottom, bg="#eaedf1")
         f_readiness.pack(side="left", fill="y")
-        tk.Label(f_readiness, text="SETUP READINESS:", font=("Segoe UI", 9, "bold"), bg="#eaedf1", fg=COLOR_NAVY).pack(side="left", padx=(0, 8))
+        tk.Label(f_readiness, text="SETUP:", font=("Segoe UI", 9, "bold"), bg="#eaedf1", fg=COLOR_NAVY).pack(side="left", padx=(0, 8))
 
         self.lbl_pill_local = tk.Label(f_readiness, text="🟢 Local Network", font=("Segoe UI", 8, "bold"), bg="#dcfce7", fg=COLOR_SUCCESS, padx=6, pady=2, bd=1, relief="solid")
         self.lbl_pill_local.pack(side="left", padx=4)
@@ -193,7 +231,6 @@ class SetupApp:
         self.lbl_pill_gemini.pack(side="left", padx=4)
 
         self.lbl_pill_cloudflare = tk.Label(f_readiness, text="⚪ Public HTTPS", font=("Segoe UI", 8, "bold"), bg="#f1f5f9", fg=COLOR_TEXT_MUTED, padx=6, pady=2, bd=1, relief="solid")
-        self.lbl_pill_cloudflare.pack(side="left", padx=4)
 
         # Action Buttons (Right side of footer)
         f_actions = tk.Frame(p_bottom, bg="#eaedf1")
@@ -211,13 +248,23 @@ class SetupApp:
         self.btn_save.pack(side="left", padx=4)
 
         # ── 3. Main 2-Column Content Area ─────────────────────────────────────
-        content = tk.Frame(self.root, bg=COLOR_BG, padx=14, pady=10)
-        content.pack(fill="both", expand=True)
+        scroll_frame = tk.Frame(self.root, bg=COLOR_BG)
+        scroll_frame.pack(fill="both", expand=True)
+        self.content_canvas = tk.Canvas(scroll_frame, bg=COLOR_BG, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(scroll_frame, orient="vertical", command=self.content_canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.content_canvas.pack(side="left", fill="both", expand=True)
+        self.content_canvas.configure(yscrollcommand=scrollbar.set)
+        content = tk.Frame(self.content_canvas, bg=COLOR_BG, padx=14, pady=10)
+        content_window = self.content_canvas.create_window((0, 0), window=content, anchor="nw")
+        content.bind("<Configure>", lambda event: self.content_canvas.configure(scrollregion=self.content_canvas.bbox("all")))
+        self.content_canvas.bind("<Configure>", lambda event: self.content_canvas.itemconfigure(content_window, width=event.width))
+        self.root.bind("<MouseWheel>", self._scroll_content)
 
         content.grid_columnconfigure(0, weight=1, uniform="upper_col")
         content.grid_columnconfigure(1, weight=1, uniform="upper_col")
         content.grid_rowconfigure(0, weight=3)
-        content.grid_rowconfigure(1, weight=2)
+        content.grid_rowconfigure(1, weight=0)
 
         # ── CARD 1: Church & Local Network (Top Left) ─────────────────────────
         card_church = tk.Frame(content, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
@@ -252,6 +299,7 @@ class SetupApp:
         ttk.Label(f_host, text="http://", style="Muted.TLabel").pack(side="left")
         self.entry_hostname = ttk.Entry(f_host, font=("Segoe UI", 9), width=12)
         self.entry_hostname.insert(0, self.current_network.get("hostname", "skc"))
+        self.entry_hostname.bind("<KeyRelease>", lambda event: self._update_readiness_pills())
         self.entry_hostname.pack(side="left", padx=2)
         port_num = self.current_network.get("port", 8080)
         port_suffix = f".local:{port_num}" if port_num != 80 else ".local"
@@ -288,7 +336,13 @@ class SetupApp:
 
         btn_show_pass = ttk.Button(f_pass, text="Show", width=5, command=_toggle_pass_visibility)
         btn_show_pass.pack(side="left", padx=2)
-        ttk.Label(f_pass, text="(Public tunnel only; leave empty for local Wi-Fi)", style="Muted.TLabel").pack(side="left", padx=4)
+        ttk.Label(f_pass, text="(optional)", style="Muted.TLabel").pack(side="left", padx=4)
+        self.lbl_password_help = ttk.Label(
+            p_church, text="Protects the local operator console. Leave empty to skip login. Public HTTPS blocks operator access.",
+            style="Muted.TLabel", wraplength=420, justify="left",
+        )
+        self.lbl_password_help.pack(fill="x", pady=(0, 3))
+        p_church.bind("<Configure>", lambda event: self.lbl_password_help.configure(wraplength=max(100, event.width - 28)))
 
         # ── CARD 2: Google Gemini API (Top Right) ─────────────────────────────
         card_gemini = tk.Frame(content, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
@@ -364,14 +418,23 @@ class SetupApp:
 
         # ── CARD 3: Public HTTPS / Cloudflare Named Tunnel (Bottom Full-Width) 
         card_tunnel = tk.Frame(content, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightbackground=COLOR_BORDER)
-        card_tunnel.grid(row=1, column=0, columnspan=2, pady=(0, 0), sticky="nsew")
+        card_tunnel.grid(row=1, column=0, columnspan=2, pady=(0, 0), sticky="ew")
 
-        p_tunnel = tk.Frame(card_tunnel, bg=COLOR_CARD_BG, padx=14, pady=10)
-        p_tunnel.pack(fill="both", expand=True)
+        self.btn_public_https = ttk.Button(
+            card_tunnel, text="▸ 3. PUBLIC HTTPS (Advanced)",
+            command=self._toggle_public_https, style="Action.TButton",
+        )
+        self.btn_public_https.pack(fill="x", padx=12, pady=8)
+        self.public_https_body = tk.Frame(card_tunnel, bg=COLOR_CARD_BG, padx=14, pady=10)
+        p_tunnel = self.public_https_body
+        ttk.Label(
+            p_tunnel,
+            text="For a fixed public QR address: use your Cloudflare account, domain, and configured named tunnel.\nSkip this section for local Wi-Fi use.",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(0, 6))
 
         f_tunnel_hdr = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
         f_tunnel_hdr.pack(fill="x", pady=(0, 6))
-        ttk.Label(f_tunnel_hdr, text="3. PUBLIC HTTPS / CLOUDFLARE NAMED TUNNEL (OPTIONAL - ADVANCED)", style="SectionTitle.TLabel").pack(side="left")
         btn_cf_dash = ttk.Button(
             f_tunnel_hdr,
             text="🌐 Open Cloudflare Zero Trust (Get Token)",
@@ -385,6 +448,7 @@ class SetupApp:
         ttk.Label(f_puburl, text="Public URL:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.entry_public_url = ttk.Entry(f_puburl, font=("Segoe UI", 9))
         self.entry_public_url.insert(0, self.current_network.get("public_url", ""))
+        self.entry_public_url.bind("<KeyRelease>", lambda event: self._update_readiness_pills())
         self.entry_public_url.pack(side="left", fill="x", expand=True)
 
         # Row 2: Tunnel Binary Status + Download
@@ -402,14 +466,15 @@ class SetupApp:
         ttk.Label(f_svc, text="Windows Service:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.lbl_svc_status = tk.Label(f_svc, text="Checking...", font=("Segoe UI", 9, "bold"), bg=COLOR_CARD_BG, fg=COLOR_TEXT_MUTED)
         self.lbl_svc_status.pack(side="left", padx=4)
-        btn_refresh_svc = ttk.Button(f_svc, text="🔄 Refresh", width=10, command=self._refresh_service_status)
-        btn_refresh_svc.pack(side="right")
+        self.btn_refresh_svc = ttk.Button(f_svc, text="🔄 Refresh", width=10, command=self._refresh_service_status)
+        self.btn_refresh_svc.pack(side="right")
 
         # Row 4: Tunnel Token + Start / Install
         f_tok = tk.Frame(p_tunnel, bg=COLOR_CARD_BG)
         f_tok.pack(fill="x", pady=3)
         ttk.Label(f_tok, text="Tunnel Token:", width=16, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.entry_tunnel_token = ttk.Entry(f_tok, font=("Consolas", 9), show="•")
+        self.entry_tunnel_token.bind("<KeyRelease>", lambda event: self._update_readiness_pills())
         self.entry_tunnel_token.pack(side="left", fill="x", expand=True, padx=(0, 8))
         btn_install_svc = ttk.Button(f_tok, text="⚙️ Start / Install Service", command=self._start_or_install_service)
         btn_install_svc.pack(side="right")
@@ -420,7 +485,19 @@ class SetupApp:
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 0))
 
-        self._refresh_service_status()
+    def _toggle_public_https(self):
+        self._public_https_expanded = not self._public_https_expanded
+        if self._public_https_expanded:
+            self.public_https_body.pack(fill="both", expand=True)
+            self.btn_public_https.configure(text="▾ 3. PUBLIC HTTPS (Advanced)")
+            self._refresh_service_status()
+        else:
+            self.public_https_body.pack_forget()
+            self.btn_public_https.configure(text="▸ 3. PUBLIC HTTPS (Advanced)")
+
+    def _scroll_content(self, event):
+        if self.content_canvas.yview() != (0.0, 1.0):
+            self.content_canvas.yview_scroll(-int(event.delta / 120), "units")
 
     def _render_existing_key_view(self):
         for w in self.key_container.winfo_children():
@@ -456,6 +533,7 @@ class SetupApp:
 
         ttk.Label(f_entry, text="API Key:", width=14, anchor="w", style="FieldLabel.TLabel").pack(side="left")
         self.entry_key = ttk.Entry(f_entry, font=("Consolas", 9), show="•")
+        self.entry_key.bind("<KeyRelease>", self._on_key_changed)
         self.entry_key.pack(side="left", fill="x", expand=True, padx=(0, 4))
 
         self.is_key_visible = False
@@ -474,6 +552,7 @@ class SetupApp:
                 if clip:
                     self.entry_key.delete(0, tk.END)
                     self.entry_key.insert(0, clip)
+                    self._on_key_changed()
             except Exception:
                 pass
 
@@ -488,6 +567,10 @@ class SetupApp:
                 command=self._render_existing_key_view,
             )
             btn_cancel_replace.pack(side="left", padx=2)
+
+    def _on_key_changed(self, event=None):
+        self.validation_passed = False
+        self._update_readiness_pills()
 
     def _get_active_key(self) -> str:
         if hasattr(self, "entry_key") and self.entry_key.winfo_exists():
@@ -710,7 +793,28 @@ class SetupApp:
             )
 
     def _refresh_service_status(self):
-        state = self.cloudflared_service._query()
+        if self._service_check_pending:
+            return
+        self._service_check_pending = True
+        self.lbl_svc_status.configure(text="Checking...", fg=COLOR_TEXT_MUTED)
+        self.btn_refresh_svc.configure(state="disabled")
+        self._update_readiness_pills()
+        threading.Thread(target=self._query_service_status, daemon=True).start()
+        self.root.after(50, self._poll_service_status)
+
+    def _query_service_status(self):
+        self._service_results.put(self.cloudflared_service._query())
+
+    def _poll_service_status(self):
+        try:
+            state = self._service_results.get_nowait()
+        except Empty:
+            self.root.after(50, self._poll_service_status)
+            return
+        self._service_check_pending = False
+        self.btn_refresh_svc.configure(state="normal")
+        self._refresh_binary_status()
+        self._cloudflared_state = state
         if state == "running":
             self.lbl_svc_status.configure(text="🟢 RUNNING (Active)", fg=COLOR_SUCCESS)
         elif state == "stopped":
@@ -725,28 +829,34 @@ class SetupApp:
     def _update_readiness_pills(self):
         # 1. Local Network readiness
         if hasattr(self, "entry_hostname") and self.entry_hostname.get().strip():
-            self.lbl_pill_local.configure(text="🟢 Local Network", bg="#dcfce7", fg=COLOR_SUCCESS)
+            self.lbl_pill_local.configure(text="🟢 Local URL set", bg="#dcfce7", fg=COLOR_SUCCESS)
         else:
-            self.lbl_pill_local.configure(text="⚪ Local Network", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
+            self.lbl_pill_local.configure(text="⚪ Local URL required", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
 
         # 2. Gemini readiness
         active_key = self._get_active_key()
         if self.validation_passed:
-            self.lbl_pill_gemini.configure(text="🟢 Gemini API", bg="#dcfce7", fg=COLOR_SUCCESS)
+            self.lbl_pill_gemini.configure(text="🟢 Gemini verified", bg="#dcfce7", fg=COLOR_SUCCESS)
         elif active_key:
-            self.lbl_pill_gemini.configure(text="🟡 Gemini Configured", bg="#fef9c3", fg=COLOR_GOLD)
+            self.lbl_pill_gemini.configure(text="🟡 API key set", bg="#fef9c3", fg=COLOR_GOLD)
         else:
-            self.lbl_pill_gemini.configure(text="⚪ Gemini API", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
+            self.lbl_pill_gemini.configure(text="⚪ API key required", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
 
         # 3. Cloudflare readiness
-        state = self.cloudflared_service._query()
-        has_env_token = bool(self.cloudflared_service.get_tunnel_token())
+        public_url = self.entry_public_url.get().strip() if hasattr(self, "entry_public_url") else ""
+        typed_token = self.entry_tunnel_token.get().strip() if hasattr(self, "entry_tunnel_token") else ""
+        has_token = bool(typed_token or self.cloudflared_service.get_tunnel_token())
+        state = self._cloudflared_state
+        if not public_url or not (has_token or state in {"running", "stopped"}):
+            self.lbl_pill_cloudflare.pack_forget()
+            return
+        self.lbl_pill_cloudflare.pack(side="left", padx=4)
         if state == "running":
-            self.lbl_pill_cloudflare.configure(text="🟢 Public HTTPS", bg="#dcfce7", fg=COLOR_SUCCESS)
-        elif has_env_token or state == "stopped":
-            self.lbl_pill_cloudflare.configure(text="🟢 Public HTTPS (Configured)", bg="#dcfce7", fg=COLOR_SUCCESS)
+            self.lbl_pill_cloudflare.configure(text="🟢 Tunnel running", bg="#dcfce7", fg=COLOR_SUCCESS)
+        elif not self._find_cloudflared():
+            self.lbl_pill_cloudflare.configure(text="🟡 Tunnel download needed", bg="#fef9c3", fg=COLOR_GOLD)
         else:
-            self.lbl_pill_cloudflare.configure(text="⚪ Public HTTPS (Optional)", bg="#f1f5f9", fg=COLOR_TEXT_MUTED)
+            self.lbl_pill_cloudflare.configure(text="🟡 HTTPS configured", bg="#fef9c3", fg=COLOR_GOLD)
 
     def _start_or_install_service(self):
         # 1. Verify binary exists or offer download
@@ -761,6 +871,7 @@ class SetupApp:
             return
 
         state = self.cloudflared_service._query()
+        self._cloudflared_state = state
         raw_token = self.entry_tunnel_token.get().strip() if hasattr(self, "entry_tunnel_token") else ""
         token = sanitize_tunnel_token(raw_token)
         if token and hasattr(self, "entry_tunnel_token") and token != raw_token:
@@ -871,7 +982,7 @@ class SetupApp:
                 logo_rel_path=logo_rel_path,
             )
             public_url = self.entry_public_url.get().strip() if hasattr(self, "entry_public_url") else ""
-            if public_url:
+            if public_url and public_url != self.current_network.get("public_url", ""):
                 save_public_url(public_url=public_url, enable_tunnel=True)
         except Exception as e:
             messagebox.showerror("Configuration Error", f"Failed to save config.yaml: {e}")
@@ -895,15 +1006,25 @@ class SetupApp:
                 messagebox.showerror(".env Error", f"Failed to save SKC_OPERATOR_PASSWORD to .env: {e}")
                 return
 
-        # 5. Confirmation and optional launch
-        port_num = self.current_network.get("port", 8080)
-        port_suffix = f":{port_num}" if port_num != 80 else ""
+        # 5. Export the local QR after settings are saved, without requiring a server.
+        port_num = int(self.current_network.get("port", 8080))
+        qr_note = ""
+        try:
+            local_url, png_path, poster_path = create_local_qr(self.app_root, hostname, port_num, church_name)
+            qr_note = f"• Local URL: {local_url}\n• QR image: {png_path.name}\n• Print poster: {poster_path.name}\n"
+        except (OSError, ValueError, ImportError) as exc:
+            messagebox.showwarning(
+                "Local QR Export", f"Settings were saved, but the local QR files could not be created:\n{exc}\n\n"
+                "You can still use the QR code and print action on the operator page.",
+            )
+
+        # 6. Confirmation and optional launch
         pass_status = "Protected (Password set)" if operator_password else "Disabled (No password required)"
         resp = messagebox.askyesno(
             "Setup Complete",
             "Configuration saved successfully!\n\n"
             f"• Church: {church_name} ({short_name})\n"
-            f"• Local URL: http://{hostname}.local{port_suffix}\n"
+            f"{qr_note}"
             f"• API Key: {mask_api_key(active_key)}\n"
             f"• Operator Console: {pass_status}\n\n"
             "Would you like to launch Live Translation now?",

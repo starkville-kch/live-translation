@@ -504,6 +504,10 @@ def _write_session_log() -> Optional[str]:
         session_start_dt = manager.started_at or (session_end_dt - timedelta(seconds=elapsed))
 
         primary_sess = manager.sessions.get(manager.primary_target)
+        reconnects = {
+            target: {"resumed": session.state.resumed_reconnect_count, "fresh": session.state.fresh_reconnect_count}
+            for target, session in manager.sessions.items()
+        }
 
         t0 = manager.start_monotonic
         if t0 is None:
@@ -577,6 +581,7 @@ def _write_session_log() -> Optional[str]:
             "cost_by_target": {tgt: round(per_target_cost, 4) for tgt in active_tgts},
             "total_turns": len(consolidated_turns),
             "configured_model": gemini_model(),
+            "reconnects_by_target": reconnects,
             "resolved_model": gemini_model(),
             "model": gemini_model(),
             "captions_by_target": {
@@ -641,6 +646,11 @@ def _write_session_log() -> Optional[str]:
             f"Audio billed:   {billed_sec:.0f}s per target",
             f"Est. total cost:${total_cost:.4f} USD",
             f"Model:          {gemini_model()}",
+            "Reconnects:     %d (resumed %d, fresh %d)" % (
+                sum(counts["resumed"] + counts["fresh"] for counts in reconnects.values()),
+                sum(counts["resumed"] for counts in reconnects.values()),
+                sum(counts["fresh"] for counts in reconnects.values()),
+            ),
         ]
         (session_dir / "summary.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
@@ -1212,8 +1222,8 @@ async def resume_service(request: Request = None):
         return auth_err
     if _state == ServiceState.RUNNING and manager.is_paused:
         await manager.resume_clean()
-        server_log.info("Service resumed (fresh Gemini sessions on locked model)")
-        operator_events.add("user", "Translation resumed (fresh context)")
+        server_log.info("Service resumed (saved context requested; fresh fallback if unavailable)")
+        operator_events.add("user", "Translation resumed (saved context requested)")
     return {"ok": True, "paused": manager.is_paused}
 
 

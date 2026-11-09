@@ -18,7 +18,7 @@ church:
 audio:
   # [운영자 설정] 오디오 인터페이스 또는 USB 믹서 인덱스
   # 콘솔에서 'python -m app.audio --list' 명령어로 장치 번호 확인 가능
-  device_index: 14
+  device_index: 2
 
   # 오디오 캡처 매개변수 (Gemini Live API 권장 규격)
   sample_rate: 16000                      # 샘플링 레이트 (Hz) - 16kHz

@@ -114,8 +114,8 @@ DEFAULT_CONFIG = {
         "port": 8080,
     },
     "internet": {
-        "enable_tunnel": True,
-        "public_url": "https://live.starkvillekoreanchurch.org",
+        "enable_tunnel": False,
+        "public_url": "",
     },
 }
 

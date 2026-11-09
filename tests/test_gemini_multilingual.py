@@ -18,7 +18,7 @@ def test_translation_configuration_is_empty_transcription_and_selected_output():
         assert config.translation_config.target_language_code == target
         assert config.translation_config.echo_target_language is True
         assert config.system_instruction is None
-        assert config.session_resumption is None
+        assert config.session_resumption.handle is None
         assert config.context_window_compression.sliding_window is not None
         assert session.current_model == gemini_model()
 

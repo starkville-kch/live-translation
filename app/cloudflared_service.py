@@ -201,7 +201,8 @@ class CloudflaredService:
                     if len(content) > 10:
                         return cand
                 except (PermissionError, OSError):
-                    server_log.debug("Token candidate %s exists but is not readable", cand)
+                    # Optional token files may belong to a separate system service.
+                    continue
 
         return None
 

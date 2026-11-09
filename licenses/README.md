@@ -7,7 +7,7 @@
 - LGPL에서 참조하는 GPL 전문: `GPL-3.0.txt`
 - LAME 프로젝트: https://lame.sourceforge.io/
 
-인터넷 접속용 `cloudflared.exe`는 기존 배포 폴더의 수정하지 않은 `2026.10.4` 파일입니다.
+인터넷 접속용 `cloudflared.exe`는 배포 ZIP에 넣지 않으며 설정 마법사에서 다운로드합니다. 아래 고지는 이전에 동봉했던 수정하지 않은 `2026.10.4` 파일의 기록입니다. 새 다운로드의 버전·해시가 아래와 같다는 뜻은 아닙니다.
 
 - Cloudflare 소스 및 라이선스: https://github.com/cloudflare/cloudflared/tree/2026.10.4
 - Apache License 2.0 원문: `cloudflared-LICENSE.txt`
