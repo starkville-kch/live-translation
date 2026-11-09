@@ -184,6 +184,7 @@ def main():
     print("  SKC Live Translation — Parallel Multi-Threaded Build Runner")
     print("=" * 70)
     print(f"  Project Root: {root_dir}")
+    print(f"  Build Python: {sys.executable}")
     print(f"  Output Dir:   {dist_dir}")
     print(f"  Hardware:     {cpu_cores} CPU Cores detected (Allocated Workers: {max_workers})")
     print("=" * 70)
@@ -243,6 +244,15 @@ def main():
     _safe_copy(root_dir / "branding" / "church-logo.png", branding_dir / "church-logo.png")
     _safe_copy(root_dir / "branding" / "church-logo.webp", branding_dir / "church-logo.webp")
     _safe_copy(root_dir / "config.yaml", dist_dir / "config.yaml")
+    _safe_copy(root_dir / "SKC_start.bat", dist_dir / "SKC_start.bat")
+    corrections_dir = dist_dir / "config"
+    corrections_dir.mkdir(parents=True, exist_ok=True)
+    _safe_copy(root_dir / "config" / "name_corrections.yaml", corrections_dir / "name_corrections.yaml")
+    license_dir = dist_dir / "licenses"
+    license_dir.mkdir(parents=True, exist_ok=True)
+    for notice in (root_dir / "licenses").iterdir():
+        if notice.is_file():
+            _safe_copy(notice, license_dir / notice.name)
     _safe_copy(root_dir / "CHANGELOG.md", dist_dir / "CHANGELOG.md")
     _safe_copy(root_dir / "how_to_use.html", dist_dir / "how_to_use.html")
     _safe_copy(root_dir / "cloudflared.exe", dist_dir / "cloudflared.exe")

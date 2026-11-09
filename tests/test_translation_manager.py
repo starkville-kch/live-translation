@@ -35,13 +35,11 @@ def test_manager_creates_single_audiocapture_and_per_target_sessions():
             await mgr.start(
                 device_index=1,
                 active_targets=["en", "uk", "zh"],
-                expected_source_language="ko",
             )
 
             assert mgr.is_running is True
             assert mgr.is_paused is False
             assert mgr.active_targets == ["en", "uk", "zh"]
-            assert mgr.expected_source_language == "ko"
             assert len(mgr.sessions) == 3
 
             # Exactly one AudioCapture started
@@ -49,11 +47,8 @@ def test_manager_creates_single_audiocapture_and_per_target_sessions():
 
             # Check each target session
             assert mgr.sessions["en"].target_language_code == "en"
-            assert mgr.sessions["en"].expected_source_language == "ko"
             assert mgr.sessions["uk"].target_language_code == "uk"
-            assert mgr.sessions["uk"].expected_source_language == "ko"
             assert mgr.sessions["zh"].target_language_code == "zh"
-            assert mgr.sessions["zh"].expected_source_language == "ko"
 
             # Check all sessions started
             assert mock_sess_start.call_count == 3
@@ -80,7 +75,7 @@ def test_manager_fans_out_pcm_to_all_targets():
         mgr = TranslationManager(audio_capture=mock_audio)
 
         with patch.object(GeminiSession, "start", new_callable=AsyncMock):
-            await mgr.start(active_targets=["uk", "zh"], expected_source_language="en")
+            await mgr.start(active_targets=["uk", "zh"])
 
             # Allow pipe task to run
             await asyncio.sleep(0.05)
@@ -116,7 +111,7 @@ def test_manager_non_blocking_fanout_and_failure_isolation():
         mgr = TranslationManager(audio_capture=mock_audio)
 
         with patch.object(GeminiSession, "start", new_callable=AsyncMock):
-            await mgr.start(active_targets=["en", "uk"], expected_source_language="ko")
+            await mgr.start(active_targets=["en", "uk"])
 
             # Artificially fill the UK queue to maxsize to test overflow handling
             uk_sess = mgr.sessions["uk"]
@@ -196,17 +191,16 @@ def test_manager_validation_and_duplicate_normalization():
             await mgr.start(active_targets=["en", "uk", "en", "UK"])
             assert mgr.active_targets == ["en", "uk"]
             await mgr.stop()
+            await mgr.start(active_targets=["ko", "en"])
+            assert mgr.active_targets == ["ko", "en"]
+            await mgr.stop()
 
         # Empty target list should raise ValueError
-        with pytest.raises(ValueError, match="At least one valid active target"):
+        with pytest.raises(ValueError, match="At least one valid target language"):
             await mgr.start(active_targets=[])
 
-        # Source in targets should raise ValueError
-        with pytest.raises(ValueError, match="cannot be in active target"):
-            await mgr.start(active_targets=["en", "ko"], expected_source_language="ko")
-
         # Invalid target code
-        with pytest.raises(ValueError, match="Invalid target language code"):
+        with pytest.raises(ValueError, match="At least one valid target language"):
             await mgr.start(active_targets=["invalid_xyz"])
 
     asyncio.run(_run())
@@ -220,6 +214,27 @@ def test_manager_state_representation():
     assert "sessions" in st
     assert "audio" in st
     assert st["audio"]["status"] == "stopped"
+
+
+def test_quota_failed_target_is_not_refilled_or_counted_as_billable_audio():
+    class CapturedAudio(AudioCapture):
+        async def chunks(self):
+            yield b"\0" * 3200
+            yield b"\0" * 3200
+
+    async def run():
+        manager = TranslationManager(audio_capture=CapturedAudio())
+        session = manager._create_session_for_target("en")
+        session._emit(status=SessionStatus.FAILED, error_kind="quota")
+        manager.sessions = {"en": session}
+        manager._is_running = True
+        await manager._audio_pipe()
+        assert session._audio_queue.empty()
+        assert manager.billed_seconds == 0.0
+        assert manager.is_running  # Capture/backup is independent of retries.
+        assert manager.state()["sessions"]["en"]["error_kind"] == "quota"
+
+    asyncio.run(run())
 
 
 def test_manager_directional_failure_isolation_and_source_preview():
@@ -251,7 +266,7 @@ def test_manager_directional_failure_isolation_and_source_preview():
         )
 
         with patch.object(GeminiSession, "start", new_callable=AsyncMock):
-            await mgr.start(active_targets=["en", "zh"], expected_source_language="ko")
+            await mgr.start(active_targets=["en", "zh"])
             assert mgr.primary_target == "en"
 
             sess_en = mgr.sessions["en"]
@@ -269,7 +284,7 @@ def test_manager_directional_failure_isolation_and_source_preview():
             assert ("zh", "你好") in caption_events
 
             # 2. Test A: Secondary ZH fails / reconnects (epoch 1 -> 2)
-            sess_zh.session_status = SessionStatus.RECONNECTING
+            sess_zh._emit(status=SessionStatus.RECONNECTING)
             # Primary EN continues translation & source preview
             sess_en._on_source("환영합니다 (EN)")
             sess_en._on_caption("Welcome")
@@ -280,12 +295,12 @@ def test_manager_directional_failure_isolation_and_source_preview():
             mock_audio.stop.assert_not_called()
 
             # ZH reconnects
-            sess_zh.session_status = SessionStatus.CONNECTED
+            sess_zh._emit(status=SessionStatus.CONNECTED)
             sess_zh._on_caption("欢迎")
             assert ("zh", "欢迎") in caption_events
 
             # 3. Test B: Primary EN fails / reconnects (epoch 1 -> 2)
-            sess_en.session_status = SessionStatus.RECONNECTING
+            sess_en._emit(status=SessionStatus.RECONNECTING)
             # Secondary ZH continues translating uninterrupted
             sess_zh._on_caption("很高兴见到你")
             assert ("zh", "很高兴见到你") in caption_events
@@ -294,7 +309,7 @@ def test_manager_directional_failure_isolation_and_source_preview():
             mock_audio.stop.assert_not_called()
 
             # EN reconnects cleanly and resumes source deltas
-            sess_en.session_status = SessionStatus.CONNECTED
+            sess_en._emit(status=SessionStatus.CONNECTED)
             sess_en._on_source("감사합니다 (EN)")
             sess_en._on_caption("Thank you")
             assert source_events[-1] == "감사합니다 (EN)"
@@ -333,7 +348,7 @@ def test_runtime_seconds_excludes_pause_time():
              patch.object(GeminiSession, "pause_clean", new_callable=AsyncMock), \
              patch.object(GeminiSession, "resume_clean", new_callable=AsyncMock):
 
-            await mgr.start(active_targets=["en"], expected_source_language="ko")
+            await mgr.start(active_targets=["en"])
             assert mgr.runtime_seconds == 0.0
 
             # Run for 10 seconds
@@ -396,7 +411,7 @@ def test_billed_seconds_single_accumulation_per_chunk_across_fanout():
 
         with patch.object(GeminiSession, "start", new_callable=AsyncMock):
             # Start with 3 active targets
-            await mgr.start(active_targets=["en", "uk", "zh"], expected_source_language="ko")
+            await mgr.start(active_targets=["en", "uk", "zh"])
             assert len(mgr.sessions) == 3
 
             # Allow audio pipe to process all 10 chunks
@@ -441,7 +456,7 @@ def test_pause_duration_properties():
              patch.object(GeminiSession, "pause_clean", new_callable=AsyncMock), \
              patch.object(GeminiSession, "resume_clean", new_callable=AsyncMock):
 
-            await mgr.start(active_targets=["en"], expected_source_language="ko")
+            await mgr.start(active_targets=["en"])
             assert mgr.current_pause_seconds == 0.0
             assert mgr.paused_duration_seconds == 0.0
 

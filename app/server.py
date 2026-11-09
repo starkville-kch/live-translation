@@ -79,6 +79,7 @@ from app.config import (
     audio_cfg,
     church_cfg,
     gemini_cfg,
+    gemini_model,
     get_app_root,
     logging_cfg,
     network_cfg,
@@ -91,17 +92,13 @@ from app.config import (
 
 from app.events import operator_events
 from app.gemini_session import SessionStatus
-from app.glossary import GlossaryCorrector
 from app.languages import (
-    format_source_language_display,
     get_available_languages,
     get_language,
     is_valid_language_code,
-    normalize_source_language_code,
-    parse_source_language_codes,
 )
 from app.logger import server_log
-from app.model_resolver import model_resolver, verify_model_compatibility
+from app.model_resolver import verify_model_compatibility
 from app.operator_auth import (
     clear_auth_cookie,
     create_session_token,
@@ -111,7 +108,7 @@ from app.operator_auth import (
     set_auth_cookie,
     verify_password,
 )
-from app.chapters import compute_youtube_chapters
+from app.startup_timing import phase, timed
 from app.translation_manager import TranslationManager
 
 # Gemini 3.5 Live Translate pricing (Paid Tier):
@@ -139,12 +136,11 @@ def signal_shutdown() -> None:
         server_log.info("[Shutdown] Shutdown signal received — initiating voluntary stream closures.")
         shutdown_event.set()
 
-_glossary = GlossaryCorrector()
-manager = TranslationManager(glossary=_glossary)
+manager = TranslationManager()
 _SERVER_BUILD_ID = int(time.time())
 audio = manager.audio
 broadcaster = manager.primary_broadcaster
-session = manager.sessions.get("en") or manager._create_session_for_target("en", "ko")
+session = manager.sessions.get("en") or manager._create_session_for_target("en")
 
 _state_lock = asyncio.Lock()
 _state = ServiceState.STOPPED
@@ -152,8 +148,6 @@ _qr_png_cache: bytes | None = None
 _last_session_runtime: float = 0.0
 _last_session_billed_seconds: float = 0.0
 _last_session_targets: list[str] = []
-_last_session_chapters: Optional[dict] = None
-_last_session_transcript: list = []
 _auto_restart_attempt = 0
 _auto_restart_reason = ""
 _auto_restart_task: asyncio.Task | None = None
@@ -505,16 +499,13 @@ def _write_session_log() -> Optional[str]:
         per_target_cost = billed_sec * _COST_PER_AUDIO_SEC
         total_cost = len(active_tgts) * per_target_cost
 
-        session_end_dt = datetime.now()
-        session_start_dt = (
-            session_end_dt - timedelta(seconds=runtime)
-            if runtime > 0
-            else session_end_dt
-        )
+        session_end_dt = datetime.now().astimezone()
+        elapsed = manager.elapsed_seconds if manager.is_running else runtime
+        session_start_dt = manager.started_at or (session_end_dt - timedelta(seconds=elapsed))
 
         primary_sess = manager.sessions.get(manager.primary_target)
 
-        t0 = manager._start_time if (manager and manager._start_time is not None) else None
+        t0 = manager.start_monotonic
         if t0 is None:
             for s in manager.sessions.values():
                 if s.transcript:
@@ -544,7 +535,7 @@ def _write_session_log() -> Optional[str]:
                 continue
 
             time_label = turn_time_str(rep_entry.timestamp)
-            src_lang = rep_entry.source_lang or manager.expected_source_language
+            src_lang = rep_entry.source_lang or "auto"
             src_text = rep_entry.source
 
             targets_dict = {}
@@ -554,6 +545,7 @@ def _write_session_log() -> Optional[str]:
 
             consolidated_turns.append({
                 "timestamp": time_label,
+                "offset_seconds": round(max(0.0, rep_entry.timestamp - t0), 3),
                 "source": {
                     "lang": src_lang,
                     "text": src_text,
@@ -561,7 +553,7 @@ def _write_session_log() -> Optional[str]:
                 "targets": targets_dict,
             })
 
-        src_name = format_source_language_display(manager.expected_source_language)
+        src_name = "Original speech"
 
         tgt_names = []
         for tgt in active_tgts:
@@ -571,31 +563,27 @@ def _write_session_log() -> Optional[str]:
         # ── 1. session.json ───────────────────────────────────────────────
         session_manifest = {
             "session_id": ts,
-            "spoken_language": manager.expected_source_language,
-            "expected_source_language": manager.expected_source_language,
+            "spoken_language": "auto",
             "spoken_language_display": src_name,
             "active_targets": active_tgts,
             "started_at": session_start_dt.isoformat(),
             "ended_at": session_end_dt.isoformat(),
             "runtime_seconds": round(runtime, 1),
+            "elapsed_seconds": round(elapsed, 1),
+            "timestamp_basis": "translation_output_received",
+            "audio_recording": audio.recording_info,
             "audio_billed_seconds": round(billed_sec, 1),
             "estimated_total_cost_usd": round(total_cost, 4),
             "cost_by_target": {tgt: round(per_target_cost, 4) for tgt in active_tgts},
             "total_turns": len(consolidated_turns),
-            "configured_model": gemini_cfg().get("model", model_resolver.preferred_model),
-            "resolved_model": model_resolver.active_model,
-            "model": model_resolver.active_model,
+            "configured_model": gemini_model(),
+            "resolved_model": gemini_model(),
+            "model": gemini_model(),
             "captions_by_target": {
                 tgt: manager.broadcasters[tgt].caption_count
                 for tgt in active_tgts if tgt in manager.broadcasters
             },
-            "audio_class_transitions": list(manager.classifier_transitions),
         }
-        chapters = compute_youtube_chapters(list(manager.classifier_transitions), runtime)
-        global _last_session_chapters
-        _last_session_chapters = chapters
-        session_manifest["youtube_chapters"] = chapters
-
         (session_dir / "session.json").write_text(json.dumps(session_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
         # ── 2. transcript.jsonl ───────────────────────────────────────────
@@ -652,23 +640,11 @@ def _write_session_log() -> Optional[str]:
             f"Committed turns:{len(consolidated_turns)}",
             f"Audio billed:   {billed_sec:.0f}s per target",
             f"Est. total cost:${total_cost:.4f} USD",
-            f"Model:          {model_resolver.active_model}",
+            f"Model:          {gemini_model()}",
         ]
         (session_dir / "summary.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
-        # ── 5. youtube_chapters.txt & youtube_chapters.json ───────────────
-        yt_txt = [
-            "# YouTube Player Chapters (Official)",
-            chapters.get("youtube_player_chapters", "0:00 예배 시작"),
-            "",
-            "# YouTube Description Inline",
-            chapters.get("inline_description", ""),
-            "",
-        ]
-        (session_dir / "youtube_chapters.txt").write_text("\n".join(yt_txt), encoding="utf-8")
-        (session_dir / "youtube_chapters.json").write_text(json.dumps(chapters, indent=2, ensure_ascii=False), encoding="utf-8")
-
-        server_log.info("Session exported: %s (canonical 5-file format, %d turns, %d active targets)",
+        server_log.info("Session exported: %s (canonical 4-file format, %d turns, %d active targets)",
                         session_dir, len(consolidated_turns), len(manager.sessions))
         return f"logs/sessions/{ts}"
     except Exception as e:
@@ -680,64 +656,46 @@ def _write_session_log() -> Optional[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _qr_png_cache
     shutdown_event.clear()
     cfg = network_cfg()
     port = cfg.get("port", 8080)
-    hostname = (cfg.get("hostname", "") or "").strip()
-    ip_addr = _local_ip()
-
     log_auth_status_on_startup()
 
-    if not getattr(app.state, "tunnel_manager", None):
+    def start_optional_services() -> None:
         from app.tunnel import CloudflareTunnelManager
-        tunnel_configured = _is_tunnel_configured()
-        app.state.tunnel_manager = CloudflareTunnelManager(
-            port=port,
-            enabled=tunnel_configured,
-            public_url=cfg.get("public_url", "") if tunnel_configured else "",
-        )
-        if tunnel_configured:
-            app.state.tunnel_manager.start()
-
-    if hostname:
         import threading
-        threading.Thread(
-            target=_register_zeroconf,
-            args=(hostname, port, ip_addr),
-            daemon=True
-        ).start()
+        if not getattr(app.state, "tunnel_manager", None):
+            configured = _is_tunnel_configured()
+            app.state.tunnel_manager = CloudflareTunnelManager(port=port, enabled=configured,
+                public_url=cfg.get("public_url", "") if configured else "")
+            if configured:
+                app.state.tunnel_manager.start()
+        hostname = (cfg.get("hostname", "") or "").strip()
+        if hostname:
+            def register() -> None:
+                with timed("mdns_registration"):
+                    _register_zeroconf(hostname, port, _local_ip())
+            threading.Thread(target=register, daemon=True).start()
+        operator_events.add("success", "System started", {"port": port})
 
-    primary_url, fallback_url, public_url_cfg = _get_live_urls()
-    active_share_url, _ = _get_active_attendee_share_url()
-    _qr_png_cache = _build_qr(active_share_url)
-    server_log.info("QR code URL: %s", active_share_url)
-    server_log.info("Local URL: %s", primary_url)
-    server_log.info("Public URL: %s", public_url_cfg)
-    server_log.info("Fallback URL: %s", fallback_url)
+    app.state.start_optional_services = start_optional_services
+    phase("server_lifespan_ready")
 
-    # Launch non-blocking background discovery
-    model_resolver.start_background_discovery()
-
-    operator_events.add(
-        "success", "System started",
-        {"port": port, "primary_url": primary_url, "fallback_url": fallback_url}
-    )
-
-    async def _ping():
+    async def ping() -> None:
         while True:
             await asyncio.sleep(15)
-            for b in manager.broadcasters.values():
-                b._push(CaptionEvent(kind="ping"))
+            for broadcast in manager.broadcasters.values():
+                broadcast._push(CaptionEvent(kind="ping"))
 
-    ping_task = asyncio.create_task(_ping())
+    ping_task = asyncio.create_task(ping())
     try:
         yield
     finally:
         ping_task.cancel()
-        tunnel_mgr = getattr(app.state, "tunnel_manager", None)
-        if tunnel_mgr:
-            tunnel_mgr.stop()
+        await asyncio.gather(ping_task, return_exceptions=True)
+        tunnel = getattr(app.state, "tunnel_manager", None)
+        if tunnel:
+            tunnel.stop()
         _unregister_zeroconf()
         await manager.stop()
 
@@ -1067,15 +1025,11 @@ async def auth_logout(response: Response):
 
 # ── Operator control API ───────────────────────────────────────────────────────
 async def _teardown():
-    global _state, _last_session_runtime, _last_session_billed_seconds, _last_session_targets, _last_session_transcript
+    global _state, _last_session_runtime, _last_session_billed_seconds, _last_session_targets
     _last_session_runtime = manager.runtime_seconds if (manager and manager.is_running) else 0.0
     _last_session_billed_seconds = manager.billed_seconds if (manager and manager.is_running) else 0.0
     _last_session_targets = list(manager.active_targets) if (manager and manager.active_targets) else []
-    _last_session_transcript = []
-    if manager and manager.sessions:
-        for s in manager.sessions.values():
-            if s.transcript:
-                _last_session_transcript.extend(s.transcript)
+    await asyncio.to_thread(audio.finish_recording)
     saved_dir = _write_session_log()
     if saved_dir:
         operator_events.add("info", f"Session logs saved: {saved_dir}")
@@ -1169,13 +1123,9 @@ async def start_service(request: Request = None, body: dict = None, from_auto_re
             else:
                 active_targets = t_cfg.get("default_active_targets", ["en"])
 
-            raw_src = body.get("expected_source_language") or body.get("source") or t_cfg["expected_source_language"]
-            expected_src = normalize_source_language_code(raw_src)
-
             await manager.start(
                 device_index=device_index,
                 active_targets=active_targets,
-                expected_source_language=expected_src,
             )
             _last_session_runtime = 0.0
             _last_session_billed_seconds = 0.0
@@ -1267,61 +1217,14 @@ async def resume_service(request: Request = None):
     return {"ok": True, "paused": manager.is_paused}
 
 
-@app.post("/api/config/auto-drift-correction")
-@app.post("/api/drift-correction")
-async def set_auto_drift_correction(request: Request, body: dict):
-    if auth_err := _check_auth(request):
-        return auth_err
-    enabled = bool(body.get("enabled", body.get("auto_drift_correction", False)))
-    manager.set_auto_drift_correction(enabled)
-    if session:
-        session.set_auto_drift_correction(enabled)
-        session.clear_drift_state()
-    server_log.info("Auto drift correction set to: %s (runtime-only)", enabled)
-    operator_events.add("config", f"Auto drift correction set to {'ON' if enabled else 'OFF'}")
-    return {"ok": True, "auto_drift_correction": enabled, "enabled": enabled}
 
 
 
 # ── Glossary & Vocabulary Harvester Endpoints ─────────────────────────────────
-@app.get("/api/glossary/candidates")
-async def get_glossary_candidates(request: Request = None):
-    if auth_err := _check_auth(request):
-        return auth_err
-    turns = []
-    if manager and manager.sessions:
-        for s in manager.sessions.values():
-            if s.transcript:
-                turns.extend(s.transcript)
-    if not turns and _last_session_transcript:
-        turns = list(_last_session_transcript)
-    candidates = _glossary.extract_candidates(turns) if _glossary else []
-    return {"ok": True, "candidates": candidates, "total_turns": len(turns)}
 
 
-@app.get("/api/glossary/entries")
-async def get_glossary_entries(request: Request = None):
-    if auth_err := _check_auth(request):
-        return auth_err
-    entries = _glossary.get_entries() if _glossary else []
-    return {"ok": True, "entries": entries, "count": len(entries)}
 
 
-@app.post("/api/glossary/add")
-async def add_glossary_entry(request: Request, body: dict):
-    if auth_err := _check_auth(request):
-        return auth_err
-    ko = str(body.get("ko", "")).strip()
-    en = str(body.get("en", "")).strip()
-    category = str(body.get("category", "F")).strip()
-    variants = body.get("variants") or []
-    if not ko or not en:
-        return JSONResponse(status_code=400, content={"ok": False, "error": "ko and en are required"})
-    success = _glossary.add_entry(ko=ko, en=en, category=category, variants=variants) if _glossary else False
-    if success:
-        operator_events.add("config", f"Glossary term added: '{ko}' -> '{en}'")
-        return {"ok": True, "message": f"'{ko}' -> '{en}' 등록 완료", "ko": ko, "en": en}
-    return JSONResponse(status_code=500, content={"ok": False, "error": "Failed to save glossary entry"})
 
 
 @app.post("/api/config/ui-language")
@@ -1406,7 +1309,10 @@ def _handle_session_state_change(*args, **kwargs):
         if _auto_restart_task and not _auto_restart_task.done():
             _auto_restart_task.cancel()
         # Non-retryable configuration errors should stop once and NOT trigger auto-restart loops
-        if "Configuration error" in (s.last_event or ""):
+        if s.error_kind == "quota":
+            server_log.error("[%s] Spending limit or quota failure after bounded retries; automatic restart disabled", target)
+            return
+        if any(marker in (s.last_event or "") for marker in ("Configuration error", "Configured model unavailable")):
             server_log.error("[%s] Session failed with non-retryable configuration error — skipping auto-restart", target)
             return
         _auto_restart_task = asyncio.create_task(_auto_stop_on_failure(f"[{target}] {s.last_event}"))
@@ -1441,23 +1347,9 @@ async def reconnect_public_link(request: Request = None):
 @app.get("/api/languages")
 async def get_languages():
     cfg = translation_cfg()
-    exp_src = manager.expected_source_language if manager.is_running else cfg["expected_source_language"]
-    src_codes = list(parse_source_language_codes(exp_src))
     return {
-        "available": [
-            {
-                "code": lang.code,
-                "name": lang.name,
-                "native_name": lang.native_name,
-                "display_name": lang.display_name(),
-            }
-            for lang in get_available_languages()
-        ],
-        "expected_source": exp_src,
-        "expected_source_language": exp_src,
-        "selected_sources": src_codes,
-        "is_auto_detect": "any" in src_codes,
-        "spoken_language_display": format_source_language_display(exp_src),
+        "available": [{"code": lang.code, "name": lang.name, "native_name": lang.native_name,
+            "display_name": lang.display_name()} for lang in get_available_languages()],
         "supported_targets": cfg["supported_targets"],
         "selected_targets": cfg["default_active_targets"],
         "active_targets": list(manager.active_targets) if manager.is_running else cfg["default_active_targets"],
@@ -1469,20 +1361,9 @@ async def get_translation_targets(request: Request = None):
     if auth_err := _check_auth(request):
         return auth_err
     cfg = translation_cfg()
-    exp_src = manager.expected_source_language if manager.is_running else cfg["expected_source_language"]
-    src_codes = list(parse_source_language_codes(exp_src))
-    return {
-        "expected_source": exp_src,
-        "expected_source_language": exp_src,
-        "selected_sources": src_codes,
-        "is_auto_detect": "any" in src_codes,
-        "spoken_language_display": format_source_language_display(exp_src),
-        "supported_targets": cfg["supported_targets"],
-        "selected_targets": cfg["default_active_targets"],
+    return {"supported_targets": cfg["supported_targets"], "selected_targets": cfg["default_active_targets"],
         "active_targets": list(manager.active_targets) if manager.is_running else cfg["default_active_targets"],
-        "is_running": manager.is_running,
-        "is_paused": manager.is_paused,
-    }
+        "is_running": manager.is_running, "is_paused": manager.is_paused}
 
 
 @app.post("/api/translation/targets")
@@ -1491,36 +1372,16 @@ async def update_translation_targets(request: Request, body: dict):
     if auth_err := _check_auth(request):
         return auth_err
     if manager.is_running or manager.is_paused:
-        return Response(
-            content=json.dumps({
-                "error": "translation_running",
-                "message": "Stop translation before changing target languages.",
-            }),
-            status_code=409,
-            media_type="application/json",
-        )
-
+        return JSONResponse(status_code=409, content={"error": "translation_running", "message": "Stop translation before changing target languages."})
     cfg = translation_cfg()
-    raw_targets = body.get("targets") or body.get("default_active_targets") or cfg["default_active_targets"]
-    raw_src = body.get("expected_source_language") or body.get("source") or cfg["expected_source_language"]
-    canonical_src = normalize_source_language_code(raw_src)
-    raw_supported = body.get("supported_targets") or cfg["supported_targets"]
-
     try:
         new_cfg = save_translation_settings(
-            expected_source_language=canonical_src,
-            supported_targets=raw_supported,
-            default_active_targets=raw_targets,
-        )
-        new_cfg["spoken_language_display"] = format_source_language_display(canonical_src)
+            supported_targets=body.get("supported_targets", cfg["supported_targets"]),
+            default_active_targets=body.get("targets", body.get("default_active_targets", cfg["default_active_targets"])))
         operator_events.add("config", f"Translation targets updated: {new_cfg['default_active_targets']}")
-        return {"ok": True, "translation": new_cfg}
-    except ValueError as e:
-        return Response(
-            content=json.dumps({"ok": False, "error": str(e)}),
-            status_code=400,
-            media_type="application/json",
-        )
+        return {"ok": True, "translation": {key: new_cfg[key] for key in ("supported_targets", "default_active_targets")}}
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
 
 
 @app.get("/api/status")
@@ -1572,13 +1433,7 @@ async def get_status(request: Request = None):
     for tgt, s_info in session_states.items():
         s_info["estimated_cost"] = round(per_target_cost, 4)
 
-    cur_src = manager.expected_source_language if manager.is_running else t_cfg["expected_source_language"]
-    cur_src_codes = list(parse_source_language_codes(cur_src))
     translation_info = {
-        "expected_source": cur_src,
-        "selected_sources": cur_src_codes,
-        "is_auto_detect": "any" in cur_src_codes,
-        "spoken_language_display": format_source_language_display(cur_src),
         "selected_targets": t_cfg["default_active_targets"],
         "active_targets": active_tgts,
         "primary_target": manager.primary_target,
@@ -1596,7 +1451,8 @@ async def get_status(request: Request = None):
         "billed_audio_s": round(billed_sec, 1),
 
         "auto_stop_timeout_min": audio_cfg().get("auto_stop_timeout_min", 10),
-        "auto_drift_correction": primary_sess.auto_drift_correction if primary_sess else manager.auto_drift_correction,
+        "output_hidden": primary_sess_state.output_hidden if primary_sess_state else False,
+        "audio_muted": primary_sess_state.audio_muted if primary_sess_state else False,
         "session_epoch": primary_sess.session_epoch if primary_sess else 0,
         "device_index": audio_cfg().get("device_index", 0),
         "auth_enabled": is_auth_enabled(),
@@ -1624,18 +1480,18 @@ async def get_status(request: Request = None):
             "status": a.status,
             "level": round(a.level_rms, 1),
             "device": a.device_name,
+            "recording": audio.recording_info,
         },
-        "audio_class": mgr_state.get("audio_class", {"label": "uncertain", "confidence": 0.0, "since_s": 0.0}),
         "session": {
             "status": primary_sess_state.status if primary_sess_state else SessionStatus.STOPPED,
             "reconnect_count": primary_sess_state.reconnect_count if primary_sess_state else 0,
             "last_event": primary_sess_state.last_event if primary_sess_state else None,
+            "error_kind": primary_sess_state.error_kind if primary_sess_state else None,
             "latency_ms": gemini_lat,
-            "model": model_resolver.active_model,
+            "model": gemini_model(),
         },
         "translation": translation_info,
         "church": church_cfg(),
-        "models": model_resolver.get_state(),
 
         "attendees": max(
             telemetry.get("total_listeners") or 0,
@@ -1660,54 +1516,6 @@ async def get_status(request: Request = None):
 
 
 
-@app.get("/api/session/latest/chapters")
-async def get_latest_youtube_chapters(request: Request = None):
-    """Return YouTube chapter markers from current live session, cache, or most recent session folder."""
-    if manager and manager.is_running:
-        rt = _runtime_seconds()
-        if rt < 120.0:
-            return JSONResponse({
-                "status": "live",
-                "session_id": "live",
-                "milestones": {},
-                "youtube_player_chapters": "0:00 예배 시작",
-                "inline_description": "",
-            })
-        chapters = compute_youtube_chapters(list(manager.classifier_transitions), rt)
-        return JSONResponse({"status": "live", "session_id": "live", **chapters})
-
-    if _last_session_chapters and _last_session_chapters.get("milestones"):
-        return JSONResponse({"status": "cached", **_last_session_chapters})
-
-    session_root = Path(logging_cfg().get("log_dir", "logs")) / "sessions"
-    if session_root.exists():
-        subdirs = sorted([d for d in session_root.iterdir() if d.is_dir()], reverse=True)
-        for sdir in subdirs:
-            sess_json = sdir / "session.json"
-            if sess_json.exists():
-                try:
-                    m = json.loads(sess_json.read_text(encoding="utf-8"))
-                    rt = float(m.get("runtime_seconds", 0.0))
-                    if rt < 600.0:  # Skip short test runs
-                        continue
-                    ch_json = sdir / "youtube_chapters.json"
-                    if ch_json.exists():
-                        data = json.loads(ch_json.read_text(encoding="utf-8"))
-                        if data.get("milestones"):
-                            return JSONResponse({"status": "archived", "session_id": sdir.name, **data})
-                    trans = m.get("audio_class_transitions", [])
-                    chapters = compute_youtube_chapters(trans, rt)
-                    if chapters.get("milestones"):
-                        return JSONResponse({"status": "derived", "session_id": sdir.name, **chapters})
-                except Exception:
-                    continue
-
-    return JSONResponse({
-        "status": "idle",
-        "milestones": {},
-        "youtube_player_chapters": "0:00 예배 시작",
-        "inline_description": "",
-    })
 
 
 
@@ -1716,10 +1524,12 @@ async def get_devices(request: Request = None, rescan: bool = False):
     if auth_err := _check_auth(request):
         return auth_err
     should_reinit = rescan and (_state != ServiceState.RUNNING)
+    with timed("audio_device_enumeration"):
+        devices = list_input_devices(rescan=should_reinit)
     return [
         {"index": d.index, "name": d.name,
          "channels": d.max_input_channels, "rate": int(d.default_sample_rate)}
-        for d in list_input_devices(rescan=should_reinit)
+        for d in devices
     ]
 
 
@@ -1732,60 +1542,19 @@ async def select_device(request: Request, body: dict):
     return {"ok": True, "index": idx}
 
 
-@app.get("/api/models")
-async def get_models_state(request: Request = None):
-    if auth_err := _check_auth(request):
-        return auth_err
-    return model_resolver.get_state()
 
 
-@app.post("/api/models/select")
-@app.post("/api/models/mode")
-async def select_model(request: Request, body: dict):
-    if auth_err := _check_auth(request):
-        return auth_err
-    model = str(body.get("model") or body.get("preferred_model") or "").strip()
-    if not model:
-        return Response(
-            content=json.dumps({"ok": False, "error": "Model name required"}),
-            status_code=400,
-            media_type="application/json",
-        )
-    try:
-        model_resolver.set_preferred_model(model)
-        operator_events.add("user", f"Preferred Gemini model set to '{model}'")
-        return {"ok": True, "state": model_resolver.get_state()}
-    except Exception as e:
-        return Response(
-            content=json.dumps({"ok": False, "error": str(e)}),
-            status_code=400,
-            media_type="application/json",
-        )
 
 
 @app.post("/api/models/test")
 async def test_model(request: Request, body: dict):
     if auth_err := _check_auth(request):
         return auth_err
-    model_name = str(body.get("model", "")).strip()
-    if not model_name:
-        return Response(
-            content=json.dumps({"ok": False, "error": "Model name required"}),
-            status_code=400,
-            media_type="application/json",
-        )
-    is_compat, caps, msg = await verify_model_compatibility(model_name)
-    return {"ok": is_compat, "capabilities": caps, "message": msg, "model": model_name}
+    model_name = gemini_model()
+    compatible, capabilities, message = await verify_model_compatibility(model_name)
+    return {"ok": compatible, "capabilities": capabilities, "message": message, "model": model_name}
 
 
-@app.post("/api/models/dismiss-alert")
-async def dismiss_model_alert(request: Request, body: dict):
-    if auth_err := _check_auth(request):
-        return auth_err
-    model_name = str(body.get("model", "")).strip()
-    if model_name:
-        model_resolver.dismiss_alert(model_name)
-    return {"ok": True}
 
 
 @app.get("/api/qr.png")
@@ -1870,7 +1639,6 @@ async def attendee_page():
 @app.get("/admin", response_class=HTMLResponse)
 async def operator_page(request: Request):
     default_lang = church_cfg().get("default_ui_language", "ko")
-    models_state = model_resolver.get_state()
     t_cfg = translation_cfg()
     auth_enabled = is_auth_enabled()
     authenticated = is_authenticated(request)
@@ -1879,7 +1647,7 @@ async def operator_page(request: Request):
     content = _read_template(
         "operator.html",
         default_ui_lang=default_lang,
-        models=models_state,
+        gemini_cfg=gemini_cfg(),
         translation_cfg=t_cfg,
         auth_enabled=auth_enabled,
         authenticated=authenticated,

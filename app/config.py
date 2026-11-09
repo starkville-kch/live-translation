@@ -32,9 +32,7 @@ config.yaml schema (abbreviated)
       port: 80
 
     gemini:
-      model_mode: recommended  # 'recommended' | 'auto' | 'manual'
-      preferred_model: null    # explicit manual selection
-      fallback_model: "gemini-3.5-live-translate-preview"
+      model: "gemini-3.5-live-translate-preview"
       voice: "orus"
 
     logging:
@@ -50,11 +48,10 @@ Public API
 ``network_cfg()``          — returns the ``network`` section dict
 ``logging_cfg()``          — returns the ``logging`` section dict
 ``gemini_cfg()``           — returns the ``gemini`` section dict
-``gemini_model()``         — returns configured fallback or preferred model name
+``gemini_model()``         — returns the configured fixed model name
 ``save_church_identity()`` — persists church identity & hostname back to config.yaml
 ``save_audio_device()``    — persists a new device index back to config.yaml
 ``save_auto_stop_timeout()``— persists auto-stop timeout minutes back to config.yaml
-``save_gemini_model_mode()``— persists model_mode and preferred_model back to config.yaml
 ``update_gemini_api_key()``— atomically updates GEMINI_API_KEY in .env
 ``mask_api_key()``         — returns masked preview of API key
 """
@@ -66,6 +63,7 @@ import yaml
 from pathlib import Path
 from typing import Any
 from dotenv import load_dotenv
+from app.startup_timing import phase, timed
 
 try:
     from ruamel.yaml import YAML
@@ -91,7 +89,6 @@ DEFAULT_CONFIG = {
         "default_ui_language": "ko",
     },
     "translation": {
-        "expected_source_language": "ko+en",
         "supported_targets": ["ko", "en", "uk", "zh", "es"],
         "default_active_targets": ["en"],
     },
@@ -103,9 +100,7 @@ DEFAULT_CONFIG = {
         "sample_rate": 16000,
     },
     "gemini": {
-        "context_seed": True,
-        "fallback_model": "gemini-3.5-live-translate-preview",
-        "preferred_model": "gemini-3.5-live-translate-preview",
+        "model": "gemini-3.5-live-translate-preview",
         "voice": "orus",
     },
     "logging": {
@@ -303,9 +298,10 @@ def _ensure_config_file(path: Path | None = None) -> Path:
 
 
 def _load(path: Path | None = None) -> dict:
-    config_path = _ensure_config_file(path)
-    with open(config_path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
+    with timed("config_load"):
+        config_path = _ensure_config_file(path)
+        with open(config_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
 
     if not data:
         _atomic_yaml_write(config_path, DEFAULT_CONFIG)
@@ -315,6 +311,7 @@ def _load(path: Path | None = None) -> dict:
 
 
 _cfg = _load()
+phase("config_loaded")
 
 
 def get_app_root() -> Path:
@@ -363,18 +360,11 @@ def logging_cfg() -> dict:
 
 def gemini_cfg() -> dict:
     g = _cfg.get("gemini", {})
-    return {
-        "auto_drift_correction": bool(g.get("auto_drift_correction", False)),
-        "preferred_model": g.get("preferred_model", "gemini-3.5-live-translate-preview"),
-        "fallback_model": g.get("fallback_model", "gemini-3.5-live-translate-preview"),
-        "voice": g.get("voice", "orus"),
-        "context_seed": g.get("context_seed", True),
-    }
+    return {"model": g.get("model", "gemini-3.5-live-translate-preview"), "voice": g.get("voice", "orus")}
 
 
 def gemini_model() -> str:
-    g = gemini_cfg()
-    return g.get("preferred_model") or g.get("fallback_model", "gemini-3.5-live-translate-preview")
+    return gemini_cfg()["model"]
 
 
 def save_church_identity(
@@ -441,20 +431,8 @@ def save_auto_stop_timeout(minutes: int) -> None:
     _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
 
-def save_gemini_preferred_model(preferred_model: str) -> None:
-    """Save preferred_model to config.yaml atomically."""
-    if "gemini" not in _cfg:
-        _cfg["gemini"] = {}
-    _cfg["gemini"]["preferred_model"] = preferred_model.strip()
-    _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
 
-def save_auto_drift_correction(enabled: bool) -> None:
-    """Save auto_drift_correction setting to config.yaml atomically."""
-    if "gemini" not in _cfg:
-        _cfg["gemini"] = {}
-    _cfg["gemini"]["auto_drift_correction"] = bool(enabled)
-    _atomic_yaml_write(_CONFIG_PATH, _cfg)
 
 
 def mask_api_key(key: str) -> str:
@@ -538,136 +516,39 @@ def update_operator_password(new_password: str, env_path: Path | None = None) ->
 
 
 def translation_cfg() -> dict:
-    """Return the translation configuration with backward-compatibility defaults."""
-    raw = _cfg.get("translation")
-    if not isinstance(raw, dict):
-        return {
-            "expected_source_language": "ko+en",
-            "supported_targets": ["en", "uk", "zh"],
-            "default_active_targets": ["en"],
-            "drift_threshold": 3,
-            "drift_window": 2,
-        }
-    from app.languages import normalize_source_language_code, parse_source_language_codes
-    src = normalize_source_language_code(raw.get("expected_source_language", "ko+en"))
-    src_codes = parse_source_language_codes(src)
-    single_src = src_codes[0] if (len(src_codes) == 1 and src_codes[0] != "any") else None
-
-    supported = [str(t).lower().strip() for t in raw.get("supported_targets", ["en", "ko", "zh"]) if str(t).strip()]
-    if "en" not in supported:
-        supported.insert(0, "en")
-    elif supported[0] != "en":
-        supported.remove("en")
-        supported.insert(0, "en")
-    if "ko" not in supported:
-        supported.insert(1, "ko")
-    if not supported:
-        supported = ["en", "ko"]
-    active = [str(t).lower().strip() for t in raw.get("default_active_targets", ["en"]) if str(t).strip()]
-    if not active:
-        active = [supported[0]]
-    # Ensure active is a subset of supported and does not strictly equal the single source language
-    active = [t for t in active if t in supported and (single_src is None or t != single_src)] or [t for t in supported if (single_src is None or t != single_src)][:1] or ["en"]
-    drift_threshold = int(raw.get("drift_threshold", 3))
-    drift_window = int(raw.get("drift_window", 2))
-    return {
-        "expected_source_language": src,
-        "supported_targets": list(dict.fromkeys(supported)),
-        "default_active_targets": list(dict.fromkeys(active)),
-        "drift_threshold": drift_threshold,
-        "drift_window": drift_window,
-    }
+    """Output targets; legacy source-language restrictions are ignored."""
+    raw = _cfg.get("translation", {})
+    supported = list(dict.fromkeys(str(code).strip().lower() for code in raw.get("supported_targets", ["en", "ko", "zh"])))
+    for code in ("ko", "en"):
+        if code not in supported:
+            supported.insert(0, code)
+    active = [code for code in raw.get("default_active_targets", ["en"]) if code in supported] or ["en"]
+    return {"supported_targets": supported, "default_active_targets": list(dict.fromkeys(active))}
 
 
-def validate_translation_settings(
-    expected_source_language: str,
-    supported_targets: list[str],
-    default_active_targets: list[str],
-) -> None:
-    """Validate translation language configuration against the catalog."""
-    from app.languages import (
-        is_valid_language_code,
-        is_valid_source_language_code,
-        normalize_source_language_code,
-        parse_source_language_codes,
-    )
-
-    src = normalize_source_language_code(expected_source_language)
-    if not is_valid_source_language_code(src):
-        raise ValueError(f"Invalid expected source language code: {expected_source_language}")
-
-    src_codes = parse_source_language_codes(src)
-    single_src = src_codes[0] if (len(src_codes) == 1 and src_codes[0] != "any") else None
-
-    if not supported_targets:
-        raise ValueError("At least one supported target language must be specified.")
-
-    clean_supported = []
-    for t in supported_targets:
-        code = str(t).lower().strip()
-        if not code or not is_valid_language_code(code):
-            raise ValueError(f"Invalid supported target language code: {t}")
-        if code in clean_supported:
-            raise ValueError(f"Duplicate supported target language code: {code}")
-        clean_supported.append(code)
-
-    if not default_active_targets:
-        raise ValueError("At least one default active target language must be specified.")
-
-    clean_active = []
-    for t in default_active_targets:
-        code = str(t).lower().strip()
-        if single_src is not None and code == single_src:
-            raise ValueError(f"Source language '{src}' cannot be in default active targets.")
-        if code not in clean_supported:
-            raise ValueError(f"Default active target '{code}' is not in supported targets list {clean_supported}.")
-        if code in clean_active:
-            raise ValueError(f"Duplicate default active target code: {code}")
-        clean_active.append(code)
+def validate_translation_settings(supported_targets: list[str], default_active_targets: list[str]) -> None:
+    from app.languages import is_valid_language_code
+    if not supported_targets or not default_active_targets:
+        raise ValueError("At least one supported and active target is required")
+    for values in (supported_targets, default_active_targets):
+        if len(values) != len(set(values)) or any(not is_valid_language_code(code) for code in values):
+            raise ValueError("Invalid or duplicate target language")
+    if any(code not in supported_targets for code in default_active_targets):
+        raise ValueError("Active targets must be in supported_targets")
 
 
-def save_translation_settings(
-    expected_source_language: str,
-    supported_targets: list[str],
-    default_active_targets: list[str],
-    config_path: Path | None = None,
-) -> dict:
-    """Validate and atomically persist translation settings back to config.yaml."""
-    from app.languages import normalize_source_language_code
-    canonical_src = normalize_source_language_code(expected_source_language)
-    validate_translation_settings(canonical_src, supported_targets, default_active_targets)
-
+def save_translation_settings(supported_targets: list[str], default_active_targets: list[str], config_path: Path | None = None) -> dict:
+    """Save output choices without changing config-only source acceptance."""
+    validate_translation_settings(supported_targets, default_active_targets)
     target_path = _ensure_config_file(config_path)
-    with open(target_path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-
-    data["translation"] = {
-        "expected_source_language": canonical_src,
-        "supported_targets": [t.lower().strip() for t in supported_targets],
-        "default_active_targets": [t.lower().strip() for t in default_active_targets],
-    }
-
+    data = yaml.safe_load(target_path.read_text(encoding="utf-8")) or {}
+    translation = data.setdefault("translation", {})
+    translation["supported_targets"] = list(supported_targets)
+    translation["default_active_targets"] = list(default_active_targets)
     _atomic_yaml_write(target_path, data)
-
-    # An explicit config_path means "write here" — it does NOT mean "swap the
-    # process's active config". Only refresh the live global cache when we
-    # actually wrote the live file (default path, or an explicit path that
-    # happens to resolve to it); otherwise a caller-supplied temp path (e.g.
-    # a test) would stomp the global config as a side effect.
     if config_path is None or target_path.resolve() == _CONFIG_PATH.resolve():
         global _cfg
         _cfg = _load(target_path)
         return translation_cfg()
-
-    # Explicit non-live path: echo back exactly what was persisted, without
-    # translation_cfg()'s live-config normalization (e.g. forcing "ko" into
-    # supported_targets) — that normalization is for the app's active config,
-    # not for a caller-supplied path.
-    return {
-        "expected_source_language": canonical_src,
-        "supported_targets": data["translation"]["supported_targets"],
-        "default_active_targets": data["translation"]["default_active_targets"],
-        "drift_threshold": 3,
-        "drift_window": 2,
-    }
+    return dict(translation)
 

@@ -25,10 +25,12 @@ USB 믹서
     ▼
 Windows PC (본 애플리케이션)
     │
-    ├─ app/audio.py ──────────── 16kHz 모노 PCM16 데이터 캡처 (단일 캡처)
-    │                            오디오 장치 기본 주파수에서 리샘플링
+    ├─ app/audio.py ──────────── 장치가 지원하는 포맷으로 PCM16 단일 캡처
+    │                            원시 입력을 MP3로 분기한 뒤 번역용 16kHz 모노로 변환
     │                            RMS 데시벨 레벨 미터링 (10Hz 주기)
     │                            신호 차단 및 장치 연결 해제 자동 감지
+    │
+    ├─ app/recording.py ───────── 원시 입력 MP3 백업 (약 128 kbps, 일시정지 중 유지)
     │
     ├─ app/translation_manager.py ─ 다중 타겟 세션 및 브로드캐스터 중앙 오케스트레이션
     │    │                         단일 오디오 청크를 각 타겟 세션으로 비동기 팬아웃
@@ -62,11 +64,11 @@ Windows PC (본 애플리케이션)
 ## 2. 핵심 설계 의사결정
 
 ### 모델 선정 (Model Selection)
-- **`gemini-3.5-live-translate-preview`** 사용. 서버 시작 시 API를 조회하여 최신 버전을 자동 탐색.
+- `config.yaml`의 **`gemini.model`을 그대로 사용**합니다. 모델 탐색, 자동 전환, LKG 저장은 없습니다. 지정 모델을 사용할 수 없으면 해당 모델명을 포함한 오류를 표시합니다.
 - `response_modalities=["AUDIO"]` + `translation_config` 조합으로 텍스트 자막(`output_transcription.text`)과 합성 오디오를 동시에 수신.
 - `gemini-3.1-flash-live-preview`는 Phase 12 벤치마크에서 30초 후 세션 충돌(오류 1011) — 60~90분 예배에 부적합.
 - `system_instruction`은 번역 모델에서 수락되지만 내부 엔진이 무시함 (Phase 12 Round 2에서 확인).
-- **`language_codes` 언어 힌트 설정 금지 (Developer API)**: `AudioTranscriptionConfig(language_codes=["ko", "en"])`는 Enterprise 모드 전용이며, Developer API 모드에서는 `ValueError`가 발생하여 연결이 차단됩니다. 반드시 빈 `AudioTranscriptionConfig()`를 전달해야 하며, 언어 이탈은 수신된 전사본의 롤링 감시로 처리합니다.
+- 입력 및 출력 전사는 빈 `AudioTranscriptionConfig()`로 켭니다. 한국어 예배의 영어 통역을 주로 사용하되 원문 언어별로 출력을 차단하지 않습니다. 기존 `translation.expected_source_languages`는 무시하며 Google에 언어 힌트를 보내지 않습니다. 판단 근거와 CER 한계는 [STACK.md](STACK.md), [evaluation.md](evaluation.md)를 참고하세요.
 
 ### 자막용 SSE & 오디오용 이진 웹소켓 분리
 - 실시간 자막은 SSE(`/stream`) — iOS Safari 백그라운드 전환 시 브라우저 수준 자동 재연결.
@@ -87,7 +89,7 @@ Windows PC (본 애플리케이션)
 ### 비용 모델
 - Gemini 3.5 Live Translate 유료 티어: 입력 오디오 $3.50/1M 토큰, 출력 오디오 $21.00/1M 토큰.
 - 합산 분당 요율: **약 $0.0368/분** → 60분 예배 약 $2.21.
-- 참석자 수에 관계없이 서버 단일 세션 비용만 청구.
+- 출력 언어마다 독립 API 세션 비용이 발생합니다. 같은 출력 언어의 참석자 수가 늘어도 API 세션은 추가되지 않습니다.
 
 ---
 
@@ -116,30 +118,29 @@ Windows PC (본 애플리케이션)
 | `build_exe.bat` | 원클릭 exe 빌드 스크립트 |
 | `build_parallel.py` | 멀티스레드 병렬 exe 빌드 러너 |
 | `setup_gui.py` | 2열 데스크톱 설정 마법사 GUI (`SKC_setup.exe`) |
-| `app/config.py` | 설정 로더 + `save_audio_device()`, `save_gemini_model()`, `admin_cfg()` |
+| `app/config.py` | 설정 로더 + 장치·출력 언어 설정 저장, 주석 보존 YAML 수정 |
 | `app/events.py` | `OperatorEventLog` — 스레드 안전 링 버퍼(50개), 7개 카테고리, `since(last_id)` API |
 | `app/logger.py` | 회전 파일 + 콘솔 로거 |
 | `app/audio.py` | PyAudio 캡처, PCM16 리샘플링, RMS 미터링, 연결 해제 감지 |
-| `app/audio_classifier.py` | 관찰 전용 speech/music 휴리스틱 분류기 (NumPy only, 파이프라인 미결합, `/api/status`·세션 로그 참고용) |
+| `app/recording.py` | 네이티브 캡처 PCM의 MP3 백업, 연속 시간축과 누락 메타데이터, 21일 초과 파일 정리 |
 | `app/translation_manager.py` | 다중 타겟 번역 매니저 — 세션 팬아웃, 장애 격리, 세션 수명주기 오케스트레이션 |
 | `app/languages.py` | 지원 언어 카탈로그 (70+ 언어, 네이티브 명칭, 유효성 검증) |
-| `app/gemini_session.py` | Gemini Live 세션, 모델 자동 선택, 재연결, GoAway 처리 |
+| `app/gemini_session.py` | 고정 모델의 Gemini Live 세션, 입력 언어 기반 출력 보호, 재연결, GoAway 처리 |
 | `app/broadcast.py` | SSE 자막 팬아웃 + 바이너리 PCM 오디오 팬아웃 |
 | `app/server.py` | FastAPI 라우트 + 수명주기 셧다운 이벤트 + 템플릿 렌더링 + 미들웨어 |
 | `app/templates/operator/` | 모듈식 운영자 콘솔 템플릿 (`_auth_modal.html`, `_language_targets.html` 등) |
 | `app/templates/attendee.html` | 지속형 언어 선택 드롭다운 + 헤더 오디오 제어 참석자 화면 |
-| `app/glossary.py` | 번역 후처리 용어집 교정 패스 (PCA 고유 용어 강제 적용) |
-| `config/glossary.yaml` | 용어집 정의 파일 (직접 치환 항목 + 검토 전용 항목) |
-| `docs/HOW_TO_USE.md` | 언어 선택 인덱스 → `.en.md` / `.ko.md` |
-| `docs/HOW_TO_USE.en.md` | 봉사자 운영 매뉴얼 (영어) |
-| `docs/HOW_TO_USE.ko.md` | 봉사자 운영 매뉴얼 (한국어) |
+| `app/text_corrections.py` | 확정 자막의 이름 치환과 과도한 반복 축약 |
+| `config/name_corrections.yaml` | 수동으로 관리하는 정확 일치 이름 교정표 |
+| `how_to_use.html` | 봉사자 운영 매뉴얼 (한국어·영어 전환) |
+| `tools/eval/` | 제공 전사본과 라이브 전사의 오프라인 CER 평가 자료 |
 | `docs/PLAN.md` | 아키텍처 플랜 및 기술 결정 (이 파일) |
-| `docs/WALKTHROUGH.md` | 세션별 개발 빌드 히스토리 (이중 언어) |
-| `docs/TECHNICAL.md` | 코드 레벨 기술 참고서 (이중 언어) |
-| `docs/BUILD_EXE.md` | 단일 exe 빌드 시도 기록 (이중 언어) |
+| `docs/WALKTHROUGH.md` | 세션별 개발 빌드 히스토리 (한국어) |
+| `docs/TECHNICAL.md` | 코드 레벨 기술 참고서 (한국어) |
+| `docs/BUILD_EXE.md` | 단일 exe 빌드 시도 기록 (한국어) |
 | `logs/ops.log` | 운영 로그: 서버 시작/종료, 오디오, 일시정지/재개, 재연결 (INFO+) |
 | `logs/session.log` | Gemini 세션 로그: 연결, `[KO]` 원문, `[EN turn]` 번역 (DEBUG+) |
-| `logs/sessions/YYYYMMDD_HHMMSS/` | 세션별 전사본 폴더 (`ko.txt`, `en.txt`, `aligned.txt`, `summary.txt`) |
+| `logs/sessions/YYYYMMDD_HHMMSS/` | 세션별 전사본 (`transcript.md`, `transcript.jsonl`, `summary.txt`, `session.json`) |
 
 ---
 
@@ -157,6 +158,8 @@ Windows PC (본 애플리케이션)
 ---
 
 ## 6. 단계별 개발 현황
+
+- [x] 2026-11-08 현장 검토 반영: 단일 운영자 화면, 고정 모델, 원시 입력 MP3 백업, 이름 교정, 입력 언어에 따른 출력 보호를 구현했습니다. 기존 라이브 전사 기준 CER는 18.0%/19.1%이며 새 버전의 실음성 정확도 개선은 미검증입니다. [작업 결과](single_operator_results.md), [평가](evaluation.md), [추가 정리 승인표](single_operator_audit.md)를 참고하세요.
 
 | Phase | 범위 | 상태 |
 |-------|------|------|
@@ -180,15 +183,15 @@ Windows PC (본 애플리케이션)
 | 17 | UI 외부 템플릿 리팩토링: `attendee.html` 및 `operator.html`을 `server.py`에서 분리하고, 개발 환경 실시간 핫 리로드를 위한 동적 로더 구현 | ✅ 완료 |
 | 18 | 운영자 콘솔 UX: 고정 헤더, 상태 스트립 헤더 통합, 반응형 타이틀, 6열 통계 그리드, 전체 요소 툴팁, 사용 가이드 카드. 참석자 화면: 한국어 탭 보기 (백엔드 `ko` 필드), 단락 그루핑, 타임스탬프 제거, 폰트 범위 20–40px. GoAway 로그 INFO 레벨 수정. 운영자 미리보기 중복 텍스트 버그 수정. | ✅ 완료 |
 | 19 | 독립 설정 마법사 GUI (`setup_gui.py` / `SKC_setup.exe`) 및 2개 실행 파일 배포 아키텍처 구현 | ✅ 완료 |
-| 20 | Gemini Live 실시간 번역 모델 선택 엔진 (`app/model_resolver.py`), 직접 `preferred_model` 설정, LKG 폴백, 검증 세션 저장 및 상태 카드 UI 연동 | ✅ 완료 |
-| 21 | 오염 방지 및 무결 세션 리셋 아키텍처: 일시정지 시 오디오 프레임 즉시 폐기, Pause → Resume 컨텍스트 완전 분리 및 재개 토큰 초기화, 세션 세대(Epoch) 격리, 완료 턴 기반 롤링 언어 이탈 감시 및 오디오 버퍼 플러시 | ✅ 완료 |
+| 20 | 과거 모델 선택·LKG·폴백 구현은 제거하고 `gemini.model` 직접 사용으로 대체 | ✅ 제거 완료 |
+| 21 | 수동 Pause/Resume 세션 경계와 세대 격리 유지. 원문 언어에 따른 자동 리셋·자막 숨김·음소거는 사용하지 않음 | ✅ 현재 동작 반영 |
 | 22 | 운영자 콘솔 컨트롤 바 분리 및 일시정지 알림: 3열 고정 레이아웃, `role="status"` 및 `aria-live="polite"` 접근성 상태 배지, 일시정지 경과 타이머, 3분 경과 주황색 강조 알림, `prefers-reduced-motion` 지원 및 비활성 중립 회색 종료 버튼 | ✅ 완료 |
 | 23 | HTTPS 공인 접속 및 보안 강화 (Release v3.0.0): Cloudflare Named Tunnel 백그라운드 매니저, PublicHostGuard 미들웨어, 운영자 HMAC-SHA256 세션 인증, 네트워크/AI 지연 분리 텔레메트리, 2열 데스크톱 설정 마법사 (1060x670), 병렬 멀티스레드 빌더 (`build_parallel.py`) 및 포트 8080 표준화 | ✅ 완료 |
 | 25 | 텔레메트리 청취자 정합성 & 운영자 영문 현지화 완전성 (Release v3.2.1): 실시간 텔레메트리 WebSocket 연결 즉시 핑 송신 (10초 블라인드 스팟 제거), 0ms 서브 밀리초 로컬 RTT 수용, 단일 라벨 호스트명 및 로컬 도메인 현장 Wi-Fi 라우트 분류 정상화, 모바일 백그라운드 타이머 스로틀링 마진 보장, 6개 세션 메트릭 대시보드 및 툴팁 100% 한/영 이중 언어 지원 | ✅ 완료 |
 | 26 | 텔레메트리 불변식 보장, GoAway 예외 언래핑 & 운영자 콘솔 레이아웃 정밀화 (Release v3.2.2): 모바일 타이머 스로틀링 120초 마진 및 `local + public + unknown == total` 불변식 보장, Python 3.11 `ExceptionGroup` 재귀 언래핑 및 누적 재연결 카운터, 운영자 콘솔 `en` / `한` 간결 토글 및 반응형 폭 조절 (1024px에서 좌측 1인치 축소), 템플릿 한글 전수 검사 `test_bilingual_parity.py` 자동화 | ✅ 완료 |
-| 27 | 음향 분류기 고도화, UI 미터 간소화 & 유튜브 챕터 자동화 (Release v3.2.3): 실제 예배 찬양 음향 보정, 입력 레벨 미터 단일화, 툴팁 다국어 렌더링, 유튜브 챕터 마커 자동 추출 및 클립보드 복사 연동 | ✅ 완료 |
-| 28 | 적응형 설교 어휘 편향, 사후 검토 및 주석 보존 설정 (Release v3.3.0): 도메인 특화 어휘 ASR 편향 주입, 사후 2분 어휘 검토 모달 및 용어 하베스팅, 주석 보존 인플레이스 YAML 설정 엔진, 인트라넷/인터넷 네트워크 분리 및 적응형 로컬 모드 | ✅ 완료 |
-| V0–V28 | 검증 프로토콜 및 자동화 테스트 스위트 (180개 테스트) | ✅ 전체 통과 |
+| 27 | 당시 음악/발화 분류와 YouTube 챕터 구현. 11월 8일 현장 오류 확인 후 관련 코드·UI·내보내기 제거 | ✅ 제거 완료 |
+| 28 | 주석 보존 YAML, 네트워크 분리, 적응형 로컬 모드 유지. 어휘 힌트·검토·입력 언어 UI는 제거 | ✅ 현재 동작 반영 |
+| 검증 | 과거 단계별 테스트 기록은 [WALKTHROUGH.md](WALKTHROUGH.md), 현재 검증 결과는 [CHANGELOG.md](../CHANGELOG.md) 참고 | 기록 분리 |
 
 ---
 
@@ -197,25 +200,28 @@ Windows PC (본 애플리케이션)
 ```yaml
 audio:
   device_index: 2         # 설정된 입력 믹서 장치 번호
-  sample_rate: 16000      # Gemini 전송용 기본 주파수
+  sample_rate: 16000      # 전송은 16 kHz, 실제 캡처 포맷은 장치 지원값으로 결정
   channels: 1
   chunk_ms: 100
   auto_stop_timeout_min: 10
 
 gemini:
-  preferred_model: gemini-3.5-live-translate-preview
-  fallback_model: gemini-3.5-live-translate-preview
+  model: gemini-3.5-live-translate-preview
   voice: "orus"
 # 교회 내부 Wi-Fi (현장 접속용)
 intranet:
   host: 0.0.0.0
   port: 8080
-  local_hostname: skc.local
+  hostname: skc.local
 
 # 공용 인터넷 접속용 (Cloudflare 터널)
 internet:
   enable_tunnel: true
   public_url: "https://live.starkvillekoreanchurch.org" 
+
+translation:
+  supported_targets: [en, ko, zh, es]
+  default_active_targets: [en]
 
 logging:
   log_dir: logs
@@ -241,12 +247,8 @@ logging:
   5. **자발적 셧다운 수명주기 (`app/server.py`, `main.py`)**: `shutdown_event` 및 `SKCUvicornServer`를 통한 SSE/WS 스트림 0.5초 조기 종료로 Ctrl+C ASGI Traceback 제거.
   6. **오프라인 린팅 & 패키징 (`eslint.config.mjs`, `SKC_translation.spec`)**: 로컬 `eslint: 10.9.1` 기반 `no-undef` 검증, `jinja2` 패키징 보완.
 
-### Phase 25 — 자동 소스 언어 감지 및 다중 화자 모드 (Auto Source Language Detection / Multi-Speaker Mode) [✅ 완료]
-- **완료 일자**: 2026-09-06 (Release v3.2.0)
-- **주요 산출물**:
-  1. **대칭형 다중 소스 선택 (`ko+en`, 복합 세트) 및 제약 없는 `any` 자동 감지 모드**: 한국어/영어 동시 수용 및 임의 언어 실시간 감지 파이프라인.
-  2. **운영자 콘솔 언어 타겟 패널 연동 (`_language_targets.html`)**: `✦ 자동 감지 모드` 토글 버튼, 소스 프리셋 바 (`Korean + English`, `Korean only`, `English only`), 언어 충돌 방지 배지.
-  3. **소스 언어 전환 및 세션 프롬프트 동적 조정**: 단일 언어 소스 시 해당 타겟 언어 자동 제외 및 다중 소스/자동 감지 시 전체 타겟 개방.
+### Phase 25 - 입력 언어 선택 UI [현재 제거]
+- 과거 입력 언어 선택 UI는 제거했습니다. 현재는 출력 언어만 화면에서 선택하며 원문 언어는 자동 감지합니다. 기존 `translation.expected_source_languages`는 무시합니다. 과거 구현 이력은 [WALKTHROUGH.md](/docs/WALKTHROUGH.md)에 보존합니다.
 
 ### Phase 26 — 텔레메트리 불변식 보장, GoAway 예외 언래핑 & 다국어 검증 자동화 (Release v3.2.2) [✅ 완료]
 - **완료 일자**: 2026-09-21
@@ -255,32 +257,18 @@ logging:
   2. **Python 3.11 `ExceptionGroup` 재귀 언래핑**: `asyncio.TaskGroup` 예외 계층에서 GoAway 및 1000 정상 종료 코드를 재귀 감지하여 누적 재연결 카운터 보존.
   3. **템플릿 한글 전수 검사 자동화 (`tests/test_bilingual_parity.py`)**: 모든 템플릿 텍스트의 한/영 이중 언어 태그 누락 방지.
 
-### Phase 27 - 음향 분류기 고도화, UI 미터 간소화 & 툴팁 개선 (Release v3.2.3) [✅ 완료]
-- **완료 일자**: 2026-10-26
-- **주요 산출물**:
-  1. **실제 예배 찬양 음악 감지 고도화 (`app/audio_classifier.py`)**:
-     - 10월 18일 예배 실녹음(82.7분) 음향 데이터 기반 보정.
-     - 1초 창 비트 자기상관이 낮은 찬양/피아노/성가대 특성을 반영하여 스펙트럼 평탄도(`flat > 0.24`), 고주파 에너지 비율(`hf_energy > 0.006`), 엔벨로프 분산(`env_var >= 0.40`) 복합 조건 도입.
-     - 정적 배경 잡음 억제(`env_var < 0.10`) 및 17초 롤링 윈도우 합의 알고리즘(60% 일치)으로 가수의 숨고르기나 짧은 쉼표에 의한 초기화 방지.
-  2. **운영자 콘솔 입력 레벨 미터 단일화 (`app/templates/operator/_service_control.html`, `app/static/js/operator.js`)**:
-     - 장치 선택 박스 하단의 중복 레벨 바를 제거하고, 시스템 상태 모니터 행의 실시간 VU 미터로 단일화.
-  3. **툴팁 오버플로우 및 다국어 렌더링 개선 (`app/static/css/operator.css`, `app/templates/operator.html`)**:
-     - 자막 미리보기 헤더 및 지연 분석 패널의 `overflow: hidden` 제약을 해제하여 툴팁 잘림 방지.
-     - 한글/영어 모드 모두에서 툴팁 팝업이 온전한 블록 레이아웃(`display: block !important`)을 유지하도록 보정.
-  4. **자동 유튜브 챕터 마커 추출 및 세션 연동 (`app/chapters.py`, `app/server.py`)**:
-     - 오디오 분류기 전이 데이터를 분석하여 예배 순서(광고, 찬양, 설교시작, 결단찬양)를 자동 감지.
-     - 유튜브 공식 플레이어 챕터 포맷(`0:00 예배 시작\n...`) 및 주보/웹사이트용 인라인 타임스탬프 포맷 생성.
-     - 서비스 종료 시 `youtube_chapters.txt` 및 `youtube_chapters.json` 자동 저장 및 `GET /api/session/latest/chapters` API 제공.
-     - 운영자 콘솔 내 실시간 챕터 미리보기 및 원클릭 클립보드 복사 지원.
+### Phase 27 및 28 - 현장 검토 후 단순화 [현재 반영]
+- [x] 2026-11-08 단일 운영자용 고정 모델 통역, 연속 MP3 백업과 상시 진단을 통합했습니다. 결정 이력은 [WALKTHROUGH.md](/docs/WALKTHROUGH.md), 현재 동작은 [TECHNICAL.md](/docs/TECHNICAL.md), 보류 항목은 아래 계획과 [기능 감사](/docs/single_operator_audit.md)에 있습니다.
 
-### Phase 28 - 적응형 설교 어휘 편향 및 사전 하베스팅 (Adaptive Sermon Vocabulary Biasing & Glossary Harvesting) (Release v3.3.0) [✅ 완료]
-- **완료 일자**: 2026-11-03
-- **주요 산출물**:
-  1. **ASR 음성인식 어휘 편향 및 전사 프롬프트 통합 (`/app/glossary.py`, `/app/gemini_session.py`, `/config/glossary.yaml`)**: 교회 신앙 용어 및 인명/지명을 실시간 Gemini Live 세션 구성에 편향 주입하여 음성인식 정확도 극대화.
-  2. **예배 후 2분 어휘 검토 모달 및 용어 하베스팅 (`/app/templates/operator/_glossary_modal.html`, `/app/server.py`, `/app/static/js/operator.js`)**: 설교 전사본에서 고빈도 및 종교 고유명사를 자동 추출하여 운영자가 2분 내에 손쉽게 검토 및 등록할 수 있는 대화형 모달 및 수명주기 구현.
-  3. **주석 보존 인플레이스 YAML 설정 엔진 (`/app/config.py`, `/config.yaml`, `/config/config.template.yaml`)**: 파일 덮어쓰기 시 주석 및 구조가 소실되던 기존 `yaml.dump` 방식 대신 정규식 기반 인플레이스 치환 엔진 도입, Windows 파일 잠금 지연 재시도 알고리즘 탑재.
-  4. **네트워크 설정 분리 및 적응형 로컬 모드 (`intranet` / `internet` 분리, `/app/server.py`, `/app/static/js/operator.js`)**: 터널 미사용 시 대시보드를 단일 열 현장 Wi-Fi 전용 뷰(`http://skc.local:8080`)로 자동 전환하고 QR 안내문 아이콘 정합성 확보.
-  5. **운영자 콘솔 반응형 3열 레이아웃 및 툴팁 고도화 (`/app/templates/operator.html`, `/app/templates/operator/_status_telemetry.html`)**: 대형 화면 3열 반응형 전환, 서비스 제어 버튼 및 모델 테스트 버튼 다국어 툴팁 완비, 자동 감지 모드 비활성 스타일 시각적 안정화.
+### 보류: Live Translate의 어휘·원문 언어 힌트
+- Google이 번역 모델용 어휘·원문 언어 설정을 공식 지원하거나 새 지원 모델을 출시하면 재검토합니다. 복구 커밋과 채택 기준은 [어휘·언어 힌트 보관 문서](/docs/archive/어휘_언어힌트_보관.md)에 있습니다.
+
+### 검토 대기: 자동 재연결의 문맥 유지
+- 2026-11-09의 [후속 시험](/docs/reconnect_context_experiments.md)에서 B1 세션 재개를 다음 구현 후보로 권고했습니다. 제품에는 아직 적용하지 않았으며, 사용자의 구현 지시 전에는 현 동작을 유지합니다. 가사 정확도와 긴 예배의 여러 차례 재연결은 별도 검증이 필요합니다.
+
+### 보류: YouTube 오디오 누락 때만 사용하는 보조 복구
+- 실시간 통역이 주 기능입니다. 21일 보관 MP3는 YouTube 영상에서 소리가 빠졌을 때 해당 구간을 더빙·정렬하는 백업이며, 사후 전사는 필요한 경우에만 별도로 요청합니다. 예배 후 자동 전사나 새 운영자 기능을 만들지 않습니다.
+- 설교 CER 18.0% → 12.1%의 관측은 후속 검토의 출발점으로 보존합니다. 전체 예배의 누락 문제 때문에 실시간 전사를 대체하지 않으며, 향후 필요한 설교·누락 구간을 대상으로 검토합니다. 기존 [평가 스크립트·결과](/docs/evaluation.md)를 재사용하고 유료 실행은 먼저 비용 승인을 받습니다.
 
 ### Phase 29 - 터널링 초기 설정 자동화 (Automated Cloudflare Tunnel Setup & Zero-Config Provisioning) [⏳ 계획 중]
 - **목표**: Cloudflare Zero Trust 대시보드를 수동으로 탐색하여 토큰을 발급받는 복잡한 초기 진입 장벽을 제거하고, 설정 마법사(`SKC_setup.exe`) 및 초기 구동 시 터널 생성 및 공용 HTTPS 연결을 원클릭으로 자동화.

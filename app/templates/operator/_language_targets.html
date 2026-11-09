@@ -4,8 +4,8 @@
     <span class="tooltip tooltip-left">
       <span data-lang="ko">통역 언어</span>
       <span data-lang="en">Translation Languages</span>
-      <span class="tooltiptext" data-lang="ko" style="width:260px;">예배 발화 언어(입력)와 다국어 통역 대상 언어(출력)를 설정합니다. 활성 출력 언어 수만큼 독립 AI 세션이 동시 실행되며 비용도 비례하여 증가합니다.</span>
-      <span class="tooltiptext" data-lang="en" style="width:260px;">Configure spoken input and translation output targets. Each output language runs a concurrent AI session, scaling API cost proportionally.</span>
+      <span class="tooltiptext" data-lang="ko" style="width:260px;">참석자에게 제공할 다국어 통역 대상 언어를 선택합니다. 활성 출력 언어 수만큼 독립 AI 세션이 동시 실행되며 비용도 비례하여 증가합니다.</span>
+      <span class="tooltiptext" data-lang="en" style="width:260px;">Choose translation output languages for attendees. Each output language runs a concurrent AI session, scaling API cost proportionally.</span>
     </span>
     <span id="lang-panel-badge" class="lang-panel-badge ready">
       <span data-lang="ko">대기</span>
@@ -14,58 +14,8 @@
   </h2>
 
   <div class="card-body">
-    <!-- Spoken Language Selection (Multi-Source + Auto-detect) -->
-    <div class="lang-section">
-      <div class="lang-section-title"
-        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-        <span class="tooltip tooltip-left">
-          <span data-lang="ko">발화 언어 (입력)</span>
-          <span data-lang="en">Spoken Language</span>
-          <span class="tooltiptext" data-lang="ko">설교자/발화자가 사용하는 언어입니다. 복수 선택 또는 자동 감지가 가능합니다.</span>
-          <span class="tooltiptext" data-lang="en">Languages spoken by the preacher/speaker. Select multiple or engage
-            Auto-detect.</span>
-        </span>
-        <span id="lang-source-status-badge" class="lang-count-badge">2 sources</span>
-      </div>
-
-      <div class="lang-hint-text" style="margin-bottom: 8px; color: var(--color-navy-700); font-weight: 500;">
-        <span data-lang="ko">※ 복수 선택 가능</span>
-        <span data-lang="en">※ Multiple selections allowed</span>
-      </div>
-
-      <!-- Auto-detect Toggle Button & Tooltip -->
-      <div class="tooltip tooltip-left" style="width: 100%; display: block; margin-bottom: 2px;">
-        <button type="button" id="btn-source-autodetect" class="btn-auto-detect" style="width: 100%; margin-bottom: 0;">
-          <span class="autodetect-sparkle">✦</span>
-          <span data-lang="ko">자동 감지 모드 (모든 언어)</span>
-          <span data-lang="en">Auto-detect Mode (All Languages)</span>
-        </button>
-        <span class="tooltiptext" data-lang="ko" style="width: 270px;">설교자나 강사가 언어를 섞어 쓰시거나 특정 언어로 제한하지 않을 때 사용합니다. Gemini AI가 발화 언어를 스스로 감지하여 선택된 통역 언어로 실시간 번역합니다.</span>
-        <span class="tooltiptext" data-lang="en" style="width: 270px;">Use when speakers alternate languages or speak without restrictions. Gemini AI automatically detects the spoken language and translates into active targets.</span>
-      </div>
-
-      <div class="autodetect-guide-note" style="font-size: 11px; color: var(--color-navy-700); margin: 2px 0 8px 2px; line-height: 1.4;">
-        <span data-lang="ko">💡 설교 중 언어 혼용 시 유용합니다. (클릭하여 켜기/끄기)</span>
-        <span data-lang="en">💡 Useful when speaker alternates languages. (Click to toggle)</span>
-      </div>
-
-      <!-- Auto-detect Active Banner -->
-      <div id="lang-sources-autodetect-banner" class="lang-sources-autodetect-banner" style="display: none;">
-        <span class="autodetect-sparkle">✦</span>
-        <span data-lang="ko">자동 감지 활성화: 모든 발화 언어를 자유롭게 수용합니다.</span>
-        <span data-lang="en">Auto-detect active: speech in any language accepted continuously.</span>
-      </div>
-
-      <!-- Source Checkbox List (Stopped Mode: Symmetrical to Targets List) -->
-      <div id="lang-sources-list-wrap" class="lang-sources-list-wrap">
-        <div id="lang-sources-config-list" class="lang-targets-list">
-          <!-- Populated dynamically by operator.js -->
-        </div>
-      </div>
-    </div>
-
     <!-- Today's Translation Languages / Active Telemetry -->
-    <div class="lang-section" style="margin-top: 12px;">
+    <div class="lang-section" style="margin-top: 0;">
       <div class="lang-section-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
         <span class="tooltip tooltip-left">
           <span data-lang="ko">통역 언어 (출력)</span>
@@ -80,14 +30,11 @@
       <div id="lang-targets-config-list" class="lang-targets-list">
         {% if translation_cfg and translation_cfg.get('supported_targets') %}
         {% for code in translation_cfg.get('supported_targets') %}
-        {% set is_conflict = (code == translation_cfg.get('expected_source_language')) and
-        (translation_cfg.get('expected_source_language') != 'any') %}
-        {% set is_checked = (not is_conflict) and (code in translation_cfg.get('default_active_targets', ['en'])) %}
+        {% set is_checked = code in translation_cfg.get('default_active_targets', ['en']) %}
         {% set is_primary = is_checked and (code == translation_cfg.get('default_active_targets', ['en'])[0]) %}
         <label
-          class="lang-target-item{% if is_checked %} checked{% endif %}{% if is_primary %} primary{% endif %}{% if is_conflict %} disabled conflict{% endif %}">
-          <input type="checkbox" value="{{ code }}" {% if is_checked %}checked{% endif %} {% if is_conflict %}disabled{%
-            endif %} data-code="{{ code }}">
+          class="lang-target-item{% if is_checked %} checked{% endif %}{% if is_primary %} primary{% endif %}">
+          <input type="checkbox" value="{{ code }}" {% if is_checked %}checked{% endif %} data-code="{{ code }}">
           <span class="lang-target-label">
             {%- if code == 'ko' %}한국어 (Korean) {# i18n-exempt #}
             {%- elif code == 'en' %}English
@@ -98,12 +45,7 @@
             {%- else %}{{ code | upper }}
             {%- endif -%}
           </span>
-          {% if is_conflict %}
-          <span class="conflict-target-badge">
-            <span data-lang="ko">원문 언어</span>
-            <span data-lang="en">Spoken</span>
-          </span>
-          {% elif is_primary and is_checked %}
+          {% if is_primary and is_checked %}
           <span class="primary-target-badge">
             <span data-lang="ko">★ 주 언어</span>
             <span data-lang="en">★ Primary</span>
@@ -118,14 +60,6 @@
           <span class="primary-target-badge">
             <span data-lang="ko">★ 주 언어</span>
             <span data-lang="en">★ Primary</span>
-          </span>
-        </label>
-        <label class="lang-target-item disabled conflict">
-          <input type="checkbox" value="ko" disabled data-code="ko">
-          <span class="lang-target-label">한국어 (Korean)</span> {# i18n-exempt #}
-          <span class="conflict-target-badge">
-            <span data-lang="ko">원문 언어</span>
-            <span data-lang="en">Spoken</span>
           </span>
         </label>
         <label class="lang-target-item">

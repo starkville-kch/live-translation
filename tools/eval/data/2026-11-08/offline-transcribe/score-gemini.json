@@ -1,0 +1,504 @@
+{
+  "sections": [
+    {
+      "section": "1. 예배 전 찬양팀 연습 및 장내 준비 [00:00 - 05:35]",
+      "ref_chars": 475,
+      "errors": 423,
+      "cer": 0.8905263157894737,
+      "music": true
+    },
+    {
+      "section": "2. 예배 부름 및 환영 인사 [05:36 - 07:05]",
+      "ref_chars": 373,
+      "errors": 24,
+      "cer": 0.064343163538874,
+      "music": false
+    },
+    {
+      "section": "3. 교독문: 시편 99편 [07:06 - 08:00]",
+      "ref_chars": 177,
+      "errors": 0,
+      "cer": 0.0,
+      "music": false
+    },
+    {
+      "section": "4. 개회 기도 [08:01 - 09:05]",
+      "ref_chars": 215,
+      "errors": 1,
+      "cer": 0.004651162790697674,
+      "music": false
+    },
+    {
+      "section": "5. 경배와 찬양 [09:06 - 16:15]",
+      "ref_chars": 586,
+      "errors": 514,
+      "cer": 0.8771331058020477,
+      "music": true
+    },
+    {
+      "section": "6. 사도신경 신앙고백 [16:16 - 17:25]",
+      "ref_chars": 230,
+      "errors": 197,
+      "cer": 0.8565217391304348,
+      "music": false
+    },
+    {
+      "section": "7. 참회의 기도 및 사죄의 확신 [17:26 - 19:15]",
+      "ref_chars": 351,
+      "errors": 299,
+      "cer": 0.8518518518518519,
+      "music": false
+    },
+    {
+      "section": "8. 찬송가 282장: 큰 죄에 빠진 날 위해 [19:16 - 22:04]",
+      "ref_chars": 101,
+      "errors": 85,
+      "cer": 0.8415841584158416,
+      "music": true
+    },
+    {
+      "section": "9. 회중 대표 기도 [22:05 - 24:08]",
+      "ref_chars": 1681,
+      "errors": 1476,
+      "cer": 0.8780487804878049,
+      "music": false
+    },
+    {
+      "section": "10. 봉헌, 특송 및 봉헌 기도 [24:09 - 28:50]",
+      "ref_chars": 768,
+      "errors": 222,
+      "cer": 0.2890625,
+      "music": true
+    },
+    {
+      "section": "11. 교회 소식 및 성경 봉독 [28:51 - 30:14]",
+      "ref_chars": 458,
+      "errors": 202,
+      "cer": 0.4410480349344978,
+      "music": false
+    },
+    {
+      "section": "12. 설교: 교회의 하나됨 (30:15 - 54:00)",
+      "ref_chars": 12966,
+      "errors": 1575,
+      "cer": 0.12147154095326237,
+      "music": false
+    },
+    {
+      "section": "13. 설교 후 결단 기도 [54:01 - 55:20]",
+      "ref_chars": 225,
+      "errors": 6,
+      "cer": 0.02666666666666667,
+      "music": false
+    },
+    {
+      "section": "14. 파송 찬송: 찬송가 221장 [55:21 - 57:15]",
+      "ref_chars": 173,
+      "errors": 46,
+      "cer": 0.2658959537572254,
+      "music": true
+    },
+    {
+      "section": "15. 축도 및 폐회 [57:16 - 58:45]",
+      "ref_chars": 104,
+      "errors": 8,
+      "cer": 0.07692307692307693,
+      "music": false
+    }
+  ],
+  "speech_only_cer": 0.22574493444576876,
+  "facts": [
+    {
+      "id": "church_name",
+      "ko_found": [
+        "스타크빌",
+        "스타크빌 한인교회"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "anniversary_44",
+      "ko_found": [
+        "44년"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "kamika",
+      "ko_found": [
+        "카미카"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "msu_graduate",
+      "ko_found": [
+        "MSU"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "knoxville_sarang_15",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "park_father_passed",
+      "ko_found": [
+        "아버님께서 지난 금요일 소천"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": "Both reference transcripts: his father passed away last Friday. Nov 8 live output said surgery."
+    },
+    {
+      "id": "ephesians_4",
+      "ko_found": [
+        "에베소서 4"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "ok_hanheum",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "youth_groups",
+      "ko_found": [
+        "중고등부",
+        "청년부"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "harmony_in_diversity",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "shipwreck",
+      "ko_found": [
+        "파선"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "john_stott",
+      "ko_found": [
+        "존 스토트"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "spurgeon",
+      "ko_found": [
+        "스펄전"
+      ],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    }
+  ],
+  "english_phrases": [
+    {
+      "phrase": "F... F key",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "F key",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Book of Ephesians, chapter",
+      "words": 3,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "verses",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "through",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "If there's any problem with the translation, just raise your hand so that I could speak some in English",
+      "words": 12,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Last week we learned from chapter",
+      "words": 5,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "that God had planned to display His manifold wisdom to the universe through the church",
+      "words": 9,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "Unity of the Church",
+      "words": 2,
+      "in_ko_latin": 2,
+      "in_en": 0
+    },
+    {
+      "phrase": "Instead of trying to be united, the Bible tells us to try to keep the unity of the Spirit",
+      "words": 9,
+      "in_ko_latin": 2,
+      "in_en": 0
+    },
+    {
+      "phrase": "Paul urges the Ephesian church and all the recipients, churches, to live worthy of the calling",
+      "words": 9,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "Unity",
+      "words": 1,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "Uniformity",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Oneness",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Sameness",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Unity is not uniformity",
+      "words": 2,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "Unity is harmony in diversity",
+      "words": 3,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "In love",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "In love, moderates the four preceding words",
+      "words": 5,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "humility, gentleness, patience, bearing with one another in love",
+      "words": 6,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "This does not mean the stage of denial that we are okay, we are still one in Christ",
+      "words": 7,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Through the bond of peace",
+      "words": 3,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "The unity of the Spirit",
+      "words": 2,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "The Holy Spirit has bound us with the bond, or rope of peace",
+      "words": 6,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "He is our peace",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "peace",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "The Spirit applied the power of the redemption of Jesus Christ to us that we may become one, or one body",
+      "words": 9,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "This is an event that has been fulfilled",
+      "words": 3,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "It is done",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "God breathed His breath so that he became a living soul",
+      "words": 6,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "living soul",
+      "words": 2,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Anabaptists",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "transfer",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "They don't give out the membership if you move to another church in America. You have to go through the membership procedure",
+      "words": 13,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "letter of transfer",
+      "words": 2,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "case by case",
+      "words": 2,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Judeo-Christianity",
+      "words": 2,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "Be eager to maintain",
+      "words": 2,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "John Stott",
+      "words": 2,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Keep the unity in a visible manner",
+      "words": 4,
+      "in_ko_latin": 4,
+      "in_en": 0
+    },
+    {
+      "phrase": "There is no single perfect church on this earth",
+      "words": 5,
+      "in_ko_latin": 1,
+      "in_en": 0
+    },
+    {
+      "phrase": "Charles Spurgeon",
+      "words": 2,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "Imperfect as it is, it is the dearest place on earth to us",
+      "words": 4,
+      "in_ko_latin": 0,
+      "in_en": 0
+    },
+    {
+      "phrase": "If you love one another, then they all will know that you are my disciples",
+      "words": 7,
+      "in_ko_latin": 0,
+      "in_en": 0
+    }
+  ]
+}

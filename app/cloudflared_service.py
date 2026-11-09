@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.logger import server_log
+from app.startup_timing import timed
 
 
 class CloudflaredService:
@@ -228,10 +229,11 @@ class CloudflaredService:
 
         try:
             sc = self._sc_exe()
-            result = subprocess.run(
-                [sc, "query", self.name], capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=5,
-            )
+            with timed("cloudflared_sc_query"):
+                result = subprocess.run(
+                    [sc, "query", self.name], capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=5,
+                )
             output = (result.stdout + " " + result.stderr).upper()
             if "RUNNING" in output or "STATE              : 4" in output:
                 return "running"
@@ -249,10 +251,11 @@ class CloudflaredService:
 
         # Fallback to PowerShell Get-Service query if sc.exe produced unknown or threw
         try:
-            ps_res = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-Command", f"(Get-Service -Name '{self.name}' -ErrorAction SilentlyContinue).Status.ToString()"],
-                capture_output=True, text=True, timeout=5,
-            )
+            with timed("cloudflared_powershell_query"):
+                ps_res = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", f"(Get-Service -Name '{self.name}' -ErrorAction SilentlyContinue).Status.ToString()"],
+                    capture_output=True, text=True, timeout=5,
+                )
             ps_out = ps_res.stdout.strip().lower()
             if "running" in ps_out:
                 return "running"
@@ -268,10 +271,11 @@ class CloudflaredService:
     def _run(self, action: str) -> bool:
         try:
             sc = self._sc_exe()
-            result = subprocess.run(
-                [sc, action, self.name], capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=5,
-            )
+            with timed(f"cloudflared_service_{action}"):
+                result = subprocess.run(
+                    [sc, action, self.name], capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=5,
+                )
             server_log.debug("Cloudflared service command completed: %s rc=%s", action, result.returncode)
             return result.returncode == 0
         except Exception:
@@ -327,12 +331,13 @@ class CloudflaredService:
 
                 out_target = log_file if log_file else subprocess.DEVNULL
                 with self._proc_lock:
-                    self._proc = subprocess.Popen(
-                        cmd,
-                        stdout=out_target,
-                        stderr=out_target,
-                        creationflags=flags,
-                    )
+                    with timed("cloudflared_embedded_spawn"):
+                        self._proc = subprocess.Popen(
+                            cmd,
+                            stdout=out_target,
+                            stderr=out_target,
+                            creationflags=flags,
+                        )
                     self._bind_to_job(self._proc)
                     try:
                         self._pid_file_path().write_text(str(self._proc.pid), encoding="utf-8")

@@ -23,7 +23,6 @@ def reset_server_state():
         asyncio.run(manager.stop())
         try:
             save_translation_settings(
-                expected_source_language=orig_cfg["expected_source_language"],
                 supported_targets=orig_cfg["supported_targets"],
                 default_active_targets=orig_cfg["default_active_targets"],
             )
@@ -37,7 +36,7 @@ def test_api_languages_discovery():
     assert res.status_code == 200
     data = res.json()
 
-    assert "expected_source" in data
+    assert "expected_source" not in data
     assert "available" in data
     assert "supported_targets" in data
     assert "selected_targets" in data
@@ -65,7 +64,7 @@ def test_streams_never_cross_outputs():
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
          patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
-        asyncio.run(manager.start(active_targets=["en", "uk"], expected_source_language="ko"))
+        asyncio.run(manager.start(active_targets=["en", "uk"]))
 
         b_en = manager.get_broadcaster("en")
         b_uk = manager.get_broadcaster("uk")
@@ -103,7 +102,7 @@ def test_audio_stream_websocket_routing():
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
          patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
-        asyncio.run(manager.start(active_targets=["en", "uk"], expected_source_language="ko"))
+        asyncio.run(manager.start(active_targets=["en", "uk"]))
 
         # Default connection -> connects to primary ('en')
         with client.websocket_connect("/audio-stream") as ws:
@@ -178,7 +177,7 @@ def test_api_status_reports_translation_and_legacy_fields():
     # New multilingual translation block
     assert "translation" in data
     t = data["translation"]
-    assert "expected_source" in t
+    assert "expected_source" not in t
     assert "selected_targets" in t
     assert "active_targets" in t
     assert "primary_target" in t
@@ -200,12 +199,12 @@ def test_public_host_guard_allows_api_languages_and_blocks_targets():
     assert res_targets.status_code == 404
 
 
-def test_status_default_drift_correction_is_manual_before_start():
+def test_status_reports_visibility_without_removed_auto_reset_setting():
     client = TestClient(app)
-    res = client.get("/api/status")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["auto_drift_correction"] is False
+    data = client.get("/api/status").json()
+    assert "auto_drift_correction" not in data
+    assert isinstance(data["output_hidden"], bool)
+    assert isinstance(data["audio_muted"], bool)
 
 
 def test_signal_shutdown_terminates_active_streams_cleanly():
@@ -256,7 +255,7 @@ def test_status_cost_and_runtime_calculation():
         # Start with 2 targets
         res_start = client.post(
             "/api/start",
-            json={"active_targets": ["en", "zh"], "expected_source_language": "ko"},
+            json={"active_targets": ["en", "zh"]},
         )
         assert res_start.status_code == 200
 
@@ -282,33 +281,17 @@ def test_status_cost_and_runtime_calculation():
         assert data_stopped["translation"]["active_targets"] == ["en", "zh"]
 
 
-def test_boundary_normalization_and_spoken_display(tmp_path):
-    """Verify list inputs in /api/translation/targets and /api/start are normalized to composite strings and status displays them."""
+def test_removed_input_override_cannot_restrict_source_languages():
     client = TestClient(app)
-
-    # 1. Update targets with array source ["es", "en"] -> canonically sorted to en+es
-    res = client.put(
-        "/api/translation/targets",
-        json={
-            "expected_source_language": ["es", "en"],
-            "targets": ["uk"],
-            "supported_targets": ["en", "uk", "zh"]
-        }
-    )
-    assert res.status_code == 200
-    data = res.json()
-    assert data["ok"] is True
-    assert data["translation"]["expected_source_language"] == "en+es"
-    assert "spoken_language_display" in data["translation"]
-
-    # 2. Verify /api/status displays canonical spoken_language_display
-    res_status = client.get("/api/status")
-    assert res_status.status_code == 200
-    st = res_status.json()
-    assert st["translation"]["expected_source"] == "en+es"
-    assert st["translation"]["spoken_language_display"] == "English + Spanish (English + Español)"
-    assert st["translation"]["is_auto_detect"] is False
-
-
-
-
+    result = client.put("/api/translation/targets", json={
+        "expected_source_language": ["es", "en"],
+        "expected_source_languages": ["es"],
+        "targets": ["uk"], "supported_targets": ["en", "uk", "zh"],
+    })
+    assert result.status_code == 200
+    assert "expected_source_languages" not in translation_cfg()
+    assert "expected_source_language" not in result.json()["translation"]
+    assert "expected_source_languages" not in result.json()["translation"]
+    status = client.get("/api/status").json()
+    assert "spoken_language_display" not in status["translation"]
+    assert "is_auto_detect" not in status["translation"]

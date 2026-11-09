@@ -56,17 +56,20 @@ from typing import AsyncIterator, Callable
 
 import numpy as np
 from scipy import signal
+from app.startup_timing import timed
 
 try:
     import pyaudio
-    _pa = pyaudio.PyAudio()
+    with timed("portaudio_initialization"):
+        _pa = pyaudio.PyAudio()
 except Exception:
     pyaudio = None
     _pa = None
 
 from app.config import audio_cfg, save_audio_device
 from app.events import operator_events
-from app.logger import audio_log
+from app.logger import audio_log, log_directory
+from app.recording import WeeklyRecording
 
 TARGET_RATE = 16000
 TARGET_CHANNELS = 1
@@ -315,6 +318,17 @@ def compute_rms(samples: np.ndarray) -> float:
     return np.sqrt(mean_square)
 
 
+def channel_diagnostics(pcm: bytes, channels: int) -> tuple[list[float], float | None]:
+    """Measure native channel levels and stereo phase correlation."""
+    samples = np.frombuffer(pcm, dtype=np.int16).reshape(-1, channels).astype(np.float64)
+    rms = np.sqrt(np.mean(samples ** 2, axis=0)) / 32768.0
+    dbfs = [float(20 * np.log10(level)) if level > 0 else float("-inf") for level in rms]
+    correlation = None
+    if channels == 2 and np.all(np.std(samples, axis=0) > 0):
+        correlation = float(np.corrcoef(samples, rowvar=False)[0, 1])
+    return dbfs, correlation
+
+
 def _rms_to_level(rms: float) -> float:
     """Map raw RMS (0–32768) to 0–100 log scale."""
     if rms < 1:
@@ -334,6 +348,7 @@ class AudioCapture:
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._paused: bool = False
+        self._recording: WeeklyRecording | None = None
 
     def _emit(self, **kwargs):
         for k, v in kwargs.items():
@@ -343,6 +358,8 @@ class AudioCapture:
             self._on_state_change(AudioState(**vars(self._state)))
 
     def start(self, device_index: int | None = None) -> None:
+        if self._thread and self._thread.is_alive():
+            raise RuntimeError("Previous audio capture has not stopped yet")
         if device_index is None:
             device_index = self._cfg.get("device_index")
         if device_index is not None:
@@ -351,6 +368,8 @@ class AudioCapture:
         self._paused = False
         self._stop_event.clear()
         self._loop = asyncio.get_event_loop()
+        self._recording = WeeklyRecording(log_directory() / "recordings" / "current_week")
+        self._recording.start()
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
 
@@ -371,9 +390,21 @@ class AudioCapture:
                 break
 
     def stop(self) -> None:
-        self._stop_event.set()
+        self.finish_recording()
         self._paused = False
         self._emit(status=AudioStatus.STOPPED, level_rms=0.0)
+
+    @property
+    def recording_info(self) -> dict:
+        return self._recording.info if self._recording else {"status": "disabled"}
+
+    def finish_recording(self) -> None:
+        """Stop capture and finalize its backup before the session export."""
+        self._stop_event.set()
+        if self._thread and self._thread is not threading.current_thread():
+            self._thread.join(timeout=2)
+        if self._recording:
+            self._recording.stop()
 
     @property
     def is_paused(self) -> bool:
@@ -511,6 +542,7 @@ class AudioCapture:
             last_nonsilent = time.monotonic()
             non_blocking_warned = False
             prev_audio_status = AudioStatus.CONNECTED
+            next_channel_log = 0.0
 
             while not self._stop_event.is_set():
                 t_start = time.monotonic()
@@ -523,6 +555,16 @@ class AudioCapture:
                     return  # Return to outer retry loop
 
                 t_end = time.monotonic()
+                if self._recording:
+                    self._recording.submit(raw, src_rate, src_channels, t_end)
+                if t_end >= next_channel_log:
+                    levels, correlation = channel_diagnostics(raw, src_channels)
+                    audio_log.debug(
+                        "Input channel diagnostics: rate=%d channels=%d rms_dbfs=%s lr_correlation=%s",
+                        src_rate, src_channels, [round(level, 2) for level in levels],
+                        round(correlation, 4) if correlation is not None else None,
+                    )
+                    next_channel_log = t_end + 60.0
                 read_duration = t_end - t_start
                 expected_duration = chunk_ms / 1000.0
 
@@ -574,17 +616,18 @@ class AudioCapture:
                     prev_audio_status = status
 
                 self._emit(status=status, level_rms=level)
-
-                if self._loop and not self._loop.is_closed():
-                    asyncio.run_coroutine_threadsafe(
-                        self._enqueue(raw), self._loop
-                    )
+                self._route_chunk(raw)
         finally:
             try:
                 stream.stop_stream()
                 stream.close()
             except Exception:
                 pass
+
+    def _route_chunk(self, data: bytes) -> None:
+        """Forward processed mono PCM to the translation queue."""
+        if self._loop and not self._loop.is_closed():
+            asyncio.run_coroutine_threadsafe(self._enqueue(data), self._loop)
 
     async def _enqueue(self, data: bytes) -> None:
         if self._paused:

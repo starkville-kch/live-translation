@@ -1,199 +1,106 @@
-"""
-tests/test_drift_recovery.py — Phase 8A-2 Drift Recovery & Watchdog Regression Tests
-"""
+"""Source language never blocks multilingual captions, audio, or archives."""
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
-from app.gemini_session import GeminiSession, SessionStatus, evaluate_drift_score
-from app.translation_manager import TranslationManager
+from google.genai import types
+
+from app.gemini_session import GeminiSession
 
 
-@pytest.fixture(autouse=True)
-def _isolate_test_logs():
-    with patch("app.gemini_session.session_log"), patch("app.gemini_session.server_log"):
-        yield
+class ReceivedTurns:
+    def __init__(self, *turns: list[types.LiveServerMessage]):
+        self.turns = list(turns)
+
+    async def receive(self):
+        if self.turns:
+            for response in self.turns.pop(0):
+                yield response
 
 
-def test_one_completed_turn_cannot_be_scored_multiple_times():
-    """Verify each committed turn has identity tracking and contributes to drift score exactly once."""
-    session = GeminiSession(on_caption=lambda c: None, expected_source_language="ko", target_language_code="en")
-    session._auto_drift_correction = False
-
-    # Simulate arrival of anomalous turn (in_lang = ja)
-    session._current_source = "はい、皆さん"
-    session._current_target = "Yes, everyone"
-    session._turn_in_lang = "ja"
-    session._turn_out_lang = "en"
-
-    # Turn 1 committed
-    session._commit_current_turn()
-    assert len(session._drift_history) == 1
-    assert session._drift_history[0] == 1
-    assert session._turn_id == 1
-    assert session._last_evaluated_turn_id == 1
-
-    # Redundant / duplicate commit calls (e.g. from auto_commit_loop or flush)
-    session._commit_current_turn()
-    session.flush_current_turn()
-
-    # Drift history must NOT grow; turn was evaluated once and only once
-    assert len(session._drift_history) == 1
-    assert session._drift_history[0] == 1
-    assert session._turn_id == 1
-    assert session._last_evaluated_turn_id == 1
+def response(source: str = "", language: str | None = None, target: str = "", audio: bytes = b"", complete: bool = False) -> types.LiveServerMessage:
+    return types.LiveServerMessage(server_content=types.LiveServerContent(
+        input_transcription=types.Transcription(text=source, language_code=language) if source or language else None,
+        output_transcription=types.Transcription(text=target, language_code="en") if target else None,
+        model_turn=types.Content(parts=[types.Part(inline_data=types.Blob(data=audio))]) if audio else None,
+        turn_complete=complete,
+    ))
 
 
-def test_one_non_korean_anomaly_does_not_trigger_recovery():
-    """A single isolated source language mismatch (+1) must not trigger recovery, and cleans up on clean turns."""
-    session = GeminiSession(on_caption=lambda c: None, expected_source_language="ko", target_language_code="en")
-    session._auto_drift_correction = True
-    session.reset_clean = AsyncMock()
-
-    # Single isolated Vietnamese mismatch
-    session._current_source = "Xin chào"
-    session._current_target = "Hello"
-    session._turn_in_lang = "vi"
-    session._turn_out_lang = "en"
-    session._commit_current_turn()
-
-    # Score should be 1/3 (not >= 3 threshold)
-    assert sum(session._drift_history) == 1
-    session.reset_clean.assert_not_called()
-
-    # Followed by 1 clean Korean turn -> drift history clears immediately back to 0/3
-    session._current_source = "은혜로운 말씀"
-    session._current_target = "Graceful word"
-    session._turn_in_lang = "ko"
-    session._turn_out_lang = "en"
-    session._commit_current_turn()
-
-    assert len(session._drift_history) == 0
-    assert sum(session._drift_history) == 0
-    session.reset_clean.assert_not_called()
-
-
-def test_consecutive_genuine_drift_triggers_recovery():
-    """Distinct consecutive turns with sustained drift accumulate score >= 3 and trigger clean reset."""
-    async def _run():
-        session = GeminiSession(on_caption=lambda c: None, expected_source_language="ko", target_language_code="en")
-        session._auto_drift_correction = True
-        session._run_with_retry = AsyncMock()
-
-        initial_epoch = session.session_epoch
-
-        # 2 distinct drifted turns: Turn 1 (+1 input), Turn 2 (+2 output drift) -> total 3 in 2-turn window
-        session._current_source = "日本語テキスト 0"
-        session._current_target = "Japanese text 0"
-        session._turn_in_lang = "ja"
-        session._turn_out_lang = "en"
-        session._commit_current_turn()
-
-        session._current_source = "日本語テキスト 1"
-        session._current_target = "日本語訳 1"
-        session._turn_in_lang = "ja"
-        session._turn_out_lang = "ja"
-        session._commit_current_turn()
-
-        # Yield control to let async task reset_clean run
-        await asyncio.sleep(0.05)
-
-        # Clean reset incremented the epoch
-        assert session.session_epoch == initial_epoch + 1
-
-    asyncio.run(_run())
-
-
-def test_recovery_configuration_contains_no_language_codes():
-    """Developer API configuration built for normal sessions and recovery must contain no language_codes."""
-    session = GeminiSession(on_caption=lambda c: None, expected_source_language="ko", target_language_code="en")
-    config = session._build_config("gemini-3.5-live-translate-preview")
-
-    assert config.input_audio_transcription is not None
-    assert getattr(config.input_audio_transcription, "language_codes", None) is None or config.input_audio_transcription.language_codes == []
-    assert config.translation_config.target_language_code == "en"
-
-
-def test_recovery_uses_normal_translation_config():
-    """Session builder config must match normal live translation config without forced language hacks."""
-    session = GeminiSession(on_caption=lambda c: None, expected_source_language="ko", target_language_code="uk")
-    config = session._build_config("gemini-3.5-live-translate-preview")
-
-    assert config.translation_config.target_language_code == "uk"
-    assert config.translation_config.echo_target_language is True
-
-
-def test_clean_recovery_does_not_stop_translation_manager():
-    """Clean recovery operates per-session and never stops the outer TranslationManager."""
-    async def _run():
-        tm = TranslationManager(on_caption=lambda lang, c: None)
-        # Mock session startup
-        with patch.object(GeminiSession, "_run_with_retry", AsyncMock()):
-            await tm.start(active_targets=["en"], expected_source_language="ko")
-            assert tm.is_running is True
-
-            session = tm.sessions["en"]
-            initial_epoch = session.session_epoch
-
-            # Trigger clean reset
-            await session.reset_clean(reason="Test recovery")
-
-            # TranslationManager remains running throughout
-            assert tm.is_running is True
-            assert session.session_epoch == initial_epoch + 1
-
-            await tm.stop()
-
-    asyncio.run(_run())
-
-
-def test_korean_resumes_normally_after_recovery():
-    """After clean recovery, subsequent Korean speech is scored as 0 and processed cleanly."""
-    async def _run():
-        session = GeminiSession(on_caption=lambda c: None, expected_source_language="ko", target_language_code="en")
-        session._auto_drift_correction = True
-        session._run_with_retry = AsyncMock()
-
-        # Trigger reset
-        await session.reset_clean(reason="Test reset")
-        assert len(session._drift_history) == 0
-
-        # Now resume Korean turn
-        session._current_source = "하나님의 은혜로"
-        session._current_target = "By the grace of God"
-        session._turn_in_lang = "ko"
-        session._turn_out_lang = "en"
-        session._commit_current_turn()
-
-        assert list(session._drift_history) == []
-        assert sum(session._drift_history) == 0
-        assert session._consecutive_clean_turns == 1
-
-    asyncio.run(_run())
-
-
-def test_auto_drift_works_for_non_korean_speech():
-    """Auto drift recovery is source-language-agnostic: it must trigger for any
-    expected_source_language (e.g. English), since evaluate_drift_score() keys
-    off the output language code vs. target_language_code, not the source."""
-    async def _run():
+@pytest.mark.parametrize("language,source", [("zh", "你好"), ("zh-Hans", "欢迎"), ("fr", "Bonjour"), ("vi", "Xin chao")])
+def test_non_korean_english_sources_remain_visible_and_audible(language, source):
+    async def run():
+        captions, sources, audio, visibility = [], [], [], []
         session = GeminiSession(
-            on_caption=lambda c: None,
-            expected_source_language="en",  # English spoken source
-            target_language_code="uk",
+            on_caption=captions.append, on_source_transcript=sources.append,
+            on_audio_chunk=audio.append, on_output_visibility=lambda hidden, muted: visibility.append((hidden, muted)),
         )
-        session._auto_drift_correction = True
-        session.reset_clean = AsyncMock()
+        messages = [response(source, language, "Hello", b"translated", complete=True) for _ in range(4)]
+        await session._recv_loop(ReceivedTurns(messages), session.current_model, session.session_epoch)
+        assert captions == ["Hello"] * 4
+        assert sources == [source] * 4
+        assert audio == [b"translated"] * 4
+        assert len(session.transcript) == 4
+        assert all(turn.source_lang == language.lower() for turn in session.transcript)
+        assert all(turn.target_lang == "en" for turn in session.transcript)
+        assert not session.state.output_hidden
+        assert not session.state.audio_muted
+        assert visibility == []
+        assert session.session_epoch == 0
+        assert session._task is None
 
-        # 3 turns with unexpected output language (not the "uk" target)
-        for i in range(3):
-            session._current_source = f"Some French text {i}"
-            session._current_target = f"Quelque chose {i}"
-            session._turn_in_lang = "fr"
-            session._turn_out_lang = "fr"
-            session._commit_current_turn()
+    asyncio.run(run())
 
-        await asyncio.sleep(0.05)
-        session.reset_clean.assert_called_once()
 
-    asyncio.run(_run())
+def test_missing_language_metadata_keeps_text_audio_and_unknown_archive_label():
+    async def run():
+        captions, sources, audio = [], [], []
+        session = GeminiSession(on_caption=captions.append, on_source_transcript=sources.append, on_audio_chunk=audio.append)
+        messages = [response(target="First ", audio=b"first"),
+                    response("Original", target="second.", audio=b"second", complete=True)]
+        await session._recv_loop(ReceivedTurns(messages), session.current_model, 0)
+        assert captions == ["First ", "second."]
+        assert sources == ["Original"]
+        assert audio == [b"first", b"second"]
+        assert session.transcript[0].source_lang == "unknown"
+        assert session.transcript[0].target == "First second."
+        assert not session.state.output_hidden
+        assert not session.state.audio_muted
+
+    asyncio.run(run())
+
+
+def test_late_chinese_metadata_does_not_drop_or_duplicate_pending_text():
+    async def run():
+        captions, sources = [], []
+        session = GeminiSession(on_caption=captions.append, on_source_transcript=sources.append)
+        messages = [response(target="First "), response("你好", "zh-CN", "second.", complete=True)]
+        await session._recv_loop(ReceivedTurns(messages), session.current_model, 0)
+        assert captions == ["First ", "second."]
+        assert sources == ["你好"]
+        assert session.transcript[0].target == "First second."
+        assert session.transcript[0].source_lang == "zh-cn"
+
+    asyncio.run(run())
+
+
+def test_language_switches_preserve_every_completed_turn_without_reconnecting():
+    async def run():
+        captions = []
+        session = GeminiSession(on_caption=captions.append)
+        messages = [response(source, language, target, complete=True) for source, language, target in [
+            ("안녕하세요", "ko", "Hello"), ("你好", "zh", "Welcome"),
+            ("Keep the unity", "en", "Keep the unity"), ("감사합니다", "ko", "Thank you"),
+        ]]
+        await session._recv_loop(ReceivedTurns(messages), session.current_model, 0)
+        assert captions == ["Hello", "Welcome", "Keep the unity", "Thank you"]
+        assert [turn.source_lang for turn in session.transcript] == ["ko", "zh", "en", "ko"]
+        assert session.session_epoch == 0
+        assert not session.state.output_hidden
+        assert not session.state.audio_muted
+        session.reset_transcript()
+        assert session.transcript == []
+        assert not session.state.output_hidden
+        assert not session.state.audio_muted
+
+    asyncio.run(run())

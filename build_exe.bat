@@ -2,9 +2,8 @@
 :: build_exe.bat — Build SKC_translation.exe and SKC_setup.exe from source
 ::
 :: Prerequisites (one-time setup):
-::   conda create -n skc_build python=3.11 --yes
-::   conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy ^
-::       python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf jinja2 pyinstaller
+::   Prepare the project-local .agent\build_env environment.
+::   See docs\BUILD_EXE.md. The shared agent environment is not a fallback.
 ::
 :: Output:
 ::   .agent\dist\SKC_translation.exe  (Main Sunday live translation)
@@ -23,25 +22,22 @@
 ::       └── church-logo.webp / church-logo.png
 
 setlocal
-set "OUT_DIR=.agent"
-set "CONDA_ROOT=D:\Program_Files\miniconda3"
-set "CONDA_ENV=agent"
-if exist "%CONDA_ROOT%\envs\skc_build\python.exe" set "CONDA_ENV=skc_build"
-
-if not exist "%CONDA_ROOT%\Scripts\activate.bat" (
-    echo [ERROR] Conda not found at %CONDA_ROOT%
-    echo Edit CONDA_ROOT in this file to match your Miniconda installation.
-    pause & exit /b 1
-)
-
-echo [1/2] Activating conda build environment '%CONDA_ENV%'...
-call "%CONDA_ROOT%\Scripts\activate.bat" "%CONDA_ROOT%\envs\%CONDA_ENV%"
-if errorlevel 1 (
-    echo [ERROR] Failed to activate '%CONDA_ENV%'.
-    pause & exit /b 1
-)
-
 cd /d "%~dp0"
+set "OUT_DIR=.agent"
+set "BUILD_ENV=%CD%\.agent\build_env"
+
+if not exist "%BUILD_ENV%\Scripts\activate.bat" (
+    echo [ERROR] Project build environment missing: %BUILD_ENV%
+    echo Prepare it using docs\BUILD_EXE.md before building.
+    pause & exit /b 1
+)
+
+echo [1/2] Activating project build environment...
+call "%BUILD_ENV%\Scripts\activate.bat"
+if errorlevel 1 (
+    echo [ERROR] Failed to activate project build environment.
+    pause & exit /b 1
+)
 
 :: Terminate any running instances so Windows does not lock files in .agent\dist
 taskkill /F /IM SKC_translation.exe >nul 2>&1

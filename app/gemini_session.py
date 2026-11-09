@@ -1,27 +1,5 @@
-"""
-app/gemini_session.py — Gemini Live API Session Manager
-========================================================
-Starkville Korean Church (PCA) — Live Translation System
----------------------------------------------------------
-Manages a single, long-running Gemini Live API WebSocket session for the
-duration of a church service (typically 60–90 minutes).
-
-Session lifecycle
------------------
-1. ``model_resolver.get_candidate_sequence()`` determines the priority
-   of models to try on service start.
-2. ``GeminiSession.start()`` spawns ``_run_with_retry()`` as an asyncio Task.
-3. Once an initial candidate establishes a connection, it is LOCKED for the
-   duration of the service session.
-4. On first verified translation output (audio or text), the model is recorded
-   as Last Verified Model.
-5. In-session reconnects (e.g. GoAway) strictly reuse the locked model and resume session.
-6. Clean resets (e.g. Pause -> Resume or language drift watchdog) discard resumption
-   tokens and create a fresh context on the same locked model with incremented session epoch.
-7. On ``stop()``, transcript is flushed, and the model is unlocked.
-"""
+"""Fixed-model Gemini Live Translate session with automatic source detection."""
 import asyncio
-import collections
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -34,56 +12,46 @@ except ImportError:
     genai = None
     types = None
 
-from app.config import gemini_api_key, gemini_cfg, translation_cfg
+from app.config import gemini_api_key, gemini_cfg, gemini_model
 from app.events import operator_events
-from app.languages import parse_source_language_codes
 from app.logger import session_log, server_log
-from app.model_resolver import model_resolver
-
-SYSTEM_PROMPT = (
-    "You are a real-time simultaneous interpreter for a church service. "
-    "You will hear continuous Korean speech from a live sermon. "
-    "Output ONLY the English translation, as a continuous stream, matching "
-    "the pacing of the speaker. Do not wait for sentence completion if a "
-    "clause's meaning is already clear — begin translating as soon as possible "
-    "and revise if needed. Do not add commentary, labels, speaker names, or "
-    "explanations. Do not translate filler words or false starts literally; "
-    "translate the intended meaning cleanly into natural, idiomatic English. "
-    "Use appropriate English vocabulary for biblical and theological concepts. "
-    "When a Scripture verse is cited, translate the text accurately rather than "
-    "paraphrasing loosely. If the speaker pauses briefly, do not invent text — "
-    "wait for speech to resume. If Korean speech resumes after a pause, continue "
-    "translating without repeating earlier sentences."
-)
+from app.text_corrections import NameCorrector
 
 MAX_RECONNECT_ATTEMPTS = 3
-RECONNECT_BASE_DELAY = 2.0  # seconds, doubled each attempt
+RECONNECT_BASE_DELAY = 2.0
+QUOTA_RETRY_DELAYS = (2.0, 5.0)
+QUOTA_MESSAGE = (
+    "지출 한도 또는 API 할당량·요청 제한에 도달했습니다. / "
+    "Spending limit or API quota/rate limit reached."
+)
 
 
 def _matches_exception_text(exc: BaseException | None, target: str) -> bool:
-    """Recursively check if exc, nested sub-exceptions, cause, or context match target string."""
+    """Inspect grouped and chained exceptions without losing the original error."""
     if exc is None:
         return False
     if target in repr(exc) or target in str(exc):
         return True
-    if hasattr(exc, "exceptions"):
-        try:
-            if any(_matches_exception_text(sub, target) for sub in exc.exceptions):
-                return True
-        except Exception:
-            pass
-    cause = getattr(exc, "__cause__", None)
-    if cause and _matches_exception_text(cause, target):
+    nested = getattr(exc, "exceptions", ())
+    if any(_matches_exception_text(item, target) for item in nested):
         return True
-    context = getattr(exc, "__context__", None)
-    if context and _matches_exception_text(context, target):
-        return True
-    return False
+    return _matches_exception_text(exc.__cause__, target) or _matches_exception_text(exc.__context__, target)
 
 
 def _is_goaway_exception(exc: BaseException | None) -> bool:
-    """Check if exception or any nested sub-exception represents a Google Live API GoAway signal."""
     return _matches_exception_text(exc, "GoAway")
+
+
+def _is_quota_error(exc: BaseException) -> bool:
+    """Recognize billing/quota errors through WebSocket task exception groups."""
+    message = str(exc).casefold()
+    markers = ("429", "resource_exhausted", "quota", "rate limit", "rate_limit", "billing", "spend cap", "spending limit")
+    if any(marker in message for marker in markers):
+        return True
+    nested = getattr(exc, "exceptions", ())
+    return any(_is_quota_error(item) for item in nested) or any(
+        _is_quota_error(cause) for cause in (exc.__cause__, exc.__context__) if cause is not None
+    )
 
 
 class SessionStatus(str, Enum):
@@ -91,7 +59,7 @@ class SessionStatus(str, Enum):
     CONNECTING = "connecting"
     CONNECTED = "connected"
     RECONNECTING = "reconnecting"
-    FAILED = "failed"  # sustained failure after max retries or non-retryable config error
+    FAILED = "failed"
 
 
 @dataclass
@@ -101,11 +69,13 @@ class SessionState:
     last_event: str = ""
     last_latency_ms: float = 0.0
     last_update: float = field(default_factory=time.monotonic)
-
+    output_hidden: bool = False
+    audio_muted: bool = False
+    error_kind: str = ""
 
 
 class TranscriptEntry(NamedTuple):
-    timestamp: float   # time.monotonic() of turn start
+    timestamp: float
     source: str
     target: str
     source_lang: str = "ko"
@@ -120,59 +90,6 @@ class TranscriptEntry(NamedTuple):
         return self.target
 
 
-def evaluate_drift_score(
-    input_lang: str | None,
-    input_text: str,
-    output_lang: str | None,
-    output_text: str,
-    expected_source: str | list[str] | tuple[str, ...] = "ko+en",
-    target_language: str = "en",
-) -> int:
-    """Evaluate language drift score for a completed turn.
-
-    Returns:
-        0: within expected source/target envelope.
-        1: weak drift (unexpected input language code or unexpected script).
-        2: strong drift (output language does not match target language).
-    """
-    score = 0
-    clean_tgt = (target_language or "en").strip().lower()
-    src_codes = parse_source_language_codes(expected_source) or ("ko", "en")
-
-    # 1. Primary input check via Gemini's language_code
-    if "any" in src_codes:
-        # Unconstrained input: do not flag input language code or script
-        pass
-    elif input_lang:
-        in_clean = input_lang.strip().lower()
-        matches_expected = any(in_clean.startswith(s) for s in src_codes) or in_clean.startswith(clean_tgt)
-        if not matches_expected:
-            score += 1
-    elif input_text and "ko" in src_codes:
-        # Fallback script heuristic if language_code is missing for Korean source:
-        # Flag Japanese Hiragana (0x3040-0x309F) / Katakana (0x30A0-0x30FF) or Thai (0x0E00-0x0E7F)
-        for ch in input_text:
-            code = ord(ch)
-            if (0x3040 <= code <= 0x309F) or (0x30A0 <= code <= 0x30FF) or (0x0E00 <= code <= 0x0E7F):
-                score += 1
-                break
-
-    # 2. Target output check (must match target language)
-    if output_lang:
-        out_clean = output_lang.strip().lower()
-        if not out_clean.startswith(clean_tgt):
-            score += 2
-    elif output_text and clean_tgt == "en":
-        # If English output text contains substantial Hangul/Japanese instead of English
-        for ch in output_text:
-            code = ord(ch)
-            if (0xAC00 <= code <= 0xD7A3) or (0x3040 <= code <= 0x30FF):
-                score += 2
-                break
-
-    return score
-
-
 class GeminiSession:
     def __init__(
         self,
@@ -180,304 +97,139 @@ class GeminiSession:
         on_state_change: Callable[[SessionState], None] | None = None,
         on_source_transcript: Callable[[str], None] | None = None,
         on_audio_chunk: Callable[[bytes], None] | None = None,
-        glossary=None,  # GlossaryCorrector | None
+        corrector: NameCorrector | None = None,
         target_language_code: str = "en",
-        expected_source_language: str = "ko+en",
-        drift_window: int | None = None,
-        drift_threshold: int | None = None,
+        on_output_visibility: Callable[[bool, bool], None] | None = None,
     ):
-        self.target_language_code: str = (target_language_code or "en").lower().strip()
-        self.expected_source_language: str = (expected_source_language or "ko+en").lower().strip()
-        self.tag: str = f"Gemini:{self.target_language_code}"
+        self.target_language_code = (target_language_code or "en").strip().lower()
+        self.tag = f"Gemini:{self.target_language_code}"
+        self._model = gemini_model()
         self._on_caption = on_caption
         self._on_state = on_state_change
         self._on_source = on_source_transcript
         self._on_audio = on_audio_chunk
-        self._glossary = glossary
+        self._on_visibility = on_output_visibility
+        self._corrector = corrector or NameCorrector()
         self._state = SessionState()
         self._stop_event = asyncio.Event()
-        self._attempt = 0
-        self._reconnect_count: int = 0
-        self._session_epoch: int = 0
-        self._resumption_handle: str | None = None
         self._audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=500)
         self._task: asyncio.Task | None = None
         self._client: genai.Client | None = None
+        self._session_epoch = 0
+        self._attempt = 0
+        self._reconnect_count = 0
+        self._connected_once = False
+        self._dropped_audio_chunks = 0
         self._transcript: list[TranscriptEntry] = []
-        self._current_source: str = ""
-        self._current_target: str = ""
-        self._turn_in_lang: str | None = None
-        self._turn_out_lang: str | None = None
-        self._turn_start: float | None = None
-        self._first_audio_in_turn_sent_at: float | None = None
-        self._last_token_at: float = 0.0
-        self._has_verified_output: bool = False
-        self._dropped_audio_chunks: int = 0
-        self._auto_drift_correction: bool = bool(gemini_cfg().get("auto_drift_correction", False))
-
-        t_cfg = translation_cfg()
-        self._drift_window: int = drift_window if drift_window is not None else int(t_cfg.get("drift_window", 2))
-        self._drift_threshold: int = drift_threshold if drift_threshold is not None else int(t_cfg.get("drift_threshold", 3))
-        self._drift_history: collections.deque = collections.deque(maxlen=self._drift_window)
-        self._consecutive_clean_turns: int = 0
-        self._last_watchdog_reset_at: float = 0.0
-        self._turn_id: int = 0
-        self._last_evaluated_turn_id: int = -1
-
-
-    @property
-    def dropped_audio_chunks(self) -> int:
-        return self._dropped_audio_chunks
-
-    @property
-    def _current_ko(self) -> str:
-
-        """Backward compatibility alias for tests."""
-        return self._current_source
-
-    @_current_ko.setter
-    def _current_ko(self, val: str) -> None:
-        self._current_source = val
-
-    @property
-    def _current_en(self) -> str:
-        """Backward compatibility alias for tests."""
-        return self._current_target
-
-    @_current_en.setter
-    def _current_en(self, val: str) -> None:
-        self._current_target = val
-
-    def _get_client(self) -> genai.Client:
-        if self._client is None:
-            self._client = genai.Client(api_key=gemini_api_key())
-        return self._client
+        self._clear_turn()
 
     @property
     def current_model(self) -> str:
-        return model_resolver.active_model
+        return self._model
 
     @property
     def session_epoch(self) -> int:
         return self._session_epoch
 
     @property
-    def auto_drift_correction(self) -> bool:
-        return self._auto_drift_correction
-
-    @auto_drift_correction.setter
-    def auto_drift_correction(self, val: bool) -> None:
-        self._auto_drift_correction = bool(val)
-
-    def set_auto_drift_correction(self, enabled: bool) -> None:
-        self._auto_drift_correction = bool(enabled)
-
-    def clear_drift_state(self) -> None:
-        self._drift_history.clear()
-        self._consecutive_clean_turns = 0
+    def dropped_audio_chunks(self) -> int:
+        return self._dropped_audio_chunks
 
     @property
     def transcript(self) -> list[TranscriptEntry]:
         return list(self._transcript)
 
-    def reset_transcript(self) -> None:
-        self._transcript.clear()
-        self._current_source = ""
-        self._current_target = ""
-        self._turn_in_lang = None
-        self._turn_out_lang = None
-        self._turn_start = None
-        self._first_audio_in_turn_sent_at = None
-        self._has_verified_output = False
-        self.clear_drift_state()
-
-    def flush_current_turn(self) -> None:
-        """Commit any in-progress turn to the transcript (called on stop/pause)."""
-        self._commit_current_turn()
-
-    def _commit_current_turn(self) -> None:
-        if not (self._current_source.strip() or self._current_target.strip()):
-            return
-
-        self._turn_id += 1
-        current_turn_id = self._turn_id
-        src = self._current_source.strip()
-        tgt = self._current_target.strip()
-        in_lang = self._turn_in_lang
-        out_lang = self._turn_out_lang
-
-        if self._glossary and src and ("ko" in parse_source_language_codes(self.expected_source_language)) and self.target_language_code == "en":
-            tgt = self._glossary.correct(src, tgt)
-
-        self._transcript.append(TranscriptEntry(
-            timestamp=self._turn_start or time.monotonic(),
-            source=src,
-            target=tgt,
-            source_lang=self.expected_source_language,
-            target_lang=self.target_language_code,
-        ))
-
-        session_log.info(
-            "[%s] [Turn committed] %s (%s): %s | %s (%s): %s",
-            self.tag,
-            self.expected_source_language.upper(),
-            in_lang or "auto",
-            src,
-            self.target_language_code.upper(),
-            out_lang or self.target_language_code,
-            tgt,
-        )
-
-        # Clear turn accumulators immediately to prevent re-committing same turn
-        self._current_source = ""
-        self._current_target = ""
-        self._turn_in_lang = None
-        self._turn_out_lang = None
-        self._turn_start = None
-        self._first_audio_in_turn_sent_at = None
-
-        # Evaluate drift score exactly once per turn
-        if current_turn_id > self._last_evaluated_turn_id:
-            self._last_evaluated_turn_id = current_turn_id
-            self._evaluate_turn_drift(current_turn_id, in_lang, src, out_lang, tgt)
-
-    def _evaluate_turn_drift(
-        self,
-        turn_id: int,
-        in_lang: str | None,
-        src: str,
-        out_lang: str | None,
-        tgt: str,
-    ) -> None:
-        turn_score = evaluate_drift_score(
-            in_lang,
-            src,
-            out_lang,
-            tgt,
-            expected_source=self.expected_source_language,
-            target_language=self.target_language_code,
-        )
-        if turn_score == 0:
-            had_drift = len(self._drift_history) > 0
-            self._drift_history.clear()
-            self._consecutive_clean_turns += 1
-            if had_drift:
-                session_log.info(
-                    "[%s] [Drift] confirmation=0/3 (reset by clean %s turn)",
-                    self.tag,
-                    self.expected_source_language,
-                )
-        else:
-            self._drift_history.append(turn_score)
-            self._consecutive_clean_turns = 0
-            session_log.info(
-                "[%s] [Drift] turn=%d source=%s expected=%s score=+%d",
-                self.tag,
-                turn_id,
-                in_lang or "unknown",
-                self.expected_source_language,
-                turn_score,
-            )
-
-        total_drift = sum(self._drift_history)
-        if total_drift > 0:
-            session_log.info(
-                "[%s] [Drift] confirmation=%d/%d",
-                self.tag,
-                total_drift,
-                self._drift_threshold,
-            )
-
-        # Drift auto-recovery:
-        # 1. Total drift score >= self._drift_threshold (sustained across turns)
-        # 2. Only active when auto_drift_correction is True
-        # 3. Debounced by 15.0 seconds
-        # Source-language-agnostic: evaluate_drift_score() already checks the
-        # output language against target_language_code regardless of the
-        # expected source, so recovery applies to any source combination.
-        if total_drift >= self._drift_threshold:
-            now = time.monotonic()
-            if self._auto_drift_correction:
-                if (now - self._last_watchdog_reset_at) >= 15.0:
-                    self._last_watchdog_reset_at = now
-                    session_log.info("[%s] [Drift] recovered via clean session reset", self.tag)
-                    server_log.warning(
-                        "[%s] Auto drift recovery: score=%d >= %d. Resetting session cleanly.",
-                        self.tag,
-                        total_drift,
-                        self._drift_threshold,
-                    )
-                    operator_events.add(
-                        "warning",
-                        f"Auto drift recovery triggered [{self.target_language_code}] (score {total_drift})"
-                    )
-                    asyncio.create_task(self.reset_clean(reason="Language drift watchdog"))
-            else:
-                session_log.info(
-                    "[%s] [Drift] Score=%d >= %d (auto recovery disabled: expected_source=%s, auto_drift_correction=%s)",
-                    self.tag,
-                    total_drift,
-                    self._drift_threshold,
-                    self.expected_source_language,
-                    self._auto_drift_correction,
-                )
-                self._emit(last_event="⚠ 비정상 언어 감지 (수동 복구: Pause -> Resume)")
-                operator_events.add(
-                    "warning",
-                    f"Language drift detected [{self.target_language_code}] (score {total_drift}) — manual Pause -> Resume available"
-                )
-
-
-    async def _auto_commit_loop(self, epoch: int) -> None:
-        try:
-            while not self._stop_event.is_set() and epoch == self._session_epoch:
-                await asyncio.sleep(0.5)
-                if self._turn_start is not None and (self._current_source or self._current_target):
-                    silence_duration = time.monotonic() - self._last_token_at
-                    if silence_duration >= 1.5:  # matches PAUSE_THRESHOLD_S
-                        self._commit_current_turn()
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            session_log.error("[%s] Error in auto-commit loop: %s", self.tag, e)
-
-
-    def _emit(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self._state, k, v)
-        self._state.last_update = time.monotonic()
-        if self._on_state:
-            self._on_state(SessionState(**vars(self._state)))
-
     @property
     def state(self) -> SessionState:
         return SessionState(**vars(self._state))
+
+    def _emit(self, **kwargs) -> None:
+        for key, value in kwargs.items():
+            setattr(self._state, key, value)
+        self._state.last_update = time.monotonic()
+        if self._on_state:
+            self._on_state(self.state)
+
+    def _set_visibility(self, hidden: bool, muted: bool) -> None:
+        if (hidden, muted) == (self._state.output_hidden, self._state.audio_muted):
+            return
+        self._emit(output_hidden=hidden, audio_muted=muted)
+        if self._on_visibility:
+            self._on_visibility(hidden, muted)
+
+    def _clear_turn(self) -> None:
+        self._current_source = ""
+        self._current_target = ""
+        self._pending_source = ""
+        self._pending_target = ""
+        self._turn_in_lang: str | None = None
+        self._turn_out_lang: str | None = None
+        self._turn_start: float | None = None
+        self._first_audio_in_turn_sent_at: float | None = None
+        self._last_token_at = 0.0
+
+    def reset_transcript(self) -> None:
+        self._transcript.clear()
+        self._clear_turn()
+        self._set_visibility(False, False)
+
+    def flush_current_turn(self) -> None:
+        self._commit_current_turn()
+
+    def _commit_current_turn(self) -> None:
+        if not (self._current_source.strip() or self._current_target.strip() or self._turn_in_lang):
+            return
+        source, target = self._current_source.strip(), self._current_target.strip()
+        # Language metadata labels the transcript; it does not gate output.
+        session_log.info(
+            "[%s] [Turn received] source (%s): %s | target (%s): %s",
+            self.tag, self._turn_in_lang or "unknown", source,
+            self._turn_out_lang or self.target_language_code, target,
+        )
+        self._transcript.append(TranscriptEntry(
+            timestamp=self._turn_start or time.monotonic(),
+            source=self._corrector.correct(source),
+            target=self._corrector.correct(target),
+            source_lang=self._turn_in_lang or "unknown",
+            target_lang=self.target_language_code,
+        ))
+        self._clear_turn()
+
+    def _observe_source_language(self, language: str) -> None:
+        self._turn_in_lang = language
+
+    def _publish_pending_text(self) -> None:
+        if self._pending_source and self._on_source:
+            self._on_source(self._pending_source)
+        if self._pending_target:
+            self._on_caption(self._pending_target)
+        self._pending_source = self._pending_target = ""
+
+    def _get_client(self) -> genai.Client:
+        if self._client is None:
+            self._client = genai.Client(api_key=gemini_api_key())
+        return self._client
 
     def _drain_audio_queue(self) -> None:
         while not self._audio_queue.empty():
             try:
                 self._audio_queue.get_nowait()
-            except Exception:
+            except asyncio.QueueEmpty:
                 break
 
     async def start(self) -> None:
         self._stop_event.clear()
-        self._has_verified_output = False
         self._session_epoch += 1
-        self._resumption_handle = None
         self._reconnect_count = 0
-        self.clear_drift_state()
+        self._connected_once = False
+        self._clear_turn()
+        self._set_visibility(False, False)
         self._drain_audio_queue()
         self._task = asyncio.create_task(self._run_with_retry())
 
-    async def pause_clean(self) -> None:
-        """Pause service: closes Gemini session, discards resumption handle, drains queues.
-        Preserves model lock in model_resolver."""
+    async def _close_current_session(self) -> None:
         self._stop_event.set()
         self.flush_current_turn()
-        self._resumption_handle = None
-        self._has_verified_output = False
-        self.clear_drift_state()
         if self._task and not self._task.done():
             self._task.cancel()
             try:
@@ -485,424 +237,202 @@ class GeminiSession:
             except asyncio.CancelledError:
                 pass
         self._task = None
+        self._clear_turn()
+        self._set_visibility(False, False)
         self._drain_audio_queue()
+
+    async def pause_clean(self) -> None:
+        await self._close_current_session()
         self._emit(status=SessionStatus.STOPPED, last_event="Paused (clean standby)", reconnect_count=self._reconnect_count)
         operator_events.add("gemini", "Gemini translation paused (clean standby)")
 
     async def resume_clean(self) -> None:
-        """Resume service: creates a fresh Gemini Live session with clean context and incremented epoch.
-        Reuses the existing locked model without re-resolving."""
         self._session_epoch += 1
         self._stop_event.clear()
-        self._resumption_handle = None
-        self._has_verified_output = False
-        self.clear_drift_state()
+        self._clear_turn()
+        self._set_visibility(False, False)
         self._drain_audio_queue()
-        server_log.info("Resuming Gemini session cleanly (epoch %d) on locked model: %s", self._session_epoch, model_resolver.locked_model)
-        self._task = asyncio.create_task(self._run_with_retry(is_clean_resume=True))
-
-    async def reset_clean(self, reason: str = "Clean reset") -> None:
-        """Reset active session cleanly (destroys old context, increments epoch, reconnects locked model)."""
-        server_log.info("Performing clean Gemini reset (epoch %d -> %d): %s", self._session_epoch, self._session_epoch + 1, reason)
-        self._session_epoch += 1
-        self._stop_event.set()
-        self.flush_current_turn()
-        self._resumption_handle = None
-        self._has_verified_output = False
-        self.clear_drift_state()
-        if self._task and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        self._drain_audio_queue()
-        self._stop_event.clear()
+        server_log.info("Resuming Gemini session cleanly (epoch %d) on configured model: %s", self._session_epoch, self._model)
         self._task = asyncio.create_task(self._run_with_retry(is_clean_resume=True))
 
     async def stop(self) -> None:
-        self._stop_event.set()
-        self.flush_current_turn()
-        if self._task and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        self._task = None
-        self._resumption_handle = None
+        await self._close_current_session()
         self._reconnect_count = 0
-        self.clear_drift_state()
-        self._drain_audio_queue()
-        model_resolver.unlock_session()
-        self._emit(status=SessionStatus.STOPPED,
-                   last_event="Stopped by operator",
-                   reconnect_count=0)
+        self._emit(status=SessionStatus.STOPPED, last_event="Stopped by operator", reconnect_count=0, error_kind="")
         operator_events.add("gemini", "Gemini session stopped")
 
     async def send_audio(self, chunk: bytes) -> None:
         try:
             self._audio_queue.put_nowait(chunk)
         except asyncio.QueueFull:
-            pass  # drop under backpressure rather than stall
+            self._dropped_audio_chunks += 1
+
+    async def _auto_commit_loop(self, epoch: int) -> None:
+        while not self._stop_event.is_set() and epoch == self._session_epoch:
+            await asyncio.sleep(0.5)
+            if self._turn_start is not None and time.monotonic() - self._last_token_at >= 1.5:
+                self._commit_current_turn()
 
     async def _run_with_retry(self, is_clean_resume: bool = False) -> None:
         self._attempt = 0
-        MAX_BACKOFF_SECONDS = 60.0
-
-        # Phase 1: If session is not locked, resolve candidate sequence (Initial Connection Fallback)
-        if model_resolver.locked_model is None:
-            candidates = model_resolver.get_candidate_sequence()
-            connected_model = None
-            primary_candidate = candidates[0] if candidates else model_resolver.fallback_model
-
-            for idx, candidate in enumerate(candidates):
-                if self._stop_event.is_set():
-                    return
-                try:
-                    self._emit(
-                        status=SessionStatus.CONNECTING,
-                        last_event=f"Connecting to {candidate}",
-                        reconnect_count=self._reconnect_count,
-                    )
-                    server_log.info("Attempting initial connection with candidate [%d/%d]: %s", idx + 1, len(candidates), candidate)
-                    operator_events.add("gemini", f"Connecting to {candidate}")
-
-                    is_fallback = (candidate != primary_candidate)
-                    fallback_reason = f"Primary candidate '{primary_candidate}' failed; fell back to '{candidate}'" if is_fallback else ""
-
-                    # Lock the model once chosen
-                    model_resolver.lock_session(candidate, is_fallback=is_fallback, reason=fallback_reason)
-                    connected_model = candidate
-                    break
-
-                except Exception as e:
-                    server_log.warning("Initial connection candidate %s failed: %s", candidate, e)
-                    continue
-
-            if connected_model is None:
-                err_msg = f"All candidate models failed: {', '.join(candidates)}"
-                server_log.error(err_msg)
-                self._emit(status=SessionStatus.FAILED, last_event=err_msg, reconnect_count=self._reconnect_count)
-                operator_events.add("error", "Gemini connection failed for all candidates", {"candidates": candidates})
-                return
-
-        # Phase 2: In-session loop with exponential backoff on GoAway / errors using locked model
-        locked_model = model_resolver.locked_model or model_resolver.fallback_model
-        is_first_connect = True
-
+        quota_failures = 0
         while not self._stop_event.is_set():
-            current_epoch = self._session_epoch
+            epoch = self._session_epoch
+            reconnect = self._connected_once and not is_clean_resume
+            is_clean_resume = False
             try:
-                is_reconnect = not is_first_connect and not is_clean_resume
-                if self._attempt > 0 or is_reconnect:
-                    status = SessionStatus.RECONNECTING
-                    event_msg = f"Reconnecting to {locked_model} (attempt {self._attempt})" if self._attempt > 0 else f"Reconnecting to {locked_model}"
-                    if self._attempt > 0:
-                        operator_events.add("network", f"Reconnecting to Gemini (attempt {self._attempt})", {"attempt": self._attempt, "model": locked_model})
-                    else:
-                        operator_events.add("gemini", f"Reconnecting Gemini session ({locked_model})")
-                else:
-                    status = SessionStatus.CONNECTING
-                    event_msg = f"Attempting connection to {locked_model}"
-                    operator_events.add("gemini", f"Attempting connection to {locked_model}")
-
-                self._emit(status=status, last_event=event_msg, reconnect_count=self._reconnect_count)
-                server_log.info(event_msg)
-                session_log.debug(event_msg)
-
-                await self._run_session(model=locked_model, is_reconnect=is_reconnect, epoch=current_epoch, is_clean_resume=is_clean_resume)
-                self._attempt = 0  # reset on clean run completion
-                is_first_connect = False
-                is_clean_resume = False
+                status = SessionStatus.RECONNECTING if reconnect or self._attempt else SessionStatus.CONNECTING
+                self._emit(status=status, last_event=f"Connecting to configured model: {self._model}", error_kind="")
+                await self._run_session(self._model, reconnect, epoch)
                 if self._stop_event.is_set():
                     return
-
-            except (ValueError, TypeError) as e:
-                # Fatal non-retryable configuration error (e.g. invalid LiveConnectConfig / SDK schema incompatibility)
-                err_msg = f"Configuration error: {e}"
-                server_log.error("Non-retryable Gemini configuration error: %s", e)
-                session_log.error("Non-retryable Gemini configuration error: %s", e)
-                self._emit(
-                    status=SessionStatus.FAILED,
-                    last_event=err_msg,
-                    reconnect_count=self._reconnect_count
-                )
-                operator_events.add("error", "Gemini configuration error — session stopped", {"error": str(e), "model": locked_model})
-                return
-
+                raise ConnectionError("Gemini stream ended")
             except asyncio.CancelledError:
-                server_log.info("Retry loop cancelled (epoch %d) — exiting cleanly", current_epoch)
-                session_log.debug("Retry loop cancelled (epoch %d) — exiting cleanly", current_epoch)
                 raise
-
-            except Exception as e:
-                if _matches_exception_text(e, "1000") and self._stop_event.is_set():
+            except Exception as exc:
+                if self._stop_event.is_set() or epoch != self._session_epoch:
                     return
-
-                is_goaway = _is_goaway_exception(e)
-                if is_goaway:
+                if _is_quota_error(exc):
+                    quota_failures += 1
+                    # This budget survives successful handshakes: a stream
+                    # that immediately fails again must still stop.
+                    if quota_failures > len(QUOTA_RETRY_DELAYS):
+                        self._emit(status=SessionStatus.FAILED, error_kind="quota", last_event=(
+                            f"{QUOTA_MESSAGE} 자동 재시도를 중단했습니다. / Automatic retries stopped."
+                        ))
+                        operator_events.add("error", self._state.last_event)
+                        session_log.error("[%s] Quota/billing retry budget exhausted: %s", self.tag, exc)
+                        return
+                    delay = QUOTA_RETRY_DELAYS[quota_failures - 1]
+                    self._emit(status=SessionStatus.RECONNECTING, error_kind="quota", last_event=(
+                        f"{QUOTA_MESSAGE} {delay:g}초 후 재시도 ({quota_failures}/3). / "
+                        f"Retrying in {delay:g}s ({quota_failures}/3)."
+                    ))
+                    operator_events.add("warning", self._state.last_event)
+                    session_log.warning("[%s] Quota/billing failure %d/3; retry in %.1fs: %s", self.tag, quota_failures, delay, exc)
+                    await self._wait_before_retry(delay)
+                    continue
+                unavailable = any(_matches_exception_text(exc, marker) for marker in ("404", "NOT_FOUND", "not found", "1008"))
+                if isinstance(exc, (ValueError, TypeError)) or unavailable:
+                    label = "Configured model unavailable" if unavailable else "Configuration error"
+                    self._emit(status=SessionStatus.FAILED, last_event=f"{label}: {self._model}: {exc}")
+                    operator_events.add("error", f"{label}: {self._model}")
+                    session_log.error("[%s] %s: %s", self.tag, label, exc)
+                    return
+                if _is_goaway_exception(exc):
                     delay = 0.2
-                    server_log.info("GoAway received — reconnecting immediately in %.1fs", delay)
-                    session_log.debug("GoAway received — reconnecting immediately in %.1fs", delay)
+                    session_log.info("[%s] GoAway: reconnecting to %s", self.tag, self._model)
                 else:
                     self._attempt += 1
                     if self._attempt >= MAX_RECONNECT_ATTEMPTS:
-                        server_log.error("Max reconnect attempts reached for %s — translation unavailable", locked_model)
-                        session_log.debug("Max reconnect attempts reached for %s — translation unavailable", locked_model)
-                        self._emit(
-                            status=SessionStatus.FAILED,
-                            last_event=f"Translation unavailable: {e}",
-                            reconnect_count=self._reconnect_count
-                        )
-                        operator_events.add("error", "Gemini failed: max reconnects reached",
-                                            {"error": str(e), "attempts": self._attempt, "model": locked_model})
+                        self._emit(status=SessionStatus.FAILED, last_event=f"Translation unavailable on {self._model}: {exc}")
+                        operator_events.add("error", f"Gemini connection failed: {self._model}")
                         return
-                    delay = min(RECONNECT_BASE_DELAY * (2 ** (self._attempt - 1)), MAX_BACKOFF_SECONDS)
-                    server_log.warning(
-                        "Session error (attempt %d on %s): %s — retrying in %.1fs",
-                        self._attempt, locked_model, e, delay
-                    )
-                    session_log.debug(
-                        "Session error (attempt %d on %s): %s — retrying in %.1fs",
-                        self._attempt, locked_model, e, delay
-                    )
-                try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
-                except asyncio.TimeoutError:
-                    pass
+                    delay = min(RECONNECT_BASE_DELAY * 2 ** (self._attempt - 1), 60.0)
+                    server_log.warning("[%s] Connection error on %s: %s; retry in %.1fs", self.tag, self._model, exc, delay)
+                await self._wait_before_retry(delay)
 
-    def _build_config(self, model_name: str) -> types.LiveConnectConfig:
-        voice = gemini_cfg().get("voice", "orus")
-        is_translate_model = "translate" in model_name.lower()
+    async def _wait_before_retry(self, delay: float) -> None:
+        try:
+            await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
+        except asyncio.TimeoutError:
+            pass
 
-        custom_vocab = None
-        if self._glossary and hasattr(self._glossary, "get_custom_vocabulary"):
-            custom_vocab = self._glossary.get_custom_vocabulary() or None
-
-        transcription_kwargs = {}
-        if self.expected_source_language == "ko+en":
-            transcription_kwargs["language_codes"] = ["ko", "en"]
-        if custom_vocab:
-            transcription_kwargs["custom_vocabulary"] = custom_vocab
-
-        if is_translate_model:
-            # Gemini Developer API Live Translate configuration
-            return types.LiveConnectConfig(
-                response_modalities=["AUDIO"],
-                translation_config=types.TranslationConfig(
-                    target_language_code=self.target_language_code,
-                    echo_target_language=True,
+    def _build_config(self) -> types.LiveConnectConfig:
+        return types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            translation_config=types.TranslationConfig(
+                target_language_code=self.target_language_code, echo_target_language=True,
+            ),
+            speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=gemini_cfg().get("voice", "orus")),
+            )),
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    disabled=False, start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+                    prefix_padding_ms=200, silence_duration_ms=700,
                 ),
-                speech_config=types.SpeechConfig(
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name=voice,
-                        )
-                    )
-                ),
-                input_audio_transcription=types.AudioTranscriptionConfig(
-                    **transcription_kwargs,
-                ),
-                output_audio_transcription=types.AudioTranscriptionConfig(),
-                realtime_input_config=types.RealtimeInputConfig(
-                    automatic_activity_detection=types.AutomaticActivityDetection(
-                        disabled=False,
-                        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
-                        prefix_padding_ms=200,
-                        silence_duration_ms=700,
-                    ),
-                ),
-                context_window_compression=types.ContextWindowCompressionConfig(
-                    sliding_window=types.SlidingWindow(),
-                ),
-                # Note: Session resumption is intentionally omitted to perform clean stateless
-                # rollovers across 9-minute GoAways, preventing token bloat and translation drift.
-            )
-        else:
-            # Fallback for general models with system prompt translation
-            return types.LiveConnectConfig(
-                response_modalities=["TEXT"],
-                system_instruction=SYSTEM_PROMPT,
-                input_audio_transcription=types.AudioTranscriptionConfig(
-                    **transcription_kwargs,
-                ),
-                realtime_input_config=types.RealtimeInputConfig(
-                    automatic_activity_detection=types.AutomaticActivityDetection(
-                        disabled=False,
-                        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
-                        prefix_padding_ms=200,
-                        silence_duration_ms=700,
-                    ),
-                ),
-                context_window_compression=types.ContextWindowCompressionConfig(
-                    sliding_window=types.SlidingWindow(),
-                ),
-            )
-
-    async def _run_session(self, model: str, is_reconnect: bool, epoch: int, is_clean_resume: bool = False) -> None:
-        config = self._build_config(model)
-        is_resuming = self._resumption_handle is not None
-
-        server_log.info(
-            "[%s] Session connect starting: model=%s resumption_handle_present=%s epoch=%d",
-            self.tag,
-            model,
-            is_resuming,
-            epoch,
+            ),
+            context_window_compression=types.ContextWindowCompressionConfig(sliding_window=types.SlidingWindow()),
         )
 
-        client = self._get_client()
-        try:
-            async with client.aio.live.connect(
-                model=model, config=config
-            ) as session:
-                self._attempt = 0
-                if is_reconnect and not is_clean_resume:
-                    self._reconnect_count += 1
-                self._emit(
-                    status=SessionStatus.CONNECTED,
-                    last_event="Connected to Gemini",
-                    reconnect_count=self._reconnect_count,
-                )
-                server_log.info("[%s] Gemini Live session connected successfully on model: %s (epoch %d)", self.tag, model, epoch)
-                operator_events.add("gemini", f"Live translation active [{self.target_language_code}] ({model})")
-
-                async with asyncio.TaskGroup() as tg:
-                    tg.create_task(self._send_loop(session, epoch))
-                    tg.create_task(self._recv_loop(session, model, epoch))
-                    tg.create_task(self._auto_commit_loop(epoch))
-                    while not self._stop_event.is_set() and epoch == self._session_epoch:
-                        await asyncio.sleep(0.1)
-        except (ValueError, TypeError) as e:
-            # Propagate configuration errors directly without swallowing as 1000/disconnect
-            raise e
-        except asyncio.CancelledError:
-            if self._stop_event.is_set() or epoch != self._session_epoch:
-                return
-            raise
-        except Exception as e:
-            if _matches_exception_text(e, "1000") and (self._stop_event.is_set() or epoch != self._session_epoch):
-                return
-            log_fn = server_log.info if _is_goaway_exception(e) else server_log.error
-            log_fn(
-                "[%s] SESSION_FAILURE: model=%s type=%s message=%s (epoch=%d)",
-                self.tag,
-                model,
-                type(e).__name__,
-                str(e),
-                epoch,
-            )
-            raise e
+    async def _run_session(self, model: str, is_reconnect: bool, epoch: int) -> None:
+        async with self._get_client().aio.live.connect(model=model, config=self._build_config()) as session:
+            self._attempt = 0
+            self._connected_once = True
+            if is_reconnect:
+                self._reconnect_count += 1
+            self._emit(status=SessionStatus.CONNECTED, last_event=f"Connected to {model}", reconnect_count=self._reconnect_count)
+            operator_events.add("gemini", f"Live translation active [{self.target_language_code}] ({model})")
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(self._send_loop(session, epoch))
+                receiver = tasks.create_task(self._recv_loop(session, model, epoch))
+                tasks.create_task(self._auto_commit_loop(epoch))
+                while not self._stop_event.is_set() and epoch == self._session_epoch:
+                    if receiver.done():
+                        await receiver
+                        raise ConnectionError("Gemini receive stream ended")
+                    await asyncio.sleep(0.1)
 
     async def _send_loop(self, session, epoch: int) -> None:
-        try:
-            while not self._stop_event.is_set() and epoch == self._session_epoch:
-                try:
-                    chunk = await asyncio.wait_for(self._audio_queue.get(), timeout=1.0)
-                    if epoch != self._session_epoch:
-                        break
-                    if self._turn_start is None and not self._current_source:
-                        self._first_audio_in_turn_sent_at = time.monotonic()
-                    await session.send_realtime_input(
-                        audio=types.Blob(
-                            data=chunk, mime_type="audio/pcm;rate=16000")
-                    )
-                except asyncio.TimeoutError:
-                    continue
-        except Exception:
-            if not self._stop_event.is_set() and epoch == self._session_epoch:
-                raise
+        while not self._stop_event.is_set() and epoch == self._session_epoch:
+            try:
+                chunk = await asyncio.wait_for(self._audio_queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            if epoch != self._session_epoch:
+                return
+            if self._turn_start is None:
+                self._first_audio_in_turn_sent_at = time.monotonic()
+            await session.send_realtime_input(audio=types.Blob(data=chunk, mime_type="audio/pcm;rate=16000"))
 
     async def _recv_loop(self, session, model: str, epoch: int) -> None:
-        try:
+        while not self._stop_event.is_set() and epoch == self._session_epoch:
+            received = False
             async for response in session.receive():
+                received = True
                 if self._stop_event.is_set() or epoch != self._session_epoch:
-                    break
-
-                if hasattr(response, "session_resumption_update") and response.session_resumption_update:
-                    # Stateless session rollover: Resumption handle is intentionally ignored
-                    # to prevent token accumulation and context drift across long sermon sessions.
-                    pass
-
-                if hasattr(response, "go_away") and response.go_away:
-                    server_log.info("[%s] GoAway received — initiating graceful reconnect", self.tag)
+                    return
+                if getattr(response, "go_away", None):
                     self._emit(last_event="GoAway: reconnecting")
-                    operator_events.add("network", f"GoAway [{self.target_language_code}] — reconnecting")
                     raise RuntimeError("GoAway")
-
-                sc = getattr(response, "server_content", None)
-
-                # Audio PCM chunks (24kHz PCM16 mono)
-                if sc and epoch == self._session_epoch:
-                    for part in getattr(getattr(sc, "model_turn", None), "parts", None) or []:
-                        blob = getattr(part, "inline_data", None)
-                        if blob and self._on_audio and epoch == self._session_epoch:
-                            self._on_audio(blob.data)
-                            if not self._has_verified_output:
-                                self._has_verified_output = True
-                                model_resolver.record_verified_success(model)
-
-                # Incremental Source transcriptions
-                if sc and epoch == self._session_epoch:
-                    it = getattr(sc, "input_transcription", None)
-                    if it and getattr(it, "text", None):
-                        in_text = it.text
-                        in_lang = getattr(it, "language_code", None) or getattr(it, "languageCode", None)
-                        if in_lang:
-                            self._turn_in_lang = in_lang
-                        self._current_source += in_text
-                        self._last_token_at = time.monotonic()
-                        session_log.info(
-                            "[%s] [%s (%s)] %s",
-                            self.tag,
-                            self.expected_source_language.upper(),
-                            in_lang or self._turn_in_lang or "auto",
-                            in_text,
-                        )
-                        if self._on_source and epoch == self._session_epoch:
-                            self._on_source(in_text)
-
-                # Incremental target translated text
-                target_text = response.text or ""
-                if sc and epoch == self._session_epoch:
-                    ot = getattr(sc, "output_transcription", None)
-                    if ot:
-                        out_lang = getattr(ot, "language_code", None) or getattr(ot, "languageCode", None)
-                        if out_lang:
-                            self._turn_out_lang = out_lang
-                        if getattr(ot, "text", None) and not target_text:
-                            target_text = ot.text
-
-                if target_text and epoch == self._session_epoch:
-                    if not self._has_verified_output:
-                        self._has_verified_output = True
-                        model_resolver.record_verified_success(model)
-
+                content = getattr(response, "server_content", None)
+                if not content:
+                    continue
+                incoming = getattr(content, "input_transcription", None)
+                language = (getattr(incoming, "language_code", None) or getattr(incoming, "languageCode", None))
+                if language:
+                    self._observe_source_language(language.lower())
+                source = getattr(incoming, "text", None) or ""
+                outgoing = getattr(content, "output_transcription", None)
+                if outgoing:
+                    self._turn_out_lang = getattr(outgoing, "language_code", None) or getattr(outgoing, "languageCode", None)
+                target = response.text or getattr(outgoing, "text", None) or ""
+                if source or target:
+                    now = time.monotonic()
                     if self._turn_start is None:
-                        self._turn_start = time.monotonic()
+                        self._turn_start = now
                         if self._first_audio_in_turn_sent_at is not None:
-                            latency_ms = (self._turn_start - self._first_audio_in_turn_sent_at) * 1000
-                            self._emit(last_latency_ms=latency_ms)
-                    self._current_target += target_text
-                    self._last_token_at = time.monotonic()
-                    if self._on_caption and epoch == self._session_epoch:
-                        self._on_caption(target_text)
-                    session_log.debug(
-                        "[%s] [%s delta (%s)] %s",
-                        self.tag,
-                        self.target_language_code.upper(),
-                        self._turn_out_lang or self.target_language_code,
-                        target_text,
-                    )
-
-                # Completed turn boundary from server
-                if sc and getattr(sc, "turn_complete", False) and epoch == self._session_epoch:
+                            self._emit(last_latency_ms=(now - self._first_audio_in_turn_sent_at) * 1000)
+                    self._last_token_at = now
+                if source:
+                    self._current_source += source
+                    self._pending_source += source
+                    session_log.info("[%s] [Source (%s)] %s", self.tag, self._turn_in_lang or "unknown", source)
+                if target:
+                    self._current_target += target
+                    self._pending_target += target
+                    session_log.debug("[%s] [Target (%s)] %s", self.tag, self._turn_out_lang or self.target_language_code, target)
+                self._publish_pending_text()
+                # Forward translated audio regardless of the detected source language.
+                if not self._state.audio_muted and self._on_audio:
+                    for part in getattr(getattr(content, "model_turn", None), "parts", None) or []:
+                        blob = getattr(part, "inline_data", None)
+                        if blob and getattr(blob, "data", None):
+                            self._on_audio(blob.data)
+                if getattr(content, "turn_complete", False):
                     self._commit_current_turn()
-
-        except Exception as e:
-            if "1000" in str(e) and (self._stop_event.is_set() or epoch != self._session_epoch):
+            if not received:
                 return
-            if not self._stop_event.is_set() and epoch == self._session_epoch:
-                raise
-

@@ -18,7 +18,7 @@ church:
 audio:
   # [운영자 설정] 오디오 인터페이스 또는 USB 믹서 인덱스
   # 콘솔에서 'python -m app.audio --list' 명령어로 장치 번호 확인 가능
-  device_index: 1
+  device_index: 14
 
   # 오디오 캡처 매개변수 (Gemini Live API 권장 규격)
   sample_rate: 16000                      # 샘플링 레이트 (Hz) - 16kHz
@@ -33,10 +33,8 @@ audio:
 # 3. 구글 제미나이 AI 모델 설정 (Gemini Live Engine)
 # ------------------------------------------------------------------------------
 gemini:
-  preferred_model: gemini-3.5-live-translate-preview   # 주 번역 AI 모델
-  fallback_model: gemini-3.5-live-translate-preview    # 비상 대체 AI 모델
+  model: gemini-3.5-live-translate-preview   # 사용할 모델을 직접 지정합니다.
   voice: orus                                         # 오디오 합성 음성 (orus 고정)
-  context_seed: true                                  # 기독교 예배 문맥 프롬프트 주입 여부
 
 # ------------------------------------------------------------------------------
 # 4. 교회 내부망 연결 설정 (Intranet - Sanctuary Wi-Fi)
@@ -61,16 +59,15 @@ internet:
 # 6. 다국어 통역 언어 설정 (Translation Languages)
 # ------------------------------------------------------------------------------
 translation:
-  # 설교자 기본 발화 언어: 'ko' (한국어), 'en' (영어), 'ko+en' (혼용), 'any' (자동 감지)
-  expected_source_language: ko+en
+  # 원문 언어는 자동 감지하며 아래에서 출력 언어만 선택합니다.
 
   # 시스템이 지원하는 통역 대상 언어 목록
   supported_targets:
-    - en                                  # 영어 (English)
-    - ko                                  # 한국어 (Korean)
-    - uk                                  # 우크라이나어 (Ukrainian)
-    - zh                                  # 중국어 (Chinese)
-    - es                                  # 스페인어 (Spanish)
+    - en
+    - ko
+    - uk
+    - zh
+    - es
 
   # 서비스 시작 시 기본 활성화되는 통역 대상 언어
   default_active_targets:

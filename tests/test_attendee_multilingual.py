@@ -46,7 +46,7 @@ def test_attendee_sse_stream_receives_target_events():
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
          patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
-        asyncio.run(manager.start(active_targets=["en", "uk"], expected_source_language="ko"))
+        asyncio.run(manager.start(active_targets=["en", "uk"]))
 
         b_uk = manager.get_broadcaster("uk")
         assert b_uk is not None
@@ -117,7 +117,7 @@ def test_audio_stream_lifecycle_and_target_switching():
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
          patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
-        asyncio.run(manager.start(active_targets=["en", "es", "zh"], expected_source_language="ko"))
+        asyncio.run(manager.start(active_targets=["en", "es", "zh"]))
 
         b_es = manager.get_broadcaster("es")
         b_zh = manager.get_broadcaster("zh")
@@ -163,7 +163,7 @@ def test_multi_tab_independent_audio_and_tab_close():
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
          patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
-        asyncio.run(manager.start(active_targets=["en", "zh", "es"], expected_source_language="ko"))
+        asyncio.run(manager.start(active_targets=["en", "zh", "es"]))
 
         b_en = manager.get_broadcaster("en")
         b_zh = manager.get_broadcaster("zh")

@@ -120,6 +120,11 @@ _log_base = Path(_sys.executable).parent if getattr(_sys, "frozen", False) else 
 _log_dir  = _log_base / _cfg.get("log_dir", "logs")
 _log_dir.mkdir(exist_ok=True)
 
+
+def log_directory() -> Path:
+    """Return the active log destination, including the frozen EXE base."""
+    return _log_dir.resolve()
+
 _file_fmt    = _FileFormatter()
 _console_fmt = _ConsoleFormatter()
 

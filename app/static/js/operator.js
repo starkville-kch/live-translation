@@ -22,7 +22,6 @@ let lastStatusData = null;
 let _cachedDeviceName = "";
 let _isRefreshingDevices = false;
 let isTestingModel = false;
-let autoDriftCorrectionEnabled = false;
 let _serviceRunning = false;
 let _paused = false;
 let _pauseTimerLocal = 0;
@@ -45,8 +44,6 @@ const audioMonitorLangDisplay   = document.getElementById('audio-monitor-lang-di
 let _monitorTarget              = 'en';
 const selDevice         = document.getElementById('device-select');
 const btnRefreshDevices = document.getElementById('btn-refresh-devices');
-const radioDriftManual  = document.getElementById('drift-manual');
-const radioDriftAuto    = document.getElementById('drift-auto');
 
 
 const SESSION_COLOR = { connected:'ok', reconnecting:'warn', failed:'err', connecting:'warn', stopped:'' };
@@ -267,60 +264,6 @@ if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
 }
 
 // ============================================================
-// LANGUAGE DRIFT CORRECTION UI
-// ============================================================
-function updateDriftUI(enabled) {
-
-  const isEn = getOperatorUiLanguage() === 'en';
-  const descEl = document.getElementById('stat-drift-status');
-
-  if (radioDriftAuto) {
-    radioDriftAuto.disabled = false;
-  }
-
-  if (enabled) {
-    if (radioDriftAuto) radioDriftAuto.checked = true;
-    if (descEl) {
-      descEl.textContent = isEn ? 'Auto recovery on unexpected language drift' : '잘못된 언어 감지 시 세션 자동 리셋';
-      descEl.style.color = 'var(--color-navy-900)';
-    }
-  } else {
-    if (radioDriftManual) radioDriftManual.checked = true;
-    if (descEl) {
-      descEl.textContent = isEn ? 'Manual recovery on unexpected drift (Pause → Resume)' : '잘못된 언어 감지 시 수동 교정 (일시정지 → 다시 시작)';
-      descEl.style.color = 'var(--color-text-muted)';
-    }
-  }
-}
-
-if (radioDriftManual) {
-  radioDriftManual.addEventListener('change', () => {
-    if (radioDriftManual.checked) {
-      autoDriftCorrectionEnabled = false;
-      updateDriftUI(false);
-      fetch('/api/drift-correction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auto_drift_correction: false })
-      }).catch(() => {});
-    }
-  });
-}
-if (radioDriftAuto) {
-  radioDriftAuto.addEventListener('change', () => {
-    if (radioDriftAuto.checked) {
-      autoDriftCorrectionEnabled = true;
-      updateDriftUI(true);
-      fetch('/api/drift-correction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auto_drift_correction: true })
-      }).catch(() => {});
-    }
-  });
-}
-
-// ============================================================
 // UI LANGUAGE SELECTION
 // ============================================================
 
@@ -331,6 +274,11 @@ function getOperatorUiLanguage() {
   return _currentUiLang;
 }
 
+/**
+ * @param {string} lang Operator language code.
+ * @param {boolean} syncToServer Whether to persist the selected language.
+ * @returns {void}
+ */
 function setOperatorUiLanguage(lang, syncToServer = false) {
   _currentUiLang = (lang === 'en') ? 'en' : 'ko';
   localStorage.setItem('skc_ui_lang', _currentUiLang);
@@ -361,15 +309,20 @@ function setOperatorUiLanguage(lang, syncToServer = false) {
   } else {
     updateControlBar({ state: _serviceRunning ? (_paused ? 'paused' : 'running') : 'stopped' });
   }
-  updateDriftUI(autoDriftCorrectionEnabled);
   renderAudioButton();
-  if (typeof renderModelDropdown === 'function') renderModelDropdown();
-  if (typeof updateSourceUI === 'function') updateSourceUI();
   if (typeof renderSelectedTargets === 'function') renderSelectedTargets();
   if (typeof pollStatus === 'function') pollStatus();
 }
 
 
+/** @returns {string} Localized likely cause for billing, quota, or rate-limit failures. */
+function quotaLimitLabel() {
+  return getOperatorUiLanguage() === 'en'
+    ? 'Possible spending limit, quota, or rate limit'
+    : '지출 한도·할당량 또는 요청 빈도 제한 가능성';
+}
+
+/** @param {Object} st Current service status. */
 function updateControlBar(st) {
   if (!serviceStatusPill) return;
   const statusMain = serviceStatusPill.querySelector('.pill-main');
@@ -544,6 +497,14 @@ function updateControlBar(st) {
     _paused = false;
     _pauseTimerLocal = 0;
   }
+  if (st?.session?.error_kind === 'quota' && pillSub) {
+    pillSub.textContent = quotaLimitLabel() + (sessionStatus === 'failed'
+      ? (isEn ? '. Stop Service, then check billing and quotas.' : '. 서비스 종료 후 결제·할당량을 확인하세요.')
+      : (isEn ? '. Retrying briefly.' : '. 잠시 후 제한된 횟수만 재시도합니다.'));
+    pillSub.style.display = 'block';
+    pillSub.style.color = 'var(--color-error)';
+    if (sessionStatus === 'failed' && btnPrimaryAction) btnPrimaryAction.disabled = true;
+  }
 }
 
 
@@ -563,8 +524,7 @@ if (btnPrimaryAction) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             device_index: idx,
-            targets: _selectedTargets,
-            expected_source_language: _expectedSource
+            targets: _selectedTargets
           })
         });
         if (res.status === 401) {
@@ -689,123 +649,42 @@ if (autoStopSelect) {
 }
 
 // ============================================================
-// MODEL RESOLVER & AUTO DRIFT RECOVERY
-// ============================================================
-const MODEL_TAG_LABELS = {
-  default_rec: { ko: '', en: '' },
-  default:     { ko: '', en: '' },
-  rec:         { ko: '', en: '' },
-  verified:    { ko: '검증됨', en: 'Verified' },
-  new:         { ko: '새 모델', en: 'New' },
-};
-
-function renderModelDropdown(modelsInfo) {
-  const sel = document.getElementById('model-select');
-  if (!sel) return;
-  const isEn = getOperatorUiLanguage() === 'en';
-  const currentLangKey = isEn ? 'en' : 'ko';
-  const langRendered = sel.getAttribute('data-lang-rendered');
-
-  if (modelsInfo) {
-    const currentOpts = Array.from(sel.options).map(o => o.value);
-    const newModels = modelsInfo.available_models || [modelsInfo.fallback_model];
-    const modelsChanged = JSON.stringify(currentOpts) !== JSON.stringify(newModels);
-
-    // Skip rebuilding if user currently has dropdown focused
-    if (document.activeElement === sel && sel.options.length > 0) return;
-
-    // Skip if models unchanged and language matches
-    if (!modelsChanged && langRendered === currentLangKey && sel.options.length > 0) {
-      const targetVal = modelsInfo.preferred_model || modelsInfo.active_model;
-      if (targetVal && sel.value !== targetVal && document.activeElement !== sel) {
-        sel.value = targetVal;
-      }
-      return;
-    }
-
-    sel.innerHTML = '';
-    sel.setAttribute('data-lang-rendered', currentLangKey);
-    newModels.forEach(name => {
-      const opt = document.createElement('option');
-      opt.value = name;
-      let tag = 'new';
-      if (name === modelsInfo.fallback_model && name === modelsInfo.preferred_model) tag = 'default_rec';
-      else if (name === modelsInfo.fallback_model) tag = 'default';
-      else if (name === modelsInfo.preferred_model) tag = 'rec';
-      else if (name === modelsInfo.last_known_good_model) tag = 'verified';
-
-      opt.setAttribute('data-tag', tag);
-      const tagLabel = MODEL_TAG_LABELS[tag] ? (isEn ? MODEL_TAG_LABELS[tag].en : MODEL_TAG_LABELS[tag].ko) : '';
-      opt.textContent = tagLabel ? `${name} — ${tagLabel}` : name;
-      if (name === modelsInfo.preferred_model || name === modelsInfo.active_model) opt.selected = true;
-      sel.appendChild(opt);
-    });
-  } else {
-    if (langRendered === currentLangKey) return;
-    sel.setAttribute('data-lang-rendered', currentLangKey);
-    Array.from(sel.options).forEach(opt => {
-      const tag = opt.getAttribute('data-tag');
-      if (tag && MODEL_TAG_LABELS[tag]) {
-        const tagLabel = isEn ? MODEL_TAG_LABELS[tag].en : MODEL_TAG_LABELS[tag].ko;
-        opt.textContent = tagLabel ? `${opt.value} — ${tagLabel}` : opt.value;
-      }
-    });
-  }
-}
-
-const modelSelect = document.getElementById('model-select');
-if (modelSelect) {
-  renderModelDropdown();
-  modelSelect.addEventListener('change', async (e) => {
-    const preferred = e.target.value;
-    try {
-      await fetch('/api/models/mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'manual', preferred_model: preferred })
-      });
-    } catch (err) {
-      console.error('Failed to set preferred model:', err);
-    }
-  });
-}
-
 const btnTestModel = document.getElementById('btn-test-selected-model');
 if (btnTestModel) {
   btnTestModel.addEventListener('click', async () => {
-    const sel = document.getElementById('model-select');
-    const modelName = sel ? sel.value : '';
+    const modelName = document.getElementById('stat-model-name')?.textContent || '';
     if (!modelName || isTestingModel) return;
 
     isTestingModel = true;
+    const isEn = getOperatorUiLanguage() === 'en';
     const statusEl = document.getElementById('stat-model-status');
     if (statusEl) {
-      statusEl.textContent = '⏳ Testing...';
+      statusEl.textContent = isEn ? 'Testing...' : '테스트 중...';
       statusEl.style.color = 'var(--color-navy-900)';
-      statusEl.title = 'Performing Live Translate handshake with Google servers...';
+      statusEl.title = isEn ? 'Checking the configured Live Translate connection' : '설정된 Live Translate 연결을 확인합니다.';
     }
 
     try {
       const res = await fetch('/api/models/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: modelName })
+        body: JSON.stringify({})
       });
       const data = await res.json();
       if (statusEl) {
         if (data.ok) {
-          statusEl.textContent = '✓ Compatible';
+          statusEl.textContent = isEn ? 'Connected' : '연결 확인';
           statusEl.style.color = 'var(--color-success-700)';
-          statusEl.title = 'Live handshake passed: TranslationConfig & Audio Output confirmed';
+          statusEl.title = isEn ? 'Configured model connection succeeded' : '설정된 모델 연결에 성공했습니다.';
         } else {
-          statusEl.textContent = '⚠ Failed';
+          statusEl.textContent = isEn ? 'Connection failed' : '연결 실패';
           statusEl.style.color = 'var(--color-error)';
-          statusEl.title = data.message || 'Compatibility test failed';
+          statusEl.title = data.message || (isEn ? 'Connection test failed' : '연결 테스트에 실패했습니다.');
         }
       }
     } catch (err) {
       if (statusEl) {
-        statusEl.textContent = '⚠ Error';
+        statusEl.textContent = isEn ? 'Error' : '오류';
         statusEl.style.color = 'var(--color-error)';
         statusEl.title = err.message;
       }
@@ -1037,12 +916,15 @@ window.copyModalUrl = copyModalUrl;
 // ============================================================
 // STATUS / TELEMETRY
 // ============================================================
+/** Toggle the network breakdown. @returns {void} */
 function toggleTelemetryDetail() {
   const body = document.getElementById('telemetry-body');
   const ch = document.getElementById('telemetry-chevron');
+  const toggle = document.getElementById('telemetry-toggle');
   if (!body) return;
   const isHidden = body.style.display === 'none' || body.style.display === '';
   body.style.display = isHidden ? 'block' : 'none';
+  if (toggle) toggle.setAttribute('aria-expanded', String(isHidden));
   if (ch) ch.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
 }
 
@@ -1111,6 +993,7 @@ function startStatusPoll() {
   polling = setInterval(pollStatus, 1000);
 }
 
+/** Refresh operator status and target visibility. @returns {Promise<void>} */
 async function pollStatus() {
   let st;
   try {
@@ -1151,11 +1034,6 @@ async function pollStatus() {
       hasInitializedAutoStop = true;
     }
 
-    if (st.auto_drift_correction !== undefined && st.auto_drift_correction !== autoDriftCorrectionEnabled) {
-      autoDriftCorrectionEnabled = st.auto_drift_correction;
-      updateDriftUI(autoDriftCorrectionEnabled);
-    }
-
     const statLvlBar = document.getElementById('stat-level-bar');
     if (statLvlBar) statLvlBar.style.width = st.audio.level + '%';
     const statLvlVal = document.getElementById('stat-level-val');
@@ -1165,23 +1043,6 @@ async function pollStatus() {
     if (auEl) {
       auEl.textContent = st.audio.status + (st.audio.device ? ' — ' + st.audio.device : '');
       auEl.className = 'sg-val ' + (AUDIO_COLOR[st.audio.status] || '');
-    }
-
-    const acEl = document.getElementById('stat-audio-class');
-    if (acEl && st.audio_class) {
-      const AUDIO_CLASS_STYLE = {
-        speech: { bg: '#e0f2fe', fg: '#0369a1', ko: '🗣 발화', en: '🗣 Speech' },
-        music: { bg: '#fdf4ff', fg: '#a21caf', ko: '🎵 음악', en: '🎵 Music' },
-        uncertain: { bg: 'var(--color-warm-100)', fg: 'var(--color-text-muted)', ko: '— 판별 중', en: '— Detecting' },
-      };
-      const cls = AUDIO_CLASS_STYLE[st.audio_class.label] || AUDIO_CLASS_STYLE.uncertain;
-      const sinceStr = st.audio_class.since_s > 1 ? ` (${Math.round(st.audio_class.since_s)}s)` : '';
-      acEl.style.background = cls.bg;
-      acEl.style.color = cls.fg;
-      const koSpan = acEl.querySelector('[data-lang="ko"]:not(.tooltiptext)');
-      const enSpan = acEl.querySelector('[data-lang="en"]:not(.tooltiptext)');
-      if (koSpan) koSpan.textContent = cls.ko + sinceStr;
-      if (enSpan) enSpan.textContent = cls.en + sinceStr;
     }
 
     // Telemetry & Latency Breakdown
@@ -1234,33 +1095,18 @@ async function pollStatus() {
       }
     }
 
-    // Update Model in Status Card
-    if (st.models) {
-      const m = st.models;
-      const statusEl = document.getElementById('stat-model-status');
-      const sel = document.getElementById('model-select');
-
-      if (statusEl) {
-        if (m.is_fallback) {
-          statusEl.textContent = '⚠ Fallback';
-          statusEl.style.color = '#c53030';
-          statusEl.title = m.fallback_reason || 'Preferred model failed';
-        } else if (st.service_running && m.is_locked) {
-          statusEl.textContent = '🟢 Active';
-          statusEl.style.color = 'var(--color-success-700)';
-          statusEl.title = 'Model is actively in use for live translation';
-        } else if (!isTestingModel) {
-          statusEl.textContent = '✓ Ready';
-          statusEl.style.color = 'var(--color-success-700)';
-          statusEl.title = 'Model is ready for translation';
-        }
-      }
-
-      if (sel) {
-        sel.disabled = st.service_running || isTestingModel;
-        renderModelDropdown(m);
-      }
+    const modelNameEl = document.getElementById('stat-model-name');
+    if (modelNameEl && st.session?.model) modelNameEl.textContent = st.session.model;
+    const modelStatusEl = document.getElementById('stat-model-status');
+    if (modelStatusEl && !isTestingModel) {
+      const failed = st.session?.status === 'failed';
+      modelStatusEl.textContent = st.session?.error_kind === 'quota' ? quotaLimitLabel()
+        : failed ? (isEn ? 'Connection failed' : '연결 실패')
+        : (st.service_running ? (isEn ? 'Active' : '사용 중') : (isEn ? 'Configured' : '설정됨'));
+      modelStatusEl.style.color = failed || st.session?.error_kind === 'quota' ? 'var(--color-error)' : 'var(--color-success-700)';
+      modelStatusEl.title = failed ? (st.session.last_event || '') : '';
     }
+    renderOutputVisibility(st);
 
     if (st.church) {
       if (st.church.name) {
@@ -1373,24 +1219,47 @@ async function pollStatus() {
       }
     }
 
-    const prevServiceRunning = _serviceRunning;
     _serviceRunning = Boolean(st.service_running);
     _paused = Boolean(st.paused);
     updateControlBar(st);
     updateLanguageTargets(st);
 
-    if (prevServiceRunning && !_serviceRunning) {
-      updateChaptersPreview();
-    } else if (_serviceRunning && ++_chaptersPollCount % 15 === 0) {
-      updateChaptersPreview();
-    }
 }
 
+
+/**
+ * Show the monitored target's automatic output suppression state.
+ * @param {Object} st Current server status snapshot.
+ * @returns {void}
+ */
+function renderOutputVisibility(st) {
+  const indicator = document.getElementById('output-hidden-indicator');
+  if (!indicator) return;
+  const monitored = st.translation?.sessions?.[_monitorTarget];
+  const hidden = Boolean(monitored ? monitored.output_hidden : st.output_hidden);
+  const muted = Boolean(monitored ? monitored.audio_muted : st.audio_muted);
+  indicator.classList.toggle('is-active', hidden || muted);
+  indicator.setAttribute('aria-hidden', String(!hidden && !muted));
+  const ko = indicator.querySelector('[data-lang="ko"]');
+  const en = indicator.querySelector('[data-lang="en"]');
+  if (ko) ko.textContent = muted
+    ? '예상 밖 언어 지속: 자막 숨김 · 음성 음소거'
+    : '원문 언어 확인 전·예상 밖 언어: 자막 숨김';
+  if (en) en.textContent = muted
+    ? 'Unexpected source: captions hidden, audio muted'
+    : 'Source unconfirmed/unexpected: captions hidden';
+  indicator.title = getOperatorUiLanguage() === 'en'
+    ? (muted ? 'Captions are hidden and translated audio is muted while unexpected language continues.'
+      : 'Captions are hidden while the source language is unconfirmed or unexpected.')
+    : (muted ? '예상하지 않은 언어가 계속 감지되어 자막을 숨기고 통역 음성을 음소거했습니다.'
+      : '원문 언어가 확인되지 않았거나 예상 밖 언어여서 자막을 숨기고 있습니다.');
+}
 
 // ============================================================
 // AUDIO ENGINE & PLAYBACK
 // ============================================================
 let audioCtx = null, gainNode = null, audioEnabled = false, audioWs = null, nextPlayAt = 0;
+const scheduledAudio = new Set();
 const SAMPLE_RATE = 24000;
 
 function ensureAudioCtx() {
@@ -1420,6 +1289,7 @@ function ensureAudioCtx() {
   }
 }
 
+/** @param {ArrayBuffer} arrayBuffer PCM16 audio. @returns {void} */
 function playPCM16(arrayBuffer) {
   if (!audioEnabled || !audioCtx || !arrayBuffer || arrayBuffer.byteLength === 0) return;
   if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -1430,10 +1300,21 @@ function playPCM16(arrayBuffer) {
   const src = audioCtx.createBufferSource();
   src.buffer = buf;
   src.connect(gainNode || audioCtx.destination);
+  scheduledAudio.add(src);
+  src.onended = () => scheduledAudio.delete(src);
   const now = audioCtx.currentTime;
   if (nextPlayAt < now) nextPlayAt = now + 0.05;
   src.start(nextPlayAt);
   nextPlayAt += buf.duration;
+}
+
+/** Stop audio already scheduled before a mute boundary. @returns {void} */
+function clearScheduledAudio() {
+  scheduledAudio.forEach(source => {
+    try { source.stop(); } catch (_) {}
+  });
+  scheduledAudio.clear();
+  nextPlayAt = audioCtx ? audioCtx.currentTime : 0;
 }
 
 function getTargetLanguageName(code, uiLang) {
@@ -1762,6 +1643,7 @@ function resetPreview() {
   livePair = null;
 }
 
+/** Connect the monitored target's caption stream. @returns {void} */
 function connectSSE() {
   if (captionEs) {
     try { captionEs.close(); } catch(_) {}
@@ -1773,7 +1655,17 @@ function connectSSE() {
     const msg = JSON.parse(e.data);
     if (msg.kind === 'ping') return;
 
-    if (msg.kind === 'source') {
+    if (msg.kind === 'hidden') {
+      if (livePair) livePair.wrap.remove();
+      livePair = null;
+      const indicator = document.getElementById('output-hidden-indicator');
+      if (indicator) {
+        indicator.classList.add('is-active');
+        indicator.setAttribute('aria-hidden', 'false');
+      }
+    } else if (msg.kind === 'audio_clear') {
+      clearScheduledAudio();
+    } else if (msg.kind === 'source') {
       const p = getOrCreateLivePair();
       p.koEl.textContent += (msg.source || msg.text || '');
     } else if (msg.kind === 'update') {
@@ -1781,8 +1673,8 @@ function connectSSE() {
       p.enEl.textContent = (msg.target || msg.text || '');
     } else if (msg.kind === 'commit') {
       const p = getOrCreateLivePair();
-      if (msg.target || msg.text) p.enEl.textContent = (msg.target || msg.text);
-      if (msg.source || msg.ko) p.koEl.textContent = (msg.source || msg.ko);
+      p.enEl.textContent = msg.target || msg.text || '';
+      p.koEl.textContent = msg.source || msg.ko || '';
       commitLivePair(msg.time_str || null);
     } else if (msg.kind === 'unavailable') {
       commitLivePair(null);
@@ -1818,18 +1710,13 @@ let _languagesCatalog = [];
 let _catalogMap = new Map();
 let _supportedTargets = ['en', 'ko', 'zh'];
 let _selectedTargets = ['en'];
-let _selectedSources = ['ko', 'en'];
-let _isAutoDetectSource = false;
-let _expectedSource = 'ko+en';
-let _spokenLanguageDisplay = 'Korean + English';
-let _sourceControlsInitialized = false;
 
+/** Load output-language choices without source-language overrides. @returns {Promise<void>} */
 async function loadLanguageConfiguration() {
   try {
     const res = await fetch('/api/languages');
     if (!res.ok) return;
     const data = await res.json();
-    _expectedSource = data.expected_source_language || data.expected_source || 'ko+en';
     _languagesCatalog = data.available || [];
     _catalogMap = new Map(_languagesCatalog.map(l => [l.code, l]));
     _supportedTargets = data.supported_targets || ['en', 'ko', 'zh'];
@@ -1840,200 +1727,18 @@ async function loadLanguageConfiguration() {
       _supportedTargets.splice(1, 0, 'ko');
     }
     _selectedTargets = data.selected_targets || ['en'];
-    _isAutoDetectSource = Boolean(data.is_auto_detect || _expectedSource === 'any');
-    if (Array.isArray(data.selected_sources) && data.selected_sources.length > 0) {
-      _selectedSources = data.selected_sources.filter(c => c !== 'any');
-    } else {
-      _selectedSources = _expectedSource === 'any' ? ['ko', 'en'] : _expectedSource.split('+');
-    }
-    if (_selectedSources.length === 0) _selectedSources = ['ko', 'en'];
-    _spokenLanguageDisplay = data.spoken_language_display || '';
-
-    setupSourceControls();
-    renderSourcesConfigList();
     renderSelectedTargets();
-    updateSourceUI();
   } catch (e) {
     console.error('Failed to load language configuration:', e);
   }
 }
 
-function setupSourceControls() {
-  if (_sourceControlsInitialized) return;
-  _sourceControlsInitialized = true;
-
-  const btnAutodetect = document.getElementById('btn-source-autodetect');
-  if (btnAutodetect) {
-    btnAutodetect.addEventListener('click', () => {
-      if (_serviceRunning) return;
-      _isAutoDetectSource = !_isAutoDetectSource;
-      handleSourceChange();
-    });
-  }
-}
-
-function handleSourceChange() {
-  if (_isAutoDetectSource) {
-    _expectedSource = 'any';
-  } else {
-    // Canonical sort: ko first, en second, then others alphabetically
-    const sortKey = (c) => (c === 'ko' ? '0_ko' : (c === 'en' ? '1_en' : '2_' + c));
-    _selectedSources.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
-    _expectedSource = _selectedSources.join('+');
-  }
-
-  // Conflict rule: ONLY single non-autodetect source can conflict with target languages
-  if (!_isAutoDetectSource && _selectedSources.length === 1) {
-    const singleCode = _selectedSources[0];
-    const hadInSelected = _selectedTargets.includes(singleCode);
-    if (hadInSelected) {
-      _selectedTargets = _selectedTargets.filter(t => t !== singleCode);
-      if (_selectedTargets.length === 0) {
-        const remainingSupported = _supportedTargets.filter(t => t !== singleCode);
-        if (remainingSupported.length > 0) {
-          _selectedTargets = [remainingSupported[0]];
-        }
-      }
-      const langName = _catalogMap.get(singleCode)?.name || singleCode.toUpperCase();
-      showLanguageNotice(
-        `발화 언어가 ${langName} 단독으로 설정되어 오늘의 통역 대상에서 제외되었습니다.`,
-        `Source set to ${langName} only. It was removed from today's target languages.`
-      );
-    }
-  }
-
-  updateSourceUI();
-  saveSelectedTargets();
-  renderSelectedTargets();
-}
-
-function updateSourceUI() {
-  const isEn = getOperatorUiLanguage() === 'en';
-  const btnAutodetect = document.getElementById('btn-source-autodetect');
-  const banner = document.getElementById('lang-sources-autodetect-banner');
-  const listWrap = document.getElementById('lang-sources-list-wrap');
-  const statusBadge = document.getElementById('lang-source-status-badge');
-
-  if (btnAutodetect) {
-    btnAutodetect.classList.toggle('active', _isAutoDetectSource);
-    btnAutodetect.disabled = _serviceRunning;
-  }
-
-  if (banner) {
-    banner.style.display = _isAutoDetectSource ? 'flex' : 'none';
-  }
-
-  if (listWrap) {
-    listWrap.classList.toggle('dimmed', _isAutoDetectSource);
-  }
-
-  // Update source status badge symmetrically: "# of sources" or "Auto-detect"
-  if (statusBadge) {
-    if (_isAutoDetectSource) {
-      statusBadge.textContent = isEn ? 'Auto-detect' : '자동 감지';
-      statusBadge.title = isEn ? 'Auto-detect (All languages)' : '모든 발화 언어 자동 감지';
-    } else {
-      const count = _selectedSources.length;
-      statusBadge.textContent = isEn
-        ? `${count} ${count === 1 ? 'source' : 'sources'}`
-        : `${count}개 언어`;
-      statusBadge.title = _spokenLanguageDisplay || _selectedSources.join(' + ');
-    }
-  }
-
-  // Sync checkboxes in sources list
-  const sourceCheckboxes = document.querySelectorAll('#lang-sources-config-list input[type="checkbox"]');
-  sourceCheckboxes.forEach(chk => {
-    chk.disabled = _serviceRunning || _isAutoDetectSource;
-    const isChecked = !_isAutoDetectSource && _selectedSources.includes(chk.value);
-    chk.checked = isChecked;
-    const parentLabel = chk.closest('.lang-target-item');
-    if (parentLabel) {
-      parentLabel.classList.toggle('checked', isChecked);
-    }
-  });
-}
-
-function renderSourcesConfigList() {
-  const listEl = document.getElementById('lang-sources-config-list');
-  if (!listEl) return;
-  listEl.innerHTML = '';
-
-  // Spoken language choices: strictly Korean and English to save vertical space
-  const sourceCodes = ['ko', 'en'];
-
-  const orderedLangs = sourceCodes.map(code => _catalogMap.get(code) || {
-    code: code,
-    name: code === 'ko' ? 'Korean' : 'English',
-    native_name: code === 'ko' ? '한국어' : 'English'
-  });
-
-  orderedLangs.forEach(lang => {
-    const isChecked = !_isAutoDetectSource && _selectedSources.includes(lang.code);
-    const item = document.createElement('label');
-    item.className = `lang-target-item${isChecked ? ' checked' : ''}`;
-
-    const chk = document.createElement('input');
-    chk.type = 'checkbox';
-    chk.value = lang.code;
-    chk.checked = isChecked;
-    chk.disabled = _serviceRunning || _isAutoDetectSource;
-
-    chk.addEventListener('change', () => {
-      if (_serviceRunning) return;
-      if (chk.checked) {
-        if (!_selectedSources.includes(lang.code)) {
-          _selectedSources.push(lang.code);
-        }
-      } else {
-        if (_selectedSources.length <= 1) {
-          chk.checked = true;
-          return; // maintain at least one source
-        }
-        _selectedSources = _selectedSources.filter(c => c !== lang.code);
-      }
-      _isAutoDetectSource = false;
-      handleSourceChange();
-    });
-
-    const displayName = (lang.native_name && lang.native_name !== lang.name)
-      ? `${lang.native_name} (${lang.name})`
-      : lang.name;
-    const labelSpan = document.createElement('span');
-    labelSpan.className = 'lang-target-label';
-    labelSpan.textContent = displayName;
-
-    item.appendChild(chk);
-    item.appendChild(labelSpan);
-    listEl.appendChild(item);
-  });
-}
-
-let _langNoticeTimer = null;
-function showLanguageNotice(koMsg, enMsg) {
-  const hintEl = document.getElementById('lang-targets-hint');
-  if (!hintEl) return;
-  const isEn = getOperatorUiLanguage() === 'en';
-  if (_langNoticeTimer) clearTimeout(_langNoticeTimer);
-
-  hintEl.innerHTML = `<span style="color: var(--color-gold-500); font-weight: 600;">ℹ ${isEn ? enMsg : koMsg}</span>`;
-  _langNoticeTimer = setTimeout(() => {
-    updateLanguageCountAndHint();
-  }, 4500);
-}
-
+/** Render the supported output-language checkboxes. @returns {void} */
 function renderSelectedTargets() {
   const listEl = document.getElementById('lang-targets-config-list');
   if (!listEl) return;
   listEl.innerHTML = '';
   const isEn = getOperatorUiLanguage() === 'en';
-
-  // Symmetrical Target Conflict Rule:
-  // A target is blocked ONLY if the church selects exclusively that single language as source.
-  // When Auto-detect is on, or when multiple sources are selected (e.g. ko+en), NO targets are blocked.
-  const singleConflictingSource = (!_isAutoDetectSource && _selectedSources.length === 1)
-    ? _selectedSources[0]
-    : null;
 
   // Canonical ordering: English on the top, Korean second, then others
   const targetCodes = [..._supportedTargets];
@@ -2042,40 +1747,11 @@ function renderSelectedTargets() {
   const targetSortKey = (c) => (c === 'en' ? '0_en' : (c === 'ko' ? '1_ko' : '2_' + c));
   const orderedCodes = targetCodes.sort((a, b) => targetSortKey(a).localeCompare(targetSortKey(b)));
 
-  const primaryTarget = _selectedTargets.find(c => c !== singleConflictingSource)
-    || orderedCodes.find(c => c !== singleConflictingSource)
-    || orderedCodes[0];
+  const primaryTarget = _selectedTargets[0] || orderedCodes[0];
 
   orderedCodes.forEach(code => {
-    const isConflicting = (code === singleConflictingSource);
     const info = _catalogMap.get(code);
     const displayName = info ? (info.native_name === info.name ? info.name : `${info.native_name} (${info.name})`) : code.toUpperCase();
-
-    if (isConflicting) {
-      const item = document.createElement('label');
-      item.className = 'lang-target-item disabled conflict';
-      item.title = isEn ? 'Cannot translate into the current spoken language' : '단독 발화 언어로 설정되어 있어 통역 대상으로 선택할 수 없습니다.';
-
-      const chk = document.createElement('input');
-      chk.type = 'checkbox';
-      chk.value = code;
-      chk.checked = false;
-      chk.disabled = true;
-
-      const labelSpan = document.createElement('span');
-      labelSpan.className = 'lang-target-label';
-      labelSpan.textContent = displayName;
-
-      const conflictBadge = document.createElement('span');
-      conflictBadge.className = 'conflict-target-badge';
-      conflictBadge.innerHTML = `<span data-lang="ko">원문 언어</span><span data-lang="en">Spoken</span>`;
-
-      item.appendChild(chk);
-      item.appendChild(labelSpan);
-      item.appendChild(conflictBadge);
-      listEl.appendChild(item);
-      return;
-    }
 
     const isChecked = _selectedTargets.includes(code);
     const isPrimary = isChecked && (code === primaryTarget);
@@ -2157,14 +1833,13 @@ function updateLanguageCountAndHint() {
   }
 }
 
+/** Persist output-language choices while stopped. @returns {Promise<void>} */
 async function saveSelectedTargets() {
   try {
-    const expSrc = _isAutoDetectSource ? 'any' : _selectedSources.join('+');
     const res = await fetch('/api/translation/targets', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        expected_source_language: expSrc,
         supported_targets: _supportedTargets,
         targets: _selectedTargets
       })
@@ -2175,20 +1850,16 @@ async function saveSelectedTargets() {
     }
     const data = await res.json();
     if (data.ok && data.translation) {
-      _expectedSource = data.translation.expected_source_language || expSrc;
       _selectedTargets = data.translation.default_active_targets || _selectedTargets;
       _supportedTargets = data.translation.supported_targets || _supportedTargets;
-      if (data.translation.spoken_language_display) {
-        _spokenLanguageDisplay = data.translation.spoken_language_display;
-      }
       updateLanguageCountAndHint();
-      updateSourceUI();
     }
   } catch (e) {
     console.error('Failed to save translation targets:', e);
   }
 }
 
+/** @param {Object} st Server snapshot. @returns {void} */
 function updateLanguageTargets(st) {
   const isRunning = Boolean(st && st.service_running);
   const isLocked = isRunning;
@@ -2200,35 +1871,8 @@ function updateLanguageTargets(st) {
   const btnManage = document.getElementById('btn-open-manage-langs');
   const hintEl = document.getElementById('lang-targets-hint');
   const countBadge = document.getElementById('lang-target-count-badge');
-  const sourceStatusBadge = document.getElementById('lang-source-status-badge');
-  const btnAutodetect = document.getElementById('btn-source-autodetect');
-  const presetButtons = document.querySelectorAll('.btn-source-preset');
-  const sourceCheckboxes = document.querySelectorAll('#lang-sources-config-list input[type="checkbox"]');
-
-  if (btnAutodetect) btnAutodetect.disabled = isLocked;
-  presetButtons.forEach(b => b.disabled = isLocked);
-  sourceCheckboxes.forEach(c => c.disabled = isLocked || _isAutoDetectSource);
   if (btnManage) btnManage.disabled = isLocked;
-
   const translation = st && st.translation ? st.translation : null;
-  if (translation && translation.spoken_language_display) {
-    _spokenLanguageDisplay = translation.spoken_language_display;
-  }
-  if (sourceStatusBadge) {
-    const isAutoDetect = translation ? Boolean(translation.is_auto_detect) : _isAutoDetectSource;
-    const srcCodes = translation ? (translation.selected_sources || []) : _selectedSources;
-    if (isAutoDetect) {
-      sourceStatusBadge.textContent = isEn ? 'Auto-detect' : '자동 감지';
-    } else {
-      const count = srcCodes.length || _selectedSources.length;
-      sourceStatusBadge.textContent = isLocked
-        ? (isEn ? `${count} active` : `${count}개 활성`)
-        : (isEn ? `${count} ${count === 1 ? 'source' : 'sources'}` : `${count}개 언어`);
-    }
-    if (_spokenLanguageDisplay) {
-      sourceStatusBadge.title = _spokenLanguageDisplay;
-    }
-  }
 
   if (isLocked) {
     if (badgeEl) {
@@ -2282,6 +1926,10 @@ function updateLanguageTargets(st) {
         } else if (status === 'failed') {
           statusClass = 'err';
           statusLabel = isEn ? 'Error' : '오류';
+        }
+        if (sess.error_kind === 'quota') {
+          statusClass = 'err';
+          statusLabel = quotaLimitLabel();
         }
 
         const isPrimary = (tgt === primaryTarget);
@@ -2410,25 +2058,21 @@ if (btnSaveManage) {
     const newSupported = Array.from(_modalSelectedSupported);
     if (newSupported.length === 0) return;
 
-    const singleConflicting = (!_isAutoDetectSource && _selectedSources.length === 1) ? _selectedSources[0] : null;
     const newlyAdded = newSupported.filter(code => !_supportedTargets.includes(code));
-    let newSelected = _selectedTargets.filter(t => newSupported.includes(t) && t !== singleConflicting);
+    let newSelected = _selectedTargets.filter(t => newSupported.includes(t));
     newlyAdded.forEach(code => {
-      if (code !== singleConflicting && !newSelected.includes(code)) newSelected.push(code);
+      if (!newSelected.includes(code)) newSelected.push(code);
     });
     if (newSelected.length === 0) {
-      const avail = newSupported.filter(t => t !== singleConflicting);
-      if (avail.length > 0) newSelected = [avail[0]];
+      newSelected = [newSupported[0]];
     }
 
     try {
-      const expSrc = _isAutoDetectSource ? 'any' : _selectedSources.join('+');
       const res = await fetch('/api/translation/targets', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          expected_source_language: expSrc,
-          supported_targets: newSupported,
+            supported_targets: newSupported,
           targets: newSelected
         })
       });
@@ -2448,60 +2092,6 @@ if (btnSaveManage) {
 }
 
 // ============================================================
-// YOUTUBE CHAPTERS
-// ============================================================
-let _lastChaptersText = '0:00 예배 시작';
-let _chaptersPollCount = 0;
-
-async function updateChaptersPreview() {
-  try {
-    const res = await fetch('/api/session/latest/chapters');
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.youtube_player_chapters) {
-      _lastChaptersText = data.youtube_player_chapters;
-      const previewEl = document.getElementById('yt-chapters-preview');
-      if (previewEl) {
-        previewEl.innerText = data.youtube_player_chapters;
-      }
-    }
-  } catch (_) {}
-}
-
-const btnCopyChapters = document.getElementById('btn-copy-chapters');
-if (btnCopyChapters) {
-  btnCopyChapters.addEventListener('click', async () => {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(_lastChaptersText);
-      } else {
-        const ta = document.createElement('textarea');
-        ta.value = _lastChaptersText;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      }
-      const prevHtml = btnCopyChapters.innerHTML;
-      const isEn = getOperatorUiLanguage() === 'en';
-      btnCopyChapters.innerHTML = `
-        <svg style="width: 13px; height: 13px; color: var(--color-success);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-        <span style="color: var(--color-success); font-weight: 700;">${isEn ? 'Copied to Clipboard!' : '클립보드 복사 완료!'}</span>
-      `;
-      setTimeout(() => {
-        btnCopyChapters.innerHTML = prevHtml;
-      }, 2000);
-    } catch (e) {
-      console.warn('Clipboard copy failed:', e);
-    }
-  });
-}
-
-// ============================================================
 // INITIALIZATION
 // ============================================================
 setOperatorUiLanguage(_currentUiLang);
@@ -2511,320 +2101,3 @@ loadLanguageConfiguration();
 connectSSE();
 startStatusPoll();
 startEventPoll();
-updateChaptersPreview();
-
-
-
-
-
-// ============================================================
-// 2-MINUTE POST-SERMON GLOSSARY & VOCABULARY REVIEW
-// ============================================================
-const modalGlossary = document.getElementById('modal-glossary');
-const btnOpenGlossary = document.getElementById('btn-open-glossary');
-const btnCloseGlossary = document.getElementById('btn-close-glossary-modal');
-const btnDoneGlossary = document.getElementById('btn-done-glossary');
-
-const tabBtnCandidates = document.getElementById('tab-btn-candidates');
-const tabBtnEntries = document.getElementById('tab-btn-entries');
-const tabBtnManual = document.getElementById('tab-btn-manual');
-
-const viewCandidates = document.getElementById('view-glossary-candidates');
-const viewEntries = document.getElementById('view-glossary-entries');
-const viewManual = document.getElementById('view-glossary-manual');
-
-const candidatesLoading = document.getElementById('candidates-loading');
-const candidatesEmpty = document.getElementById('candidates-empty');
-const candidatesList = document.getElementById('candidates-list');
-const candidatesBadge = document.getElementById('candidates-badge');
-
-const btnSaveManualTerm = document.getElementById('btn-save-manual-term');
-const manualKoInput = document.getElementById('manual-ko-input');
-const manualEnInput = document.getElementById('manual-en-input');
-const manualCatSelect = document.getElementById('manual-cat-select');
-const manualAddFeedback = document.getElementById('manual-add-feedback');
-
-function switchGlossaryTab(tab) {
-  if (!viewCandidates || !viewEntries || !viewManual) return;
-  const isEn = getOperatorUiLanguage() === 'en';
-
-  // Reset tab button styles
-  [tabBtnCandidates, tabBtnEntries, tabBtnManual].forEach(btn => {
-    if (btn) {
-      btn.style.background = '#f8fafc';
-      btn.style.color = '#475569';
-      btn.style.borderColor = '#cbd5e1';
-    }
-  });
-
-  viewCandidates.style.display = 'none';
-  viewEntries.style.display = 'none';
-  viewManual.style.display = 'none';
-
-  if (tab === 'candidates') {
-    tabBtnCandidates.style.background = '#e0e7ff';
-    tabBtnCandidates.style.color = '#3730a3';
-    tabBtnCandidates.style.borderColor = '#c7d2fe';
-    viewCandidates.style.display = 'block';
-    loadGlossaryCandidates();
-  } else if (tab === 'entries') {
-    tabBtnEntries.style.background = '#e0e7ff';
-    tabBtnEntries.style.color = '#3730a3';
-    tabBtnEntries.style.borderColor = '#c7d2fe';
-    viewEntries.style.display = 'block';
-    loadGlossaryEntries();
-  } else if (tab === 'manual') {
-    tabBtnManual.style.background = '#e0e7ff';
-    tabBtnManual.style.color = '#3730a3';
-    tabBtnManual.style.borderColor = '#c7d2fe';
-    viewManual.style.display = 'block';
-    if (manualKoInput) manualKoInput.focus();
-  }
-}
-
-async function loadGlossaryCandidates() {
-  if (!candidatesList) return;
-  const isEn = getOperatorUiLanguage() === 'en';
-  candidatesLoading.style.display = 'block';
-  candidatesEmpty.style.display = 'none';
-  candidatesList.innerHTML = '';
-
-  try {
-    const res = await fetch('/api/glossary/candidates');
-    if (!res.ok) throw new Error('Candidates request failed');
-    const data = await res.json();
-    candidatesLoading.style.display = 'none';
-
-    const list = data.candidates || [];
-    if (candidatesBadge) candidatesBadge.textContent = list.length;
-
-    if (list.length === 0) {
-      candidatesEmpty.style.display = 'block';
-      return;
-    }
-
-    candidatesEmpty.style.display = 'none';
-    list.forEach(c => {
-      const card = document.createElement('div');
-      card.className = 'candidate-card';
-      card.style.background = '#ffffff';
-      card.style.border = '1px solid #e2e8f0';
-      card.style.borderRadius = '6px';
-      card.style.padding = '10px 12px';
-      card.style.display = 'flex';
-      card.style.flexDirection = 'column';
-      card.style.gap = '6px';
-
-      const catLabels = {
-        'A': isEn ? 'Polity / Titles' : '직분/호칭',
-        'B': isEn ? 'Worship / Sacrament' : '예배/성례',
-        'C': isEn ? 'Confession' : '신앙고백',
-        'D': isEn ? 'Reformed Doctrine' : '개혁신학',
-        'F': isEn ? 'Speaker / Konglish' : '외래어/목회자',
-      };
-      const catLabel = catLabels[c.category] || c.category;
-
-      card.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 15px; font-weight: 700; color: #1e293b;">${c.ko}</span>
-            <span style="font-size: 10px; font-weight: 700; background: #f1f5f9; color: #475569; border-radius: 4px; padding: 2px 6px;">${catLabel}</span>
-            <span style="font-size: 11px; color: #64748b; background: #e0f2fe; color: #0369a1; border-radius: 10px; padding: 1px 7px; font-weight: 600;">${c.count}${isEn ? ' times' : '회 발화'}</span>
-          </div>
-          <button type="button" class="btn-skip-candidate secondary" style="font-size: 11px; padding: 3px 8px; border-radius: 4px; color: #94a3b8; border-color: #e2e8f0;">
-            ${isEn ? 'Skip' : '건너뛰기'}
-          </button>
-        </div>
-        ${c.example ? `<div style="font-size: 11px; color: #64748b; font-style: italic; background: #f8fafc; padding: 4px 8px; border-radius: 4px;">"${c.example}"</div>` : ''}
-        <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px;">
-          <input type="text" class="candidate-en-input" value="${c.suggested_en || ''}" placeholder="English translation" style="flex: 1; font-size: 12px; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
-          <button type="button" class="btn-add-candidate btn-action" style="background: #10b981; color: #ffffff; font-size: 11px; font-weight: 700; padding: 5px 12px; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;">
-            ${isEn ? '✓ Add' : '✓ 사전 등록'}
-          </button>
-        </div>
-      `;
-
-      const enInput = card.querySelector('.candidate-en-input');
-      const addBtn = card.querySelector('.btn-add-candidate');
-      const skipBtn = card.querySelector('.btn-skip-candidate');
-
-      addBtn.addEventListener('click', async () => {
-        const enVal = enInput.value.trim();
-        if (!enVal) {
-          enInput.focus();
-          return;
-        }
-        addBtn.disabled = true;
-        addBtn.textContent = '...';
-        try {
-          const resp = await fetch('/api/glossary/add', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ko: c.ko,
-              en: enVal,
-              category: c.category || 'F',
-            })
-          });
-          if (resp.ok) {
-            addBtn.style.background = '#059669';
-            addBtn.textContent = isEn ? '✓ Added' : '✓ 등록 완료';
-            setTimeout(() => {
-              card.style.transition = 'opacity 0.3s';
-              card.style.opacity = '0';
-              setTimeout(() => card.remove(), 300);
-            }, 600);
-          } else {
-            addBtn.disabled = false;
-            addBtn.textContent = isEn ? 'Failed' : '실패';
-          }
-        } catch (e) {
-          addBtn.disabled = false;
-          addBtn.textContent = isEn ? 'Error' : '오류';
-        }
-      });
-
-      skipBtn.addEventListener('click', () => {
-        card.style.transition = 'opacity 0.2s';
-        card.style.opacity = '0';
-        setTimeout(() => card.remove(), 200);
-      });
-
-      candidatesList.appendChild(card);
-    });
-
-  } catch (err) {
-    candidatesLoading.style.display = 'none';
-    candidatesEmpty.style.display = 'block';
-    console.error('Failed to load glossary candidates:', err);
-  }
-}
-
-async function loadGlossaryEntries() {
-  const entriesList = document.getElementById('entries-list');
-  if (!entriesList) return;
-  const isEn = getOperatorUiLanguage() === 'en';
-  entriesList.innerHTML = `<div style="text-align: center; padding: 20px; font-size: 12px; color: #64748b;">${isEn ? 'Loading entries...' : '사전 항목을 불러오는 중...'}</div>`;
-
-  try {
-    const res = await fetch('/api/glossary/entries');
-    if (!res.ok) throw new Error('Entries fetch failed');
-    const data = await res.json();
-    const list = data.entries || [];
-    if (list.length === 0) {
-      entriesList.innerHTML = `<div style="text-align: center; padding: 20px; font-size: 12px; color: #64748b;">${isEn ? 'No entries registered.' : '등록된 사전 항목이 없습니다.'}</div>`;
-      return;
-    }
-
-    entriesList.innerHTML = '';
-    list.forEach(item => {
-      const row = document.createElement('div');
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
-      row.style.justifyContent = 'space-between';
-      row.style.padding = '6px 10px';
-      row.style.background = '#ffffff';
-      row.style.border = '1px solid #e2e8f0';
-      row.style.borderRadius = '4px';
-      row.style.fontSize = '12px';
-
-      row.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-weight: 700; color: #1e293b;">${item.ko}</span>
-          ${item.variants && item.variants.length > 0 ? `<span style="font-size: 10px; color: #94a3b8;">(${item.variants.join(', ')})</span>` : ''}
-          <span style="font-size: 10px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px;">Cat ${item.category}</span>
-        </div>
-        <div style="font-weight: 600; color: #3b82f6;">${item.en}</div>
-      `;
-      entriesList.appendChild(row);
-    });
-  } catch (e) {
-    entriesList.innerHTML = `<div style="text-align: center; padding: 20px; font-size: 12px; color: #ef4444;">${isEn ? 'Failed to load entries' : '목록 불러오기 실패'}</div>`;
-  }
-}
-
-function openGlossaryModal() {
-  if (modalGlossary) {
-    modalGlossary.classList.remove('hidden');
-    switchGlossaryTab('candidates');
-  }
-}
-
-function closeGlossaryModal() {
-  if (modalGlossary) {
-    modalGlossary.classList.add('hidden');
-  }
-}
-
-if (btnOpenGlossary) {
-  btnOpenGlossary.addEventListener('click', openGlossaryModal);
-}
-if (btnCloseGlossary) {
-  btnCloseGlossary.addEventListener('click', closeGlossaryModal);
-}
-if (btnDoneGlossary) {
-  btnDoneGlossary.addEventListener('click', closeGlossaryModal);
-}
-if (modalGlossary) {
-  modalGlossary.addEventListener('click', (e) => {
-    if (e.target === modalGlossary) closeGlossaryModal();
-  });
-}
-
-if (tabBtnCandidates) {
-  tabBtnCandidates.addEventListener('click', () => switchGlossaryTab('candidates'));
-}
-if (tabBtnEntries) {
-  tabBtnEntries.addEventListener('click', () => switchGlossaryTab('entries'));
-}
-if (tabBtnManual) {
-  tabBtnManual.addEventListener('click', () => switchGlossaryTab('manual'));
-}
-
-if (btnSaveManualTerm) {
-  btnSaveManualTerm.addEventListener('click', async () => {
-    const isEn = getOperatorUiLanguage() === 'en';
-    const koVal = manualKoInput.value.trim();
-    const enVal = manualEnInput.value.trim();
-    const catVal = manualCatSelect.value;
-    if (!koVal || !enVal) {
-      manualAddFeedback.style.display = 'block';
-      manualAddFeedback.style.color = '#ef4444';
-      manualAddFeedback.textContent = isEn ? 'Please enter both Korean and English terms.' : '한국어와 영어 단어를 모두 입력해주세요.';
-      return;
-    }
-
-    btnSaveManualTerm.disabled = true;
-    try {
-      const resp = await fetch('/api/glossary/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ko: koVal,
-          en: enVal,
-          category: catVal,
-        })
-      });
-      if (resp.ok) {
-        manualAddFeedback.style.display = 'block';
-        manualAddFeedback.style.color = '#10b981';
-        manualAddFeedback.textContent = isEn ? `Saved: '${koVal}' -> '${enVal}'` : `등록 성공: '${koVal}' -> '${enVal}'`;
-        manualKoInput.value = '';
-        manualEnInput.value = '';
-        setTimeout(() => {
-          manualAddFeedback.style.display = 'none';
-        }, 3000);
-      } else {
-        manualAddFeedback.style.display = 'block';
-        manualAddFeedback.style.color = '#ef4444';
-        manualAddFeedback.textContent = isEn ? 'Failed to save term.' : '단어 등록에 실패했습니다.';
-      }
-    } catch (e) {
-      manualAddFeedback.style.display = 'block';
-      manualAddFeedback.style.color = '#ef4444';
-      manualAddFeedback.textContent = isEn ? 'Network error.' : '네트워크 오류가 발생했습니다.';
-    } finally {
-      btnSaveManualTerm.disabled = false;
-    }
-  });
-}

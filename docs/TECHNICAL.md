@@ -14,7 +14,7 @@
 6. [SSE 자막 브로드캐스트](#6-sse-자막-브로드캐스트)
 7. [Web Audio API 실시간 재생](#7-web-audio-api-실시간-재생)
 8. [자막 커밋 전략](#8-자막-커밋-전략)
-9. [용어집 교정 패스 (Glossary)](#9-용어집-교정-패스-glossary)
+9. [이름 교정과 전사 평가](#9-이름-교정과-전사-평가)
 10. [Asyncio 패턴 요약](#10-asyncio-패턴-요약)
 11. [확장 가이드](#11-확장-가이드)
 12. [Cloudflare Named Tunnel 및 Windows 서비스 관리](#12-cloudflare-named-tunnel-및-windows-서비스-관리)
@@ -24,36 +24,26 @@
 
 ## 1. 데이터 흐름 전체 개요
 
+```text
+마이크/믹서 → AudioCapture (실제 장치 포맷, PCM16, 단일 캡처)
+                 ├─ 모노 변환 전 원시 PCM → bounded 녹음 큐 → MP3 writer
+                 │                            일시정지 중에도 계속 기록
+                 └─ 모노 변환 → 필터·16 kHz 리샘플링
+                                   ↓
+                          TranslationManager
+                       출력 언어별 독립 GeminiSession
+                                   ↓
+                    설정된 gemini.model로 Live 연결
+                    입력/출력 전사 + 번역 PCM 수신
+                       ├─ 원문 언어는 전사 라벨·로그에만 기록
+                       └─ 언어 정보와 무관하게 자막·번역 음성 전달
+                                   ↓
+                     언어별 CaptionBroadcaster
+                       ├─ SSE /stream?lang=... → 자막
+                       └─ WS /audio-stream?lang=... → Web Audio
 ```
-[USB 믹서]
-    │ PCM 오디오 (16kHz mono PCM16)
-    ▼
-app/audio.py  →  AudioCapture.read_chunk()
-    │ bytes (3200 bytes / 100ms)
-    ▼
-app/gemini_session.py  →  GeminiSession._audio_queue
-    │ asyncio.Queue[bytes]  (maxsize=500)
-    ▼
-GeminiSession._send_loop()  →  session.send_realtime_input(audio=Blob)
-    │                                 [Gemini Live API WebSocket]
-    ▼
-GeminiSession._recv_loop()
-    ├── output_transcription.text  →  on_caption(delta)
-    ├── input_transcription.text   →  on_source_transcript(delta)
-    └── model_turn.inline_data     →  on_audio_chunk(pcm_bytes)
-    │
-    ▼
-app/broadcast.py  →  CaptionBroadcaster
-    ├── on_caption_delta()   →  SSE "update" 이벤트 → /stream
-    ├── _schedule_commit()   →  SSE "commit" 이벤트 → /stream  (1.5s 묵음 후)
-    ├── on_source_delta()    →  SSE "source" 이벤트 → /stream  (운영자 전용)
-    └── on_audio_chunk()     →  WS binary → /audio-stream
-    │
-    ▼
-[참석자 모바일 브라우저]
-    ├── SSE EventSource  →  자막 렌더링
-    └── WebSocket        →  Web Audio API 재생
-```
+
+원시 녹음과 번역은 별도 경로입니다. 번역을 일시정지해도 캡처·녹음은 유지하며, 녹음 writer 오류가 번역 경로를 중단하지 않습니다. 장치별 입력 채널 RMS와 L/R 상관관계는 로그로만 기록합니다.
 
 ---
 
@@ -65,14 +55,12 @@ app/broadcast.py  →  CaptionBroadcaster
 ```python
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 시작: 모델 탐색, 브로드캐스터·세션 싱글턴 초기화
+    # 시작: 설정 로드, 매니저 초기화. 모델 탐색·검증 연결은 실행하지 않음
     yield
     # 종료: 번역 파이프라인 정지 및 세션 로그 저장
 ```
 
-전역 싱글턴 두 개가 서버 전체 생애주기 동안 유지됩니다:
-- `_broadcaster`: `CaptionBroadcaster` — SSE/WS 팬아웃 담당
-- `_session`: `GeminiSession` — Gemini API 세션 담당
+서버의 `TranslationManager`가 단일 오디오 캡처와 출력 언어별 `GeminiSession`·`CaptionBroadcaster`를 관리합니다. 주 언어 상태와 각 출력 언어의 상태를 `/api/status`에서 함께 제공합니다.
 
 ### 주요 라우트 구조
 
@@ -90,13 +78,9 @@ async def lifespan(app: FastAPI):
 | `POST /api/auth/logout` | HTTP | JSON | 세션 쿠키 무효화 및 로그아웃 |
 | `POST /api/start` | HTTP | JSON | 번역 파이프라인 시작 (인증 필요) |
 | `POST /api/stop` | HTTP | JSON | 파이프라인 정지 + 로그 저장 (인증 필요) |
-| `POST /api/pause` | HTTP | JSON | 마이크 및 과금 일시정지 + 오디오 큐 비우기 (인증 필요) |
+| `POST /api/pause` | HTTP | JSON | 번역 세션 일시정지 + 번역 오디오 큐 비우기, 입력 녹음 유지 (인증 필요) |
 | `POST /api/resume` | HTTP | JSON | 신규 Gemini 컨텍스트로 일시정지 해제 (인증 필요) |
-| `GET /api/models` | HTTP | JSON | 발견된 모델 목록 및 검증 상태 |
-| `POST /api/models/select` | HTTP | JSON | 선호 모델(Preferred Model) 설정 |
-| `POST /api/models/test` | HTTP | JSON | 실시간 호환성 핸드셰이크 테스트 |
-| `POST /api/models/dismiss-alert` | HTTP | JSON | 모델 변경 안내 배너 닫기 |
-| `POST /api/config/auto-drift-correction` | HTTP | JSON | 자동 언어 이탈 복구 런타임 토글 |
+| `POST /api/models/test` | HTTP | JSON | 설정된 모델의 수동 연결 테스트, 모델 선택값 저장 없음 |
 | `POST /api/config/auto-stop` | HTTP | JSON | 자동 종료 타임아웃(분) 설정 |
 | `GET /api/events?since=N` | HTTP | JSON | 운영자 이벤트 증분 폴링 |
 
@@ -113,7 +97,7 @@ HTML 파일은 `app/templates/operator.html` 및 `app/templates/attendee.html`�
 `app/events.py` — `OperatorEventLog`
 
 ### 목적
-운영자용 이벤트(Gemini 연결 완료, 참석자 접속 등)와 개발자 로그(회전 파일 `ops.log`/`session.log`)를 분리합니다. 봉사자는 대시보드의 구조화된 이벤트를 보고, 개발자는 `/admin/logs`에서 원시 로그를 확인합니다.
+운영자용 이벤트(Gemini 연결 완료, 참석자 접속 등)와 개발자 로그(회전 파일 `ops.log`/`session.log`)를 분리합니다. 봉사자는 대시보드의 구조화된 이벤트를 보고, 개발자는 로그 폴더의 회전 파일을 확인합니다.
 
 ### 구현
 
@@ -159,132 +143,89 @@ class OperatorEventLog:
 
 ## 4. Gemini Live API 세션
 
-### 연결 설정 (`_build_config`)
+### 고정 연결 설정
 
-번역 전용 모델(`gemini-3.5-live-translate-preview`)은 `translation_config`를 사용합니다.
+`config.yaml`의 `gemini.model`을 모든 최초 연결·재연결·수동 재개에 그대로 사용합니다. 시작 시 모델 목록 조회나 테스트 연결을 수행하지 않으며 자동 대체 모델도 없습니다. 실제 `_build_config()`의 핵심은 다음과 같습니다.
 
 ```python
 types.LiveConnectConfig(
-    response_modalities=["AUDIO"],          # TEXT 미지원 (오류 1007)
+    response_modalities=["AUDIO"],
+    input_audio_transcription=types.AudioTranscriptionConfig(),
+    output_audio_transcription=types.AudioTranscriptionConfig(),
     translation_config=types.TranslationConfig(
-        target_language_code="en",
+        target_language_code=self.target_language_code,
         echo_target_language=True,
     ),
-    speech_config=types.SpeechConfig(       # 보이스 고정 필수
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="orus")
-        )
+    speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
+        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="orus"),
+    )),
+    realtime_input_config=types.RealtimeInputConfig(
+        automatic_activity_detection=types.AutomaticActivityDetection(
+            disabled=False,
+            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+            prefix_padding_ms=200,
+            silence_duration_ms=700,
+        ),
     ),
-    input_audio_transcription=types.AudioTranscriptionConfig(),   # Developer API 모드에서는 빈 설정 객체 필수 (language_codes 전달 금지)
-    output_audio_transcription=types.AudioTranscriptionConfig(),
     context_window_compression=types.ContextWindowCompressionConfig(
-        sliding_window=types.SlidingWindow()
+        sliding_window=types.SlidingWindow(),
     ),
-    session_resumption=types.SessionResumptionConfig(handle=self._resumption_handle),
 )
 ```
 
-> **⚠️ `language_codes` 언어 힌트 설정 금지 (Developer API 제약사항)**:
-> Google GenAI SDK에서 `AudioTranscriptionConfig(language_codes=["ko", "en"])`는 Enterprise Agent Platform 전용이며, Google AI Studio Developer API 모드에서는 즉시 치명적 오류(`ValueError: language_codes parameter is only supported in Gemini Enterprise mode`)를 반환합니다.
-> 따라서 `input_audio_transcription` 및 `output_audio_transcription`에는 반드시 빈 `types.AudioTranscriptionConfig()`를 전달해야 합니다. 다국어/한국어/영어 이탈 감시는 API 내부 파라미터가 아닌, 서버 수신 루프의 완료 턴 검사(`evaluate_drift_score`)를 통해 수행됩니다.
+입력 전사에는 언어·어휘 힌트를 넣지 않습니다. 시스템 지시문과 세션 복구 핸들도 사용하지 않습니다. 위 예시의 보이스는 실제로 `gemini.voice`에서 읽으며 기본값은 `orus`입니다. 힌트 제거와 기준 전사 검증의 판단 근거는 [STACK.md](STACK.md), [evaluation.md](evaluation.md)를 참고하세요.
 
-### 응답 파싱 (`_recv_loop`)
+### 입력 언어 메타데이터와 출력
 
-하나의 응답 프레임에는 여러 종류의 데이터가 함께 올 수 있습니다.
+응답의 입력 전사 `language_code`를 전사 라벨과 로그에 기록합니다. 원문 언어 목록으로 출력을 제한하지 않으며 기존 `translation.expected_source_languages`는 읽어 적용하지 않습니다.
 
-```python
-async for response in session.receive():
-    sc = response.server_content
+- 중국어 등 다른 원문 언어도 수신한 자막·합성 음성·전사를 그대로 전달합니다.
+- 언어 정보가 늦거나 없으면 자막·음성을 기다리게 하지 않습니다. 완료 때도 코드가 없으면 전사에 `unknown`으로 기록합니다.
+- 언어가 바뀌어도 자동 음소거·자막 숨김·세션 리셋을 하지 않습니다. 수동 Pause/Resume의 세대 격리는 유지합니다.
 
-    # 1. 합성 오디오 PCM (24kHz, PCM16, mono)
-    for part in (sc.model_turn.parts or []):
-        if part.inline_data:
-            on_audio_chunk(part.inline_data.data)  # ~12,000 bytes/chunk
+언어 코드만으로 정상 외국어와 오인식을 구별할 수 없으므로 인식 오류도 전달될 수 있습니다. `/api/status`와 `translation.sessions[언어]`의 `output_hidden`, `audio_muted`는 기존 클라이언트 호환을 위해 남기며 원문 언어 때문에 켜지지 않습니다.
 
-    # 2. 한국어 원문 전사
-    if sc.input_transcription?.text:
-        current_ko += sc.input_transcription.text
+### 연결 오류와 재연결
 
-    # 3. 영어 번역 텍스트
-    if sc.output_transcription?.text:
-        en_text = sc.output_transcription.text
-        on_caption(en_text)
+연결에 성공하면 일반 연결 오류의 실패 시도 횟수를 0으로 초기화합니다. 일반 연결 오류에는 제한된 지수 백오프를 사용하며 3회 실패하면 `FAILED`로 전환합니다. `ValueError`, `TypeError`, 지정 모델의 404/NOT_FOUND/1008 오류는 모델명을 포함한 명확한 실패로 처리하며 다른 모델로 전환하지 않습니다.
 
-    # 4. GoAway — 즉시 재연결 트리거
-    if response.go_away:
-        raise RuntimeError("GoAway")
+HTTP 429, `RESOURCE_EXHAUSTED`, 결제·할당량 오류는 별도 3회 실패 한도를 사용합니다. 2초·5초 뒤 재시도하고 세 번째 오류에서 중단하므로, 연결 직후 같은 오류가 나도 무한 반복하지 않습니다. `/api/status`의 `session.error_kind`와 언어별 `translation.sessions[언어].error_kind`가 `quota`이면 화면에 지출 한도·할당량·요청 빈도 제한의 가능성을 한영으로 표시합니다. 오류 코드만으로 월 지출 한도와 일시적 요청 제한을 확정하지는 않습니다. 서비스 종료 후 결제·할당량을 확인하고 다시 시작합니다.
 
-    # 5. 세션 재개 핸들 업데이트
-    if response.session_resumption_update?.handle:
-        self._resumption_handle = response.session_resumption_update.handle
-```
+`GoAway`는 정상 연결 교체 신호로 구분해 실패 횟수 증가 없이 0.2초 뒤 같은 모델에 재연결합니다. 2026-11-01 기록 5건에서는 연결당 약 9분에 관찰됐으며, 이는 공급자의 고정 보장 시간이 아닙니다. 재연결은 새 컨텍스트를 엽니다.
 
-### 자동 재연결 (`_run_with_retry`)
+일반 연결 오류의 제한된 재시도가 소진되면 서버의 `_auto_stop_on_failure`가 2초·5초·15초 간격으로 최대 3회 복구를 시도합니다. 설정 오류와 `quota` 오류는 이 반복 복구 대상에서 제외합니다. 해당 출력 언어의 장애는 다른 출력 언어와 단일 입력 캡처를 중단하지 않습니다. 실패한 세션의 PCM 큐는 더 채우지 않으며, 모든 출력이 실패하면 추정 과금 시간도 멈춥니다. MP3 녹음은 서비스 종료 전까지 계속합니다.
 
-```
-self._attempt=0 → 연결 시도
-    │
-    ├─ 성공적인 연결 → self._attempt=0 리셋 반복
-    │
-    └─ 예외 발생
-          self._attempt += 1
-          self._attempt >= 3 → GeminiSessionError 발생 / FAILED 상태, 루프 종료
-          delay = min(2 * 2^(self._attempt-1), 60)초 대기 → 재시도
-```
+### 수동 일시정지와 재개
 
-- **성공 시 재연결 시도 횟수 초기화**: `self._attempt`는 인스턴스 지속 변수입니다. 매번 연결이 정상적으로 완료되면 0으로 초기화됩니다. 이로써 9분마다 주기적으로 수신되는 Google GoAway 서버 연결 교체 신호가 누적되어 전체 예배(60~90분) 중의 재연결 예산(3회 한도)을 고갈시키는 문제를 완벽하게 예방합니다.
-- **GoAway 주기 (연결당 9분)**: GoAway는 각 연결을 연 뒤 9:00에 도착하며, 타이머는 세션이 아니라 연결마다 초기화됩니다 (observed 2026-11-01, 5/5 logs). 30분 연속 가동 테스트(`16:27`–`16:57`)에서 본 ~27:05 GoAway는 세 번째 9분 GoAway였을 가능성이 높습니다 (unverified, 해당 로그 재검토 안 함). 당시 자동 복구가 2.3초 만에 재연결했습니다.
-- **GoAway 예외 별도 처리 (즉시 재연결)**: `_is_goaway_exception()`이 중첩 `ExceptionGroup`을 풀어 GoAway를 판별하면 장애가 아닌 구글 서버의 정기 교체 신호로 간주하여 지수 백오프 및 실패 횟수 증가를 건너뛰고 `0.2초` 만에 즉시 재연결합니다 (전체 재연결 지연 시간이 기존 ~2.4초에서 ~0.5초로 단축).
-- **콜드 스타트 감시**: 세션 복구 핸들이 만료되어 콜드 스타트(`resume=False`)로 재연결될 경우, 운영자 이벤트 로그에 `warning` 경고를 등록하여 번역 문맥(Context)이 소실되었음을 즉시 통지합니다.
-
-### 제한된 파이프라인 자동 재시작 (`server.py`)
-세션 내부의 자체 재연결 시도가 모두 고갈되어 `GeminiSession`이 최종 실패하면, 서버 레벨의 `_auto_stop_on_failure` 백그라운드 태스크가 구동됩니다.
-1. 기존 실패한 세션을 `STOPPING` 상태로 해제하고 테어다운을 실행합니다.
-2. 3회(2초, 5초, 15초 대기)로 구성된 제한된 자동 재시작 루프를 실행합니다.
-3. 재시작에 성공하면 다시 실시간 번역 서비스를 복구하며, 3회 시도가 모두 실패하면 최종 `FAILED` 상태가 되어 수동 개입을 요구합니다.
-4. 재시작 복구 루프가 구동 중일 때, 운영자 화면 대시보드의 상태 카드가 빨갛게 깜빡이고 경고성 비프(차임)음이 울립니다.
-
-### 세션 재개 vs. 신규 연결
-`_resumption_handle`이 존재하면 세션 재개(컨텍스트 유지), 없으면 신규 연결입니다. 핸들은 매 응답 프레임마다 갱신되며 재연결 직후 소비됩니다.
+`Pause`는 번역 큐를 비우고 Gemini 연결을 닫습니다. 마이크 캡처와 입력 MP3 녹음은 계속합니다. `Resume`은 같은 모델로 새 컨텍스트를 열고 epoch를 증가시켜 이전 응답을 폐기합니다. 이 조작이 오인식을 반드시 교정한다고 보장하지 않습니다.
 
 ---
 
 ## 5. 오디오 캡처 파이프라인
 
-### PCM 포맷 체인
+`AudioCapture`가 장치를 한 번 열어 실제 샘플레이트·채널 수의 little-endian PCM16을 읽습니다. 가능한 장치에서는 네이티브 16 kHz 모노를 우선 사용하고, 그렇지 않으면 지원 포맷을 사용합니다. 녹음을 위해 기존 캡처 포맷 선택 방식을 바꾸지 않았습니다.
 
-```
-PyAudio 장치 (native rate, e.g. 48000Hz)
-    │ raw bytes (int16, little-endian)
-    ▼
-_resample_chunk()  →  16kHz mono PCM16
-    │ 선형 보간 리샘플러 (NumPy 의존 없음)
-    ▼
-GeminiSession._audio_queue  (asyncio.Queue, maxsize=500)
-    │
-    ▼
-session.send_realtime_input(audio=Blob(data=chunk, mime_type="audio/pcm;rate=16000"))
+```text
+장치 원시 PCM16
+   ├─ WeeklyRecording → bounded 큐 → lameenc MP3 (약 128 kbps CBR)
+   └─ 다채널이면 모노 평균 → 필요하면 Resampler → 16 kHz 모노 PCM16
+                                                   ↓
+                                  출력 언어별 Gemini 오디오 전송 큐
 ```
 
-### 리샘플러 동작
+리샘플러는 4차 Butterworth 저역통과 필터와 청크 간 위상을 유지하는 선형 보간을 사용합니다. 네이티브 16 kHz이면 리샘플러를 건너뜁니다. 전송은 항상 `audio/pcm;rate=16000`입니다.
 
-```python
-# 16kHz 목표 청크 크기: 100ms = 1600 samples = 3200 bytes
-ratio = native_rate / 16000
-indices = [int(i * ratio) for i in range(target_samples)]
-resampled = [source_samples[i] for i in indices]
-```
+### MP3 기록과 보관
 
-단순 최근접 이웃(nearest-neighbor) 선형 인덱싱으로 구현합니다. 음성 인식용도이므로 오디오 품질보다 지연 최소화가 우선입니다.
+`logs/recordings/current_week/YYYY-MM-DD_HHMM.mp3`에 캡처 채널 수와 샘플레이트를 유지해 저장합니다. 네이티브 16 kHz 장치면 MP3도 16 kHz이며 원본에 없는 고주파 정보를 추가하지 않습니다. 시간당 용량은 약 58 MB입니다.
 
-### RMS 레벨 미터링
+writer는 번역과 별도이며 녹음 큐는 크기를 제한합니다. 디스크·인코더 오류가 번역 전송을 막지 않도록 격리합니다. 큐 누락과 250 ms를 넘는 캡처 공백은 무음 및 녹음 메타데이터로 남깁니다. 번역 일시정지 동안에도 실제 캡처 입력을 기록합니다.
 
-```python
-rms = sqrt(mean(sample**2 for sample in chunk))
-db = 20 * log10(rms / 32768)  # 0 dBFS 기준 정규화
-```
+새 녹음 시작 시 21일보다 오래된 생성 녹음을 정리합니다. 달력상 주별 교체가 아닙니다. 잠긴 오래된 파일은 경고를 기록하고 넘어가며 현재 녹음을 계속합니다. 전사 보관 폴더와 사용자가 따로 복사한 파일은 별개입니다.
 
-10Hz 주기(100ms마다)로 계산하며, `-60 dBFS` 이하 지속 시 `NO_SIGNAL` 경보를 발생시킵니다.
+### 입력 진단과 레벨 미터
+
+레벨 미터는 PCM의 RMS를 dBFS로 환산합니다. 장시간 무신호와 연결 해제를 구분합니다. 모노 변환 전의 채널별 RMS dBFS, 스테레오 L/R 상관관계를 캡처 시작 및 60초마다 로그에 남깁니다. 진단이 입력 채널이나 모드를 자동 변경하지는 않습니다.
 
 ---
 
@@ -294,28 +235,21 @@ db = 20 * log10(rms / 32768)  # 0 dBFS 기준 정규화
 
 | 이벤트 | `data` 형식 | 수신 대상 | 설명 |
 |--------|------------|---------|------|
-| `update` | 영어 텍스트 (델타) | 참석자+운영자 | 현재 줄 실시간 갱신 |
-| `commit` | 영어 전체 줄 | 참석자+운영자 | 줄 확정 및 기록 추가 |
-| `source` | 한국어 텍스트 (델타) | **운영자 전용** | 원문 스트리밍 |
-| `unavailable` | `""` | 참석자+운영자 | 번역 불가 알림 |
-| `ping` | `""` | 참석자+운영자 | 15초 keepalive |
-| `paused` | `""` | 참석자+운영자 | 일시정지 알림 |
-| `resumed` | `""` | 참석자+운영자 | 재개 알림 |
+| `update` | `target`/`text` 델타 | 참석자+운영자 | 허용된 현재 줄 갱신 |
+| `commit` | 확정 원문·번역 | 참석자+운영자 | 로컬 이름 교정 후 두 텍스트를 교체·확정 |
+| `source` | 원문 델타 | 참석자+운영자 | 허용된 원문 갱신 |
+| `hidden` | 상태 신호 | 참석자+운영자 | 현재 미확정 줄만 제거 |
+| `visible` | 상태 신호 | 참석자+운영자 | 자막 재개 상태 알림 |
+| `audio_clear` | 상태 신호 | 참석자+운영자 | 재생 중·예약된 오디오 노드와 큐 비우기 |
+| `unavailable` | 상태 신호 | 참석자+운영자 | 번역 불가 알림 |
+| `ping` | 상태 신호 | 참석자+운영자 | 15초 keepalive |
+| `paused` / `resumed` | 상태 신호 | 참석자+운영자 | 일시정지·재개 알림 |
+
+스트림은 `CaptionEvent.kind`를 포함하는 JSON으로 전달합니다. 현재 줄은 델타로 보이고 `commit`에서 교정된 원문과 번역을 모두 덮어씁니다. 세션 시작 전에 확정된 이전 자막을 언어 이탈 알림으로 지우지 않습니다.
 
 ### 팬아웃 구조
 
-```python
-class CaptionBroadcaster:
-    _queues: list[asyncio.Queue]   # SSE 클라이언트당 1개
-    _audio_clients: list[WebSocket]  # 오디오 WebSocket 클라이언트
-
-    def broadcast(self, event_type: str, data: str):
-        for q in self._queues:
-            q.put_nowait({"type": event_type, "data": data})
-        # 큐가 꽉 차면 put_nowait은 QueueFull → 해당 클라이언트만 drop
-```
-
-각 클라이언트는 독립 큐를 가지므로 느린 클라이언트가 빠른 클라이언트를 블로킹하지 않습니다.
+`CaptionBroadcaster`는 SSE 클라이언트별 큐와 오디오 WebSocket 클라이언트 목록을 관리합니다. `CaptionEvent`를 각 SSE 큐에 넣고 오디오 바이트는 별도로 전송합니다. 각 클라이언트가 독립 큐를 가지므로 느린 클라이언트가 다른 클라이언트를 막지 않습니다.
 
 ---
 
@@ -361,87 +295,41 @@ function scheduleAudioChunk(float32Data) {
 }
 ```
 
+`audio_clear`를 받으면 추적 중인 `AudioBufferSourceNode`를 정지하고 예약 목록과 다음 재생 시각을 초기화합니다. 새 오디오 판정 버퍼를 추가하지 않으므로 평상시 지연은 늘어나지 않습니다. 이미 재생된 소리를 취소할 수는 없습니다.
+
 iOS Safari는 사용자 인터랙션(탭) 없이 `AudioContext`를 생성할 수 없습니다. "오디오 듣기" 버튼 클릭 시에 `AudioContext`를 초기화하는 이유입니다.
 
 ---
 
 ## 8. 자막 커밋 전략
 
-자막 한 줄의 "확정" 시점 결정 로직입니다.
+Gemini 턴 기록과 브라우저 자막 줄 확정은 구분합니다.
 
-### 세 가지 커밋 경로
-
-```
-스트리밍 델타 수신 중...
-    │
-    ├─ 1.5초 동안 새 델타 없음  →  [커밋 경로 1] 1.5초 묵음 타이머
-    │                               broadcast("commit", current_line)
-    │                               glossary.correct(ko, en) 적용 후
-    │
-    ├─ 현재 줄 150자 초과        →  [커밋 경로 2] 강제 커밋
-    │                               _find_split()로 자연 경계 탐색
-    │                               ". " → "! " → "? " → "; " → ", " → " "
-    │
-    └─ turn_complete 신호        →  [커밋 경로 3] 자동 커밋 루프
-                                    _auto_commit_loop()에서 감지
-```
-
-### `turn_complete` 미사용 이유
-Gemini는 "음", "어" 같은 필러 발화에도 `turn_complete`를 발생시킵니다. 설교 중 빈번한 필러로 인해 자막이 과도하게 단편화되어 가독성이 심각하게 저하됩니다. 묵음 타이머가 사람이 실제 말을 쉬는 자연적 구두점과 더 잘 일치합니다.
+- `GeminiSession`은 `turn_complete`를 받거나 새 텍스트가 1.5초간 없을 때 턴을 완료합니다. 원문 언어와 관계없이 이름 교정 후 전사 목록에 보관하며, 언어 정보가 없으면 `unknown`으로 기록합니다.
+- `CaptionBroadcaster`는 마지막 번역 델타 이후 1.5초가 지나면 줄을 확정합니다. 연속 발화로 150자를 넘으면 `_find_split()`이 문장부호나 공백 경계를 찾아 먼저 확정합니다.
+- 확정 시 원문·번역에 같은 `NameCorrector`를 적용합니다. 클라이언트는 `commit`의 원문·번역을 모두 교체하므로 스트리밍 중 보였던 오기가 확정 자막에 남지 않습니다. 합성 음성은 수정하지 않습니다.
+- `hidden` 상태로 전환하면 아직 확정하지 않은 줄과 타이머를 폐기합니다. 먼저 확정되어 송출된 내용은 되돌리지 않습니다.
 
 ---
 
-## 9. 용어집 교정 패스 (Glossary)
+## 9. 이름 교정과 전사 평가
 
-`app/glossary.py` + `config/glossary.yaml`
+`app/text_corrections.py`의 `NameCorrector`는 `config/name_corrections.yaml`의 치환표를 읽습니다. 유지보수자가 확인한 오기만 직접 등록하고 프로그램을 다시 시작합니다.
 
-### 동작 원리
-
-1. 자막 줄이 **커밋될 때만** 동작합니다 (스트리밍 중 미적용).
-2. 한국어 원문(`input_transcription`)에 용어가 존재하는지 확인합니다.
-3. 영어 번역에 올바른 용어가 이미 있으면 건너뜁니다.
-4. 없으면 줄 뒤에 `[올바른 용어]`를 추가합니다.
-
-```python
-# 예: 당회가 한국어 원문에 있고 영어에 "Session"이 없을 때
-"The elders discussed the matter." → "The elders discussed the matter. [Session]"
+```yaml
+스타필드 한인 교회: 스타크빌 한인교회
+Starfield Korean Church: Starkville Korean Church
+카미카제 자매: 카미카 자매
+Kamikaze sister: Kamika
 ```
 
-### 경계 매칭 규칙
+긴 항목을 먼저 매칭하며 ASCII 항목은 단어 전체가 일치할 때만 치환합니다. 정확 일치이므로 대소문자나 표기가 다르면 별도 항목이 필요합니다. 자동 단어 추출, 사후 검토 모달, 모델 프롬프트 반영은 없습니다. `collapse_repetitions()`는 단어나 짧은 구절이 5회 이상 연속 반복된 경우 한 번으로 축약합니다.
 
-한국어 명사에는 조사가 직접 붙으므로 오른쪽 경계를 검사하지 않습니다.
+교정은 확정 원문·번역 자막과 저장 전사에만 적용합니다. 잘못 인식된 Google 원시 응답, 개발자 로그, 번역 합성 음성을 고치거나 모델을 훈련하지 않습니다.
 
-```python
-# ✅ 올바른 패턴 (왼쪽 경계만)
-pattern = r"(?<![가-힣])" + re.escape(phrase)
+### 기존 전사 기준과 다음 검증
 
-# 예: "당회"는 "당회에서", "당회를", "당회의" 모두 매칭
-# 예: "장로회당회"에서 "당회"는 매칭 안 됨 (앞에 한글 있음)
-```
-
-
-### 설교 어휘 편향 및 사후 2분 검토 파이프라인 (Vocabulary Biasing & Post-Sermon 2-Min Review)
-
-단순 정규식 후처리 교정을 넘어, Google Gemini Live 번역 세션 자체에 교회 고유 용어를 주입하고 사후에 신규 어휘를 수집하는 2단계 아키텍처가 구현되었습니다:
-
-1. **Gemini Live ASR & 번역 편향 주입 (`app/gemini_session.py`, `app/glossary.py`)**:
-   - `config/glossary.yaml`에 정의된 핵심 신앙 어휘 및 인명, 지명을 Gemini Live 세션 초기화 시 전사 힌트 및 시스템 프롬프트에 주입하여 음성인식 단계에서 고유명사가 오인식되는 문제를 원천 차단합니다.
-   - Developer API 제약에 따라 `AudioTranscriptionConfig(language_codes=...)` 대신 세션 구성 프롬프트를 통해 단일/다중 언어 편향을 유연하게 제어합니다.
-
-2. **설교 전사본 용어 자동 하베스팅 (`harvest_sermon_terms`)**:
-   - 설교 전사본에서 2자 이상 12자 이하의 고빈도 어휘, 신앙 용어, 미등록 고유명사 후보를 자동으로 추출하고 빈도순으로 정렬합니다.
-   - 일반 불용어(Stopwords) 및 음절 잡음을 자동으로 필터링합니다.
-
-3. **2분 어휘 검토 REST API 및 수명주기 (`app/server.py`)**:
-   - `GET /api/glossary`: 현재 등록된 카테고리별 어휘 목록과 이번 설교에서 감지된 신규 어휘 후보를 JSON으로 반환합니다.
-   - `POST /api/glossary/review`: 운영자가 검토 모달에서 승인한 신규 용어를 `config/glossary.yaml`에 즉시 반영하고, 활성 메모리 사전(`GlossaryCorrector.reload()`)을 재로딩합니다.
-   - 세션이 정지(Stop)되더라도 전사본은 인메모리에 안전하게 유지되며, 운영자가 'Exit System'을 누르기 전까지 언제든 2분 검토를 수행할 수 있습니다. 신규 세션 시작(`POST /api/start`) 시에만 이전 전사본이 리셋됩니다.
-
-### 용어집 활성화/비활성화
-`config/glossary.yaml`에서 `enabled: true/false`로 카테고리별 제어:
-- **A (PCA 직분명)**: `enabled: true` — 당회, 장로, 목사, 집사
-- **C (신조 문서)**: `enabled: true` — 웨스트민스터 신앙고백
-- **B, D, E, F**: `enabled: false` — 필요 시 활성화
+제공된 두 기계 전사본 대비 기존 라이브 발화 CER는 각각 18.0%와 19.1%입니다. 두 기준도 서로 차이가 있으므로 사람이 확인한 정답으로 간주하지 않습니다. 재현 명령, 승인된 사후 전사 평가 결과, 시간 정렬·의미 평가의 한계는 [evaluation.md](evaluation.md)에 정리했습니다. 사후 전사는 설교에서 개선됐지만 전체 발화 누락이 있어 실시간 통역을 대체하지 않습니다. 새 코드의 실시간 전사 개선 여부는 같은 오디오와 사람이 확인한 구간으로 추가 검증해야 합니다.
 
 ---
 
@@ -449,17 +337,7 @@ pattern = r"(?<![가-힣])" + re.escape(phrase)
 
 ### 세션 내 태스크 구조
 
-```
-_run_session() 내부:
-    ┌─────────────────────────────────────────┐
-    │  asyncio.wait(FIRST_COMPLETED)          │
-    │  ┌──────────┐ ┌──────────┐ ┌────────┐ ┌──────────┐ │
-    │  │send_loop │ │recv_loop │ │commit  │ │stop_event│ │
-    │  │(오디오전송)│ │(응답수신)│ │(루프)  │ │(정지감지)│ │
-    │  └──────────┘ └──────────┘ └────────┘ └──────────┘ │
-    └─────────────────────────────────────────┘
-    첫 번째 태스크 완료/예외 → 나머지 모두 cancel
-```
+`_run_session()`은 `asyncio.TaskGroup` 안에서 오디오 전송, 응답 수신, 자동 턴 커밋의 세 태스크를 실행합니다. 정지 이벤트와 epoch를 확인하며, 수신 종료나 예외 시 연결 컨텍스트를 종료하고 재시도 정책으로 넘깁니다.
 
 ### 주요 동기화 프리미티브
 
@@ -486,37 +364,23 @@ _run_session() 내부:
 # app/server.py 내부
 @app.post("/api/my-endpoint")
 async def my_endpoint():
-    # _session, _broadcaster 싱글턴에 직접 접근 가능
+    # 기존 인증·PublicHostGuard 경계를 적용하고 매니저를 통해 작업
     return {"ok": True}
 ```
 
 ### 새 SSE 이벤트 종류 추가
 
-1. `app/broadcast.py`에 브로드캐스트 메서드 추가:
-   ```python
-   def broadcast_my_event(self, data: str):
-       self.broadcast("my_event", data)
-   ```
-2. 참석자 JavaScript에서 수신:
-   ```javascript
-   es.addEventListener("my_event", (e) => { ... });
-   ```
+1. `CaptionEvent.kind`에 새 종류를 추가하고 기존 `_push()` 경로로 전송합니다.
+2. 참석자와 운영자 JavaScript의 `EventSource.onmessage`에서 JSON의 `kind`를 처리합니다.
+3. 출력 언어별 스트림 분리, 현재 줄 정리, 두 화면의 한국어·영어 문구를 함께 확인합니다.
 
-### 용어집에 새 항목 추가
+### 이름 교정표 수정
 
-`config/glossary.yaml`의 `direct:` 목록에 추가:
-```yaml
-- category: A
-  ko: "새로운 한국어 용어"
-  en: "Correct English Term"
-  enabled: true
-  variants: ["맞춤법 변형1", "맞춤법 변형2"]  # 선택
-```
-서버 재시작 없이는 반영되지 않습니다 (`GlossaryCorrector`는 시작 시 1회 로딩).
+`config/name_corrections.yaml`에 `오기: 올바른 표기`를 추가합니다. 프로그램을 다시 시작한 뒤 확정 자막과 저장 전사 양쪽에서 확인합니다. 음성이나 Google 인식 결과가 개선됐다고 판정하지 않습니다.
 
-### 오디오 샘플레이트 변경
+### 캡처 포맷을 바꿀 때
 
-`config.yaml`의 `audio.sample_rate`만 바꾸면 리샘플러가 자동 적용됩니다. Gemini는 항상 16kHz로 전송됩니다.
+실제 캡처 포맷은 장치 지원값으로 결정합니다. `audio.sample_rate`만 바꿔 원시 녹음이 고해상도가 된다고 가정하지 마세요. 장치 진단 로그의 샘플레이트·채널 수를 확인하고, 번역 전송이 항상 16 kHz 모노인지 점검합니다.
 
 ---
 
@@ -540,11 +404,11 @@ async def my_endpoint():
   - `Card 3 (Public HTTPS)`에서 토큰 입력 시 `.env` 파일에 `CLOUDFLARE_TUNNEL_TOKEN`으로 원자적(Atomic) 직접 저장.
   - 관리자 권한이 없는 일반 노트북 사용자라도 UAC 오류 없이 "포터블 모드 준비 완료" 상태로 안내.
   - `[⬇️ Download cloudflared.exe]` 버튼을 통해 공식 최신 바이너리(~54MB)를 원클릭 다운로드.
-- **아카이브된 참조 스크립트 (`.agent/scratch/`)**:
+- **아카이브된 참조 스크립트 (`.agent/archive/legacy-experiments.zip`의 `loose/`)**:
   - `install_cloudflare_tunnel.bat`: 초기 교회 PC 서비스 설치 배치 (참조용).
   - `fix_cloudflared_service.bat`: 서비스 경로 복구 배치 (참조용).
   - `check_skc_live.bat`: 3단계 헬스체크 배치 (참조용).
-  - *임베디드 온디맨드 터널 탑재로 인해 일반 배포본에서는 배치 스크립트가 불필요하여 root에서 scratch로 정리되었습니다.*
+  - 임베디드 온디맨드 터널 탑재로 일반 배포본에서는 불필요합니다. 과거 절차의 참고 자료로만 보관하며 현재 환경에 그대로 실행하지 않습니다.
 
 ### Cloudflare Zero Trust 대시보드 및 터널 토큰(Token) 확인
 - **대시보드 접속 주소**: [https://one.dash.cloudflare.com](https://one.dash.cloudflare.com) 또는 [https://dash.cloudflare.com](https://dash.cloudflare.com)
@@ -590,13 +454,13 @@ async def my_endpoint():
    - 핸들러(`/ws/telemetry` 등)는 중복 계산이나 외부 헬퍼 재호출 없이 `ws.scope.get("route_scope", "local")`을 직접 참조합니다.
 4. **상호작용 타이밍 마진 (Interacting Timeouts Margin)**:
    - 모바일 브라우저(iOS/Android Safari/Chrome)는 백그라운드 탭 전환 또는 화면 잠금 시 `setInterval`을 약 60초 간격으로 스로틀링합니다.
-   - 백엔드의 비활성 청취자 정리 TTL(`CLIENT_INACTIVE_TTL_S`)은 60초와 동일하게 설정하지 않고, 50%의 지터 안전 마진을 둔 **90초** (1.5:1 비율)로 운영하여 청취자 수가 주기적으로 0으로 출렁이는 현상(Flapping)을 방지합니다.
+   - 백엔드의 비활성 청취자 정리 TTL(`CLIENT_INACTIVE_TTL_S`)은 **120초**로 두어 60초 타이머 간격에 여유를 줍니다. 청취자 수가 주기적으로 0으로 출렁이는 현상을 줄이기 위한 값입니다.
 5. **이벤트 정합성 및 Unknown 버킷 (Eventual Consistency & Unknown Bucket)**:
    - SSE 브로드캐스트 연결 큐(`total_listeners`)와 텔레메트리 WebSocket 수신 간의 네트워크 시차를 흡수하기 위해 `local_listeners + public_listeners + unknown_listeners == total_listeners` 항등식을 유지합니다.
 
 ### 운영자 콘솔 이중 언어 현지화 원칙 (Bilingual Parity)
 - 모든 UI 요소는 `data-lang="ko"`와 `data-lang="en"` 요소를 동시에 유지해야 하며, 런타임 텍스트 동적 치환 시에도 순수 단일 언어 문자열로 innerHTML/textContent를 덮어쓰지 않고 이중 언어 태그를 보존하거나 `getOperatorUiLanguage()`를 검사하여 일치시킵니다.
-- `<option>` 태그는 HTML 표준상 하위 `<span>` 요소를 가질 수 없으므로, 템플릿에는 `data-tag` 속성만 부여하고 자바스크립트(`renderModelDropdown()`)가 UI 언어에 맞춰 `option.textContent`를 동적으로 합성합니다.
+- `<option>` 태그의 언어 표시는 해당 선택기를 갱신하는 JavaScript에서 `option.textContent`로 처리합니다. 고정 모델명에는 드롭다운을 사용하지 않습니다.
 
 ---
 

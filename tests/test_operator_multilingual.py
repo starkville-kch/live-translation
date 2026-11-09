@@ -23,7 +23,6 @@ def reset_manager_state():
         try:
             from app.config import save_translation_settings
             save_translation_settings(
-                expected_source_language="ko+en",
                 supported_targets=["ko", "en", "zh"],
                 default_active_targets=["en"],
             )
@@ -37,10 +36,10 @@ def test_operator_html_language_panel_structure():
     assert res.status_code == 200
     html = res.text
 
-    # 1. Right-rail language targets card with selectable source
+    # 1. Output targets remain available without input-language controls.
     assert 'id="card-languages"' in html
-    assert 'id="btn-source-autodetect"' in html
-    assert 'id="lang-sources-config-list"' in html
+    assert 'id="btn-source-autodetect"' not in html
+    assert 'id="lang-sources-config-list"' not in html
     assert 'id="lang-targets-config-list"' in html
     assert 'id="lang-targets-active-list"' in html
     assert 'id="btn-open-manage-langs"' in html
@@ -70,27 +69,23 @@ def test_target_configuration_lifecycle_and_lock():
     assert "selected_targets" in data_get
     assert data_get["is_running"] is False
 
-    # 2. While stopped: update source language (e.g. English church translating to Ukrainian)
+    # 2. While stopped: select Ukrainian output without any source override.
     res_put_en_src = client.put("/api/translation/targets", json={
-        "expected_source_language": "en",
         "supported_targets": ["uk", "es", "zh"],
         "targets": ["uk"],
     })
     assert res_put_en_src.status_code == 200
     data_en_src = res_put_en_src.json()
-    assert data_en_src["translation"]["expected_source_language"] == "en"
     assert data_en_src["translation"]["default_active_targets"] == ["uk"]
 
-    # 3. Restore Korean source with English and Ukrainian targets
+    # 3. Restore English and Ukrainian targets.
     res_put = client.put("/api/translation/targets", json={
-        "expected_source_language": "ko",
         "supported_targets": ["en", "uk", "zh", "es"],
         "targets": ["en", "uk"],
     })
     assert res_put.status_code == 200
     data_put = res_put.json()
     assert data_put["ok"] is True
-    assert data_put["translation"]["expected_source_language"] == "ko"
     assert "es" in data_put["translation"]["supported_targets"]
     assert data_put["translation"]["default_active_targets"] == ["en", "uk"]
 
@@ -99,7 +94,7 @@ def test_target_configuration_lifecycle_and_lock():
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
          patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
-        asyncio.run(manager.start(active_targets=["en", "uk"], expected_source_language="ko"))
+        asyncio.run(manager.start(active_targets=["en", "uk"]))
 
         # While running: mutation returns 409 Conflict
         res_conflict = client.put("/api/translation/targets", json={"targets": ["en", "zh"]})

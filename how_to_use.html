@@ -584,8 +584,8 @@
 
     <div class="step">
       <div class="step-body">
-        <h3 data-lang="ko">2. 마이크 장치 및 모델 확인 후 서비스 시작</h3>
-        <h3 data-lang="en">2. Verify Device & Model, Click Start</h3>
+        <h3 data-lang="ko">2. 마이크 장치 확인 후 서비스 시작</h3>
+        <h3 data-lang="en">2. Verify Device and Click Start</h3>
         <p data-lang="ko">
           화면의 <strong>[입력 장치 설정]</strong> 드롭다운에서 예배 마이크/믹서가 선택되어 있는지 확인합니다. (새로 꽂은 장치가 안 보이면 <code>🔄</code> 버튼을 누르세요.)
           마이크를 테스트할 때 아래 레벨 미터(Level Meter)가 초록색으로 반응하는지 확인한 후,
@@ -621,13 +621,11 @@
         <h3 data-lang="en">4. Stopping & Exiting After Service</h3>
         <p data-lang="ko">
           1. 예배가 끝나면 <strong>■ 서비스 종료 (Stop)</strong> 버튼을 누릅니다. 해당 예배의 한영 대조 전사록이 <code>logs/sessions/</code> 폴더에 자동 저장됩니다.<br>
-          2. 시스템을 닫기 전, 하단의 <strong>[📖 설교 어휘 검토 및 사전 관리 (2-Min Review)]</strong> 버튼을 누릅니다. 설교 중 감지된 새로운 교회 고유명사 및 신앙 용어 후보를 확인하고 등록하여, 다음 예배에서 Gemini AI가 더욱 정확하게 인식할 수 있도록 훈련시킵니다 (약 1~2분 소요).<br>
-          3. 어휘 검토 완료 후, 가장 하단의 <strong>[⏻ Exit System]</strong> 버튼을 누르면 서버 프로그램이 안전하게 종료됩니다.
+          2. 가장 하단의 <strong>[⏻ Exit System]</strong> 버튼을 누르면 서버 프로그램이 안전하게 종료됩니다.
         </p>
         <p data-lang="en">
           1. When the service finishes, click <strong>■ Stop</strong>. The sermon transcript will be automatically exported under <code>logs/sessions/</code>.<br>
-          2. Before shutting down, click the <strong>[📖 Review Sermon Vocabulary (2-Min Review)]</strong> button. Review newly harvested church names and theological terms detected during the sermon and approve them to enhance Gemini AI's speech recognition in future services (takes ~1-2 minutes).<br>
-          3. After the review, click <strong>[⏻ Exit System]</strong> at the bottom to shut down the server safely.
+          2. Click <strong>[⏻ Exit System]</strong> at the bottom to shut down the server safely.
         </p>
       </div>
     </div>
@@ -723,12 +721,12 @@
           <span data-lang="en">Volunteer Operator</span>
         </td>
         <td>
-          <span data-lang="ko">마이크 장치 선택, 시작/중지, 일시정지, 통역 모델 테스트, 오류 복구 모드, 실시간 자막 모니터링</span>
-          <span data-lang="en">Device selection, start/stop, pause, model testing, drift recovery, caption preview.</span>
+          <span data-lang="ko">마이크 장치 선택, 시작/중지, 일시정지, 고정 모델 연결 테스트, 출력 보호 상태, 실시간 자막 모니터링</span>
+          <span data-lang="en">Device selection, start/stop, pause, configured-model testing, output status, caption preview.</span>
         </td>
       </tr>
       <tr>
-        <td><code>http://skc.local:8080</code><br><small style="color:var(--color-text-secondary);">(또는 <code>http://&lt;교회IP&gt;:8080</code>)</small></td>
+        <td><code>http://skc.local:8080/live</code><br><small style="color:var(--color-text-secondary);">(또는 <code>http://&lt;교회IP&gt;:8080/live</code>)</small></td>
         <td>
           <span data-lang="ko">예배 참석자 (Attendees)</span>
           <span data-lang="en">Worship Attendees</span>
@@ -759,25 +757,25 @@
   <h3 data-lang="ko">2. 예배 도중 자막 번역이 잠시 멈추는 경우</h3>
   <h3 data-lang="en">2. Captions pause briefly mid-service</h3>
   <p data-lang="ko">
-    Gemini Live API의 10분 연결 주기 갱신으로 인해 2~3초간 <span class="badge badge-amber">노랑 (Reconnecting)</span> 상태가 되는 것은 정상적인 자동 복구 과정입니다.
+    Gemini Live API는 기존 기록에서 약 9분마다 연결을 교체했습니다. 이때 잠시 <span class="badge badge-amber">노랑 (Reconnecting)</span> 상태가 되는 것은 정상적인 자동 복구 과정입니다.
     만약 <span class="badge badge-red">빨강 (Error)</span> 상태가 지속되면 인터넷 연결을 확인하고 <strong>■ Stop ➔ ▶ Start</strong>를 다시 눌러주세요.
   </p>
   <p data-lang="en">
-    A brief 2–3 second <span class="badge badge-amber">Amber (Reconnecting)</span> state every ~10 minutes is normal auto-refresh behavior.
+    A brief <span class="badge badge-amber">Amber (Reconnecting)</span> state during connection rollover (about every 9 minutes in prior logs) is normal. Recovery time can vary.
     If the status stays on <span class="badge badge-red">Red (Error)</span>, check your internet and click <strong>■ Stop ➔ ▶ Start</strong>.
   </p>
 
-  <h3 data-lang="ko">3. 잘못된 언어(일본어/베트남어 등)로 잘못 인식되거나 오번역이 지속되는 경우</h3>
-  <h3 data-lang="en">3. Model gets stuck in the wrong language (Language Drift)</h3>
+  <h3 data-lang="ko">3. 다른 원문 언어 사용과 오인식 대응</h3>
+  <h3 data-lang="en">3. Other Source Languages and Recognition Errors</h3>
   <p data-lang="ko">
-    찬양, 웅성거림, 또는 음향 노이즈로 인해 AI가 한국어가 아닌 다른 언어(일본어, 베트남어 등)로 잘못 감지하여 오번역이 연속될 수 있습니다.<br>
-    <strong>• 즉시 수동 교정:</strong> 화면 중앙의 <strong>⏸ 일시정지 (Pause)</strong>를 누른 뒤 1~2초 후 <strong>▶ 번역 다시 시작 (Resume)</strong>을 누르면 세션이 초기화되어 즉시 정상 한국어로 교정됩니다.<br>
-    <strong>• 자동 교정 기능:</strong> 운영자 콘솔의 <strong>[자동 언어 오류 복구]</strong>를 <code>⚡ Auto</code>로 켜두시면 시스템이 연속된 비정상 언어 감지 시 스스로 세션을 리셋하여 자동으로 정상 복구합니다.
+    한국어 예배의 영어 통역이 주 용도이지만 중국어 등 다른 원문 언어도 프로그램이 차단하지 않습니다. 입력 언어는 모델이 감지하므로 운영자는 통역 언어에서 원하는 출력 언어만 선택합니다. 언어 정보가 없거나 늦어도 자막·번역 음성·전사를 보류하지 않습니다.<br>
+    언어 코드만으로 실제 외국어 발화와 모델의 오인식을 구별할 수 없으므로 잘못 인식한 내용도 전달될 수 있습니다. 모든 언어의 번역 품질을 보장하지는 않습니다.<br>
+    필요하면 <strong>⏸ Pause → ▶ Resume</strong>으로 새 번역 세션을 열 수 있지만 오인식 교정을 보장하지 않습니다. 이때도 입력 녹음은 계속됩니다. 기존 <code>translation.expected_source_languages</code> 설정은 무시합니다.
   </p>
   <p data-lang="en">
-    Acoustic noise, music, or background chatter can occasionally cause the AI to hallucinate and drift into another language (e.g., Japanese or Vietnamese).<br>
-    <strong>• Manual Fix:</strong> Click <strong>⏸ Pause</strong> and then click <strong>▶ Resume</strong> after 1–2 seconds. This resets the active context and immediately returns to clean Korean translation.<br>
-    <strong>• Automatic Correction:</strong> Set <strong>[자동 언어 오류 복구]</strong> to <code>⚡ Auto</code> on the operator dashboard. The server will automatically detect sustained drift and self-recover within 2 seconds without operator intervention.
+    The main use is Korean worship translated into English, but the application also allows other source languages, including Chinese. The model detects the source language; select the desired output language under Translation Languages. Missing or late language metadata does not hold back captions, translated audio, or transcripts.<br>
+    A language code cannot distinguish genuine foreign-language speech from a recognition error, so incorrect output may also pass through. Translation quality is not guaranteed for every language.<br>
+    You may use <strong>⏸ Pause → ▶ Resume</strong> to open a fresh translation session, but correction is not guaranteed. Input recording continues. The legacy <code>translation.expected_source_languages</code> setting is ignored.
   </p>
 
   <h3 data-lang="ko">4. 참석자 스마트폰이 자막 페이지에 접속되지 않는 경우</h3>
@@ -823,10 +821,10 @@
   <h3 data-lang="ko">7. 관리자 비밀번호 로그인 실패 (401 오류) 해결</h3>
   <h3 data-lang="en">7. Operator Password Login Failure (401 Unauthorized)</h3>
   <p data-lang="ko">
-    외부 공용 접속 시 관리자 콘솔 접근을 위해 <code>.env</code> 파일의 <code>SKC_OPERATOR_PASSWORD</code>를 입력해야 합니다. 만약 비밀번호가 올바름에도 401 오류가 발생한다면, <code>.env</code> 파일에서 <code>SKC_OPERATOR_PASSWORD=1155</code>와 <code>CLOUDFLARE_TUNNEL_TOKEN=...</code>이 한 줄로 붙어있지 않고 각각 <strong>서로 다른 줄</strong>로 분리되어 있는지 확인하세요.
+    관리자 콘솔은 PC의 로컬 주소나 교회 Wi-Fi에서 접속합니다. 공용 HTTPS에서는 관리자 화면과 제어 API가 차단됩니다. 로그인에는 <code>.env</code>의 <code>SKC_OPERATOR_PASSWORD</code>를 사용합니다. 비밀번호가 올바름에도 401 오류가 발생한다면, <code>SKC_OPERATOR_PASSWORD=...</code>와 <code>CLOUDFLARE_TUNNEL_TOKEN=...</code>이 각각 <strong>서로 다른 줄</strong>에 있는지 확인하세요.
   </p>
   <p data-lang="en">
-    When connecting via public HTTPS, access to the operator console requires the password configured in <code>.env</code> as <code>SKC_OPERATOR_PASSWORD</code>. If correct password input results in 401 Unauthorized, ensure that <code>SKC_OPERATOR_PASSWORD=...</code> and <code>CLOUDFLARE_TUNNEL_TOKEN=...</code> are on separate lines rather than pasted onto a single line.
+    Open the operator console on the PC or church Wi-Fi. Public HTTPS blocks the operator page and control APIs. Log in with <code>SKC_OPERATOR_PASSWORD</code> from <code>.env</code>. If the correct password returns 401 Unauthorized, ensure that <code>SKC_OPERATOR_PASSWORD=...</code> and <code>CLOUDFLARE_TUNNEL_TOKEN=...</code> are on separate lines.
   </p>
 
   <div class="warn">
@@ -840,11 +838,41 @@
   <h2 data-lang="en">Export Transcripts & Session Logs</h2>
   <p data-lang="ko">
     이전 예배의 통역 기록을 확인하려면 프로그램 폴더 안의 <code>logs/sessions/</code> 폴더를 확인하세요.
-    각 세션마다 예배를 중지한 시간에 맞춰 다국어 전사록(<code>transcript.md</code>), 분석용 데이터(<code>transcript.jsonl</code>), 운영 요약(<code>summary.txt</code>), 그리고 메타데이터(<code>session.json</code>) 4개 파일이 깔끔하게 저장됩니다.
+    각 세션마다 다국어 전사록(<code>transcript.md</code>), 분석용 데이터(<code>transcript.jsonl</code>), 운영 요약(<code>summary.txt</code>), 메타데이터(<code>session.json</code>)가 저장됩니다.
   </p>
   <p data-lang="en">
     To review sermon translation records, check the <code>logs/sessions/</code> directory.
-    Every completed session automatically saves exactly 4 clean files: the multi-language transcript (<code>transcript.md</code>), canonical turn records (<code>transcript.jsonl</code>), operational summary (<code>summary.txt</code>), and session metadata (<code>session.json</code>).
+    Every completed session saves the multi-language transcript (<code>transcript.md</code>), turn records (<code>transcript.jsonl</code>), summary (<code>summary.txt</code>), session metadata (<code>session.json</code>).
+  </p>
+  <p data-lang="ko">
+    입력 오디오는 <code>logs/recordings/current_week/YYYY-MM-DD_HHMM.mp3</code>에 약 128 kbps CBR로 자동 저장되며, 번역 일시정지 중에도 녹음됩니다. 장치에서 실제로 캡처한 샘플레이트와 채널 수를 모노 변환 전에 보존합니다. 장치가 16 kHz 모노로 열리면 녹음도 16 kHz 모노입니다. 시간당 약 58 MB입니다. 예배 전체를 백업하려면 예배 시작 전에 번역을 시작하세요.
+  </p>
+  <p data-lang="en">
+    Input audio is saved at approximately 128 kbps CBR to <code>logs/recordings/current_week/YYYY-MM-DD_HHMM.mp3</code>, including translation pauses. Recording preserves the actual capture sample rate and channels before downmixing. A device opened at 16 kHz mono produces a 16 kHz mono recording. Allow about 58 MB per hour. Start translation before worship begins to record the full service.
+  </p>
+  <p data-lang="ko">
+    새 녹음 시작 시 21일보다 오래된 생성 녹음을 정리합니다. 잠겨 삭제할 수 없는 파일은 경고를 남기고 현재 녹음을 계속합니다. 달력상 주별 교체가 아니므로 필요한 파일은 별도로 복사해 보관하세요. 녹음 누락 구간은 무음과 메타데이터로 남기며 녹음 오류는 번역과 분리합니다.
+  </p>
+  <p data-lang="en">
+    Starting a new recording removes generated recordings older than 21 days. Locked files produce a warning while current recording continues. Retention follows elapsed days rather than calendar weeks, so copy important files elsewhere. Capture gaps are represented by silence and metadata, and recording failures are isolated from translation.
+  </p>
+  <p data-lang="ko">
+    영상에 더빙하거나 전사록을 맞출 때는 녹음 시작 시각과 영상 시작 시차를 먼저 맞추세요. 전사록의 시간은 번역 도착 시점이므로 추가 지연 보정이 필요합니다. Fifine M9는 이번 예배에서 더 잘 작동한 모노 모드(M/S 표시등 꺼짐)로 먼저 확인하고 한국어와 영어 문장을 모두 읽어 테스트하세요. 스테레오가 오인식의 원인이었다고 확정한 것은 아닙니다.
+  </p>
+  <p data-lang="en">
+    To dub or align with video, first match the recording start time to the video. Transcript times mark translation arrival and need an additional latency adjustment. For the Fifine M9, start with mono mode (M/S indicator off), which worked better in the reported service, and test Korean and English sentences. Stereo has not been established as the cause of mistranscription.
+  </p>
+  <p data-lang="ko">
+    이름 오기는 유지보수자가 <code>config/name_corrections.yaml</code>에 직접 등록합니다. 이 교정은 확정 자막과 전사 파일에만 적용되며 Google 인식이나 합성 음성을 바꾸지 않습니다. 모델은 <code>config.yaml</code>의 <code>gemini.model</code>로 고정하며 매주 선택할 필요가 없습니다.
+  </p>
+  <p data-lang="en">
+    Maintainers enter confirmed name corrections in <code>config/name_corrections.yaml</code>. Corrections affect committed captions and saved transcripts only, not Google recognition or synthesized speech. The model is fixed by <code>gemini.model</code> in <code>config.yaml</code>; no weekly selection is needed.
+  </p>
+  <p data-lang="ko">
+    평소처럼 <code>SKC_start.bat</code>을 실행하면 <code>logs/startup.log</code>에 시작 단계별 시간과 한 줄 요약이 자동 기록됩니다. 별도 진단 실행은 필요하지 않습니다. 시작이 느리면 이 파일을 전달하세요. 지출 한도·할당량·요청 빈도 제한 안내가 나오고 통역이 멈추면 서비스를 종료한 뒤 결제·할당량을 확인하고 다시 시작하세요. 그동안 입력 녹음은 계속됩니다.
+  </p>
+  <p data-lang="en">
+    Normal launches through <code>SKC_start.bat</code> automatically record startup phase timings and a summary in <code>logs/startup.log</code>. No separate diagnostic run is needed. Share this file when startup is slow. If translation stops with a spending-limit, quota, or rate-limit message, stop the service, check billing and quotas, then start again. Input recording continues until you stop the service.
   </p>
 
 </div>

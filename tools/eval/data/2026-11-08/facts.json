@@ -1,0 +1,159 @@
+[
+ {
+  "id": "church_name",
+  "ko": [
+   "스타크빌\\s?한인\\s?교회",
+   "스타크빌"
+  ],
+  "en": [
+   "Starkville"
+  ],
+  "wrong_ko": [
+   "스타필드",
+   "스타트\\s?하니"
+  ],
+  "wrong_en": [
+   "Starfield"
+  ]
+ },
+ {
+  "id": "anniversary_44",
+  "ko": [
+   "44\\s?(년|주년)"
+  ],
+  "en": [
+   "44(th)?\\s?(years|anniversary)",
+   "forty-fourth"
+  ],
+  "wrong_en": [
+   "(?<!4)4 years"
+  ]
+ },
+ {
+  "id": "kamika",
+  "ko": [
+   "카미카(?!제)"
+  ],
+  "en": [
+   "Kamika(?!ze)"
+  ],
+  "wrong_ko": [
+   "카미카제"
+  ],
+  "wrong_en": [
+   "Kamikaze"
+  ]
+ },
+ {
+  "id": "msu_graduate",
+  "ko": [
+   "MSU",
+   "엠에스유"
+  ],
+  "en": [
+   "MSU",
+   "Mississippi State"
+  ]
+ },
+ {
+  "id": "knoxville_sarang_15",
+  "ko": [
+   "녹스빌"
+  ],
+  "en": [
+   "Knoxville"
+  ]
+ },
+ {
+  "id": "park_father_passed",
+  "ko": [
+   "(아버님|부친).{0,15}소천"
+  ],
+  "en": [
+   "father.{0,40}(passed away|died)"
+  ],
+  "wrong_ko": [
+   "수술"
+  ],
+  "wrong_en": [
+   "surgery"
+  ],
+  "note": "Both reference transcripts: his father passed away last Friday. Nov 8 live output said surgery."
+ },
+ {
+  "id": "ephesians_4",
+  "ko": [
+   "에베소서\\s?4"
+  ],
+  "en": [
+   "Ephesians,? (chapter )?4"
+  ]
+ },
+ {
+  "id": "ok_hanheum",
+  "ko": [
+   "옥한흠",
+   "옥\\s?목사"
+  ],
+  "en": [
+   "Ok Han",
+   "Oak Han"
+  ]
+ },
+ {
+  "id": "youth_groups",
+  "ko": [
+   "중고등부",
+   "청년부"
+  ],
+  "en": [
+   "youth"
+  ],
+  "wrong_ko": [
+   "부처님"
+  ],
+  "wrong_en": [
+   "Buddha"
+  ]
+ },
+ {
+  "id": "harmony_in_diversity",
+  "ko": [
+   "harmony in diversity"
+  ],
+  "en": [
+   "harmony in diversity",
+   "harmony and diversity"
+  ]
+ },
+ {
+  "id": "shipwreck",
+  "ko": [
+   "파선"
+  ],
+  "en": [
+   "shipwreck"
+  ]
+ },
+ {
+  "id": "john_stott",
+  "ko": [
+   "John Stott",
+   "존\\s?스토트"
+  ],
+  "en": [
+   "John Stott",
+   "Stott"
+  ]
+ },
+ {
+  "id": "spurgeon",
+  "ko": [
+   "Spurgeon",
+   "스펄전"
+  ],
+  "en": [
+   "Spurgeon"
+  ]
+ }
+]

@@ -1,0 +1,56 @@
+{
+  "parts": [
+    {
+      "part": 1,
+      "usage": {
+        "total_tokens": 68715,
+        "total_input_tokens": 67501,
+        "input_tokens_by_modality": [
+          {
+            "modality": "audio",
+            "tokens": 67500
+          },
+          {
+            "modality": "text",
+            "tokens": 1
+          }
+        ],
+        "total_cached_tokens": 0,
+        "total_output_tokens": 1214,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 0,
+        "initial_input_tokens": 67501
+      },
+      "published_rate_estimate_usd": 0.14957,
+      "invoice_verified": false
+    },
+    {
+      "part": 2,
+      "usage": {
+        "total_tokens": 76468,
+        "total_input_tokens": 67877,
+        "input_tokens_by_modality": [
+          {
+            "modality": "text",
+            "tokens": 1
+          },
+          {
+            "modality": "audio",
+            "tokens": 67876
+          }
+        ],
+        "total_cached_tokens": 0,
+        "total_output_tokens": 8591,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 0,
+        "initial_input_tokens": 67877
+      },
+      "published_rate_estimate_usd": 0.238846,
+      "invoice_verified": false
+    }
+  ],
+  "published_input_usd_per_million": 2,
+  "published_output_usd_per_million": 12,
+  "total_published_rate_estimate_usd": 0.388416,
+  "invoice_verified": false
+}

@@ -26,7 +26,7 @@
 
 ## 1. 시스템 소개
 
-예배용 실시간 다국어 동시 통역 시스템입니다. 마이크로 들어온 오디오를 Google Gemini Live API로 70개 이상 언어(영어, 중국어, 스페인어, 우크라이나어 등)로 실시간 번역해 현장 Wi-Fi나 공용 HTTPS로 접속한 참석자 스마트폰 브라우저에 자막과 음성을 전달합니다. 설교 맞춤 어휘 편향(Vocabulary Biasing), 예배 후 2분 어휘 검토, 주석을 보존하는 설정 엔진, 인트라넷과 인터넷 환경에 맞춘 적응형 모드를 갖춰 스탁빌 한인 교회(PCA)를 비롯한 다문화 예배 환경에 맞춰 쓸 수 있습니다.
+예배용 실시간 다국어 동시 통역 시스템입니다. 마이크로 들어온 오디오를 Google Gemini Live API로 70개 이상 언어(영어, 중국어, 스페인어, 우크라이나어 등)로 실시간 번역해 현장 Wi-Fi나 공용 HTTPS로 접속한 참석자 스마트폰 브라우저에 자막과 음성을 전달합니다. 번역 일시정지 중에도 이어지는 MP3 입력 녹음, 확정 자막의 수동 이름 교정, 주석을 보존하는 설정 엔진, 인트라넷과 인터넷 환경에 맞춘 적응형 모드를 갖춰 스탁빌 한인 교회(PCA)를 비롯한 다문화 예배 환경에 맞춰 쓸 수 있습니다.
 
 ---
 
@@ -78,8 +78,14 @@
   * **상태 모니터 & 텔레메트리 (Status & Telemetry)**: 제미나이 AI 처리 지연(Latency), 현장 Wi-Fi 및 공용 HTTPS 접속자 수, RTT 네트워크 품질을 실시간 모니터링합니다.
   * **음성 통역 모니터 (Audio Monitor)**: 관리자가 헤드폰이나 이어폰을 착용하고 참석자에게 송출되는 영어 번역 음성을 서버 PC에서 직접 모니터링하며 볼륨을 조절합니다.
   * **공용 HTTPS QR 코드 & 링크 (Attendee Access)**: Cloudflare Tunnel 기반 공용 보안 QR 코드로 LTE/5G 모바일 환경에서도 즉시 접속할 수 있으며, 터널을 쓰지 않을 때는 현장 Wi-Fi 단독 모드로 자동 전환됩니다.
-  * **설교 어휘 검토 (2-Min Review)**: 예배 종료(Stop) 후 프로그램을 닫기 전, 설교 중 나온 고유명사와 신앙 용어를 확인해 사전에 등록합니다. 다음 예배에서 인식 정확도를 꾸준히 높일 수 있습니다.
-  * **반응형 3열 대시보드**: 넓은 화면에서는 오디오와 자막, 입력과 언어, QR과 로그가 3열로 정돈되어 편리하게 관리할 수 있습니다.
+  * **고정 모델과 다국어 입력**: 모델은 `config.yaml`의 `gemini.model`을 사용합니다. 주 용도는 한국어 예배의 영어 통역이지만, 중국어 등 다른 원문 언어도 프로그램이 차단하지 않습니다. 입력 언어는 모델이 감지하고 운영자는 출력 언어만 선택합니다. 언어 정보가 없거나 늦어도 자막·음성·전사를 보류하지 않습니다.
+  * **반응형 2열 대시보드**: 왼쪽에 상태·자막·제어를, 오른쪽에 입력 장치·통역 언어·접속 QR·이벤트 로그를 배치합니다. 좁은 화면에서는 한 열로 쌓입니다.
+
+입력 오디오는 `logs/recordings/current_week/YYYY-MM-DD_HHMM.mp3`에 약 128 kbps CBR로 저장합니다. 실제 캡처 포맷을 유지한 채 모노 변환과 16 kHz 리샘플링 전에 녹음하므로, 장치가 16 kHz로 열렸다면 녹음도 16 kHz입니다. 시간당 약 58 MB이며 `Pause` 중에도 녹음합니다. 새 녹음이 시작되면 21일보다 오래된 생성 파일을 정리하고, 잠긴 파일은 경고를 남긴 뒤 현재 녹음을 계속합니다. 필요한 백업은 별도로 복사하세요.
+
+평소처럼 `SKC_start.bat`을 실행하면 시작 단계별 시간과 한 줄 요약이 `logs/startup.log`에 자동으로 쌓입니다. 별도 진단 실행이나 설정은 필요하지 않습니다. 교회 PC의 지연을 확인할 때 이 파일과, 있으면 `startup.log.1`도 전달하면 됩니다.
+
+이름 교정은 `config/name_corrections.yaml`에 직접 등록하며 확정 자막과 전사 파일에만 적용합니다. 합성 음성과 Google의 인식 결과는 바뀌지 않습니다. 새 버전의 전사 정확도 개선은 아직 실음성으로 입증되지 않았습니다. 제공된 두 기계 전사본에 대한 기존 라이브 전사 CER는 18.0%, 19.1%입니다. 평가 방법과 한계는 [평가 문서](docs/evaluation.md), 추가 화면 정리 제안은 [운영자 기능 검토표](docs/single_operator_audit.md)를 참고하세요.
 
 ### 2. 참석자 자막 및 오디오 수신 페이지 (`/live`)
 예배당 참석자가 스마트폰 브라우저에서 실시간 번역 자막을 읽고, 원문을 대조하며 통역 음성을 듣는 페이지입니다.
@@ -141,13 +147,13 @@ python main.py
 ```bat
 # 1회성 빌드용 Conda 환경 생성 (선택 사항)
 conda create -n skc_build python=3.11 --yes
-conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf pyinstaller
+conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf jinja2 lameenc pyinstaller
 
 # 단일 executable 빌드 스크립트 실행
 build_exe.bat
 ```
 * **결과물 위치**: `.agent\dist\SKC_translation.exe`
-* **배포 구성**: 실행을 위해서는 `SKC_translation.exe`, `config.yaml`, `.env` 3개 파일을 동일한 폴더에 위치시켜야 합니다.
+* **배포 구성**: 배포 폴더의 실행 파일, `config.yaml`, `.env`, `config/name_corrections.yaml`, `branding/`을 함께 보관합니다. API 키와 터널 토큰은 `.env`에만 저장합니다.
 
 ---
 
@@ -168,7 +174,7 @@ Google Gemini 3.5 Live Translate API 유료 요금(Paid Tier) 기준입니다. �
   * $2.21 × 4주 = **약 $8.84** / 월
 
 > [!NOTE]
-> 서버에서 하나의 API 세션만 열어 오디오/자막을 팬아웃(broadcast)하므로, **동시 접속한 참석자 수가 늘어나도 API 비용은 동일하게 유지됩니다.**
+> 출력 언어마다 독립 API 세션을 열고 해당 언어의 오디오/자막을 팬아웃(broadcast)하므로 출력 언어 수에 따라 비용이 증가합니다. **같은 출력 언어의 참석자 수가 늘어나도 API 비용은 동일하게 유지됩니다.**
 
 </details>
 
@@ -189,7 +195,7 @@ Google Gemini 3.5 Live Translate API 유료 요금(Paid Tier) 기준입니다. �
 
 ## 1. System Overview
 
-This is a real-time multilingual live translation system for church services. It captures audio from a single microphone input, translates it into multiple target languages concurrently (70+ languages, e.g. English, Chinese, Spanish, Ukrainian) using the Google Gemini Live API, and streams captions and audio to attendees' mobile web browsers over local WiFi or public HTTPS. Features domain-specific vocabulary biasing, a post-sermon 2-minute glossary review workflow, comment-preserving configuration persistence, and adaptive intranet/internet network isolation. It was originally created for Starkville Korean Church (PCA) but can be easily deployed for any multilingual or multicultural church service.
+This is a real-time multilingual live translation system for church services. It captures audio from a single microphone input, translates it into multiple target languages concurrently (70+ languages, e.g. English, Chinese, Spanish, Ukrainian) using the Google Gemini Live API, and streams captions and audio to attendees' mobile web browsers over local WiFi or public HTTPS. Features continuous MP3 input backup through translation pauses, local name corrections for committed captions, comment-preserving configuration persistence, and adaptive intranet/internet network isolation. It was originally created for Starkville Korean Church (PCA) but can be easily deployed for any multilingual or multicultural church service.
 
 ---
 
@@ -241,8 +247,12 @@ This page acts as the central control room for volunteers to generate attendee P
   * **Status & Telemetry**: Real-time display of Gemini AI turn-onset latency, local Wi-Fi / public HTTPS listener counts, and network RTT.
   * **Audio Monitor**: Allows the operator to listen to the real-time translated voice via headphones and adjust volume.
   * **Public HTTPS QR & Link**: Displays a Cloudflare Tunnel QR code allowing mobile attendees to connect over cellular data (LTE/5G), automatically switching to Local Wi-Fi view when tunneling is unconfigured.
-  * **Sermon Vocabulary Review (2-Min Review)**: Before shutting down the system after service, operators can review newly harvested biblical names and theological terms detected during the sermon and approve them into the custom dictionary to enhance speech recognition in future services.
-  * **Responsive 3-Lane Dashboard**: Automatically organizes controls across 3 columns on wide displays for balanced monitoring of audio preview, language configuration, and telemetry/event logs.
+  * **Configured Model & Output Status**: The model is fixed by `gemini.model`. Confirmed unexpected source language hides current captions; three consecutive completed foreign-language turns mute subsequent translated audio. Expected source language restores output automatically.
+  * **Responsive Two-Column Dashboard**: Status, captions, and controls occupy the left column. Input devices, translation languages, access QR codes, and events stack in the right column; narrow screens use one column.
+
+Input backup uses approximately 128 kbps CBR MP3 at the actual capture rate and channel count before downmixing, including translation pauses. Generated recordings older than 21 days are cleaned up when a new recording starts; locked files produce a warning. Copy important recordings elsewhere. Manual name corrections affect committed captions and saved transcripts only. Existing live-transcript CER against the two supplied machine references is 18.0% and 19.1%; this does not establish improved recognition in the new version. See [evaluation.md](docs/evaluation.md) for commands and limitations.
+
+Normal launches through `SKC_start.bat` automatically append startup phase timings and a summary to `logs/startup.log`. No separate diagnostic run or setting is required. Share that file and `startup.log.1`, if present, when investigating startup delays.
 
 ### 2. Attendee Caption Page (`/live`)
 This layout serves real-time English text captions and live translation audio directly to attendees' mobile web browsers, with tap-to-reveal original transcript support.
@@ -304,7 +314,7 @@ To compile standalone `.exe` binaries that run on target Windows PCs without req
 ```bat
 # One-time build environment setup (optional)
 conda create -n skc_build python=3.11 --yes
-conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf pyinstaller
+conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf jinja2 lameenc pyinstaller
 
 # Run the distribution build script (compiles both binaries)
 build_exe.bat
@@ -338,6 +348,6 @@ This system operates under the Google Gemini 3.5 Live Translate Paid Tier. Below
   * $2.21 × 4 weeks = **approx. $8.84** / month
 
 > [!NOTE]
-> Because the server broadcasts captions and audio from a single central API session, **API costs remain constant regardless of the number of connected attendee devices.**
+> Each enabled output language uses an independent API session. Adding output languages increases cost; adding attendees listening to an existing language does not.
 
 </details>

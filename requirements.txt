@@ -1,8 +1,10 @@
-google-genai>=1.0.0
+google-genai>=2.33.0
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 pyaudio>=0.2.14
+lameenc==1.9.0
 numpy>=1.26.0
+scipy>=1.11.0
 python-dotenv>=1.0.0
 pyyaml>=6.0.1
 qrcode[pil]>=7.4.2

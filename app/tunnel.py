@@ -11,6 +11,7 @@ from typing import Optional
 
 from app.logger import server_log
 from app.cloudflared_service import CloudflaredService
+from app.startup_timing import timed
 
 DEFAULT_PUBLIC_URL = "https://live.starkvillekoreanchurch.org"
 
@@ -75,7 +76,7 @@ class CloudflareTunnelManager:
         }
         try:
             req = urllib.request.Request(self._public_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with timed("public_https_probe"), urllib.request.urlopen(req, timeout=10) as response:
                 response.read(1)
                 return 200 <= response.status < 400
         except urllib.error.HTTPError as exc:
@@ -88,10 +89,11 @@ class CloudflareTunnelManager:
         # Windows curl fallback with User-Agent
         if sys.platform == "win32":
             try:
-                result = subprocess.run(
-                    ["curl.exe", "-4", "-L", "-A", "Mozilla/5.0", "--max-time", "10", "-o", "NUL", "-s", "-w", "%{http_code}", self._public_url],
-                    capture_output=True, text=True, timeout=12,
-                )
+                with timed("public_https_curl_fallback"):
+                    result = subprocess.run(
+                        ["curl.exe", "-4", "-L", "-A", "Mozilla/5.0", "--max-time", "10", "-o", "NUL", "-s", "-w", "%{http_code}", self._public_url],
+                        capture_output=True, text=True, timeout=12,
+                    )
                 code = int(result.stdout.strip() or "0")
                 return 200 <= code < 400 or code == 405
             except Exception:
@@ -117,7 +119,8 @@ class CloudflareTunnelManager:
 
     def _run(self) -> None:
         first = True
-        self._service.start()
+        with timed("tunnel_service_start"):
+            self._service.start()
         while not self._stop.is_set():
             state = self._service._query()
             if state == "running" and self._public_check():

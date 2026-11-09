@@ -48,6 +48,12 @@ def test_unconfigured_tunnel_returns_local_only_state(monkeypatch):
     # Dual QR print modal should hide the public column in local mode
     assert 'id="modal-qr-public-col" style="display:none; ' in html
 
+    # Network details still expose local metrics, without a public placeholder.
+    assert 'id="telemetry-panel"' in html
+    assert 'id="telemetry-local-box"' in html
+    assert 'id="telemetry-public-box" class="telemetry-network-box" style="display: none;"' in html
+    assert 'id="telemetry-network-grid" style="grid-template-columns: 1fr;"' in html
+
 
 def test_configured_tunnel_shows_public_tabs(monkeypatch):
     """When a tunnel is explicitly configured, public tabs and HTTPS badge unhide."""
@@ -77,3 +83,7 @@ def test_configured_tunnel_shows_public_tabs(monkeypatch):
 
     # Dual QR print modal should show both columns when public tunnel is active
     assert 'id="modal-qr-public-col" style="display:none; ' not in html
+
+    # Both paths are available when a tunnel is configured.
+    assert 'id="telemetry-public-box" class="telemetry-network-box">' in html
+    assert 'id="telemetry-network-grid" style="grid-template-columns: 1fr 1fr;"' in html

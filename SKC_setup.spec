@@ -1,5 +1,5 @@
 # SKC_setup.spec — PyInstaller build spec for Live Translation Setup Wizard
-# Build:  conda run -n skc_build pyinstaller SKC_setup.spec
+# Build: activate .agent/build_env, then python -m PyInstaller SKC_setup.spec
 # Output: .agent/dist/SKC_setup.exe (Windowed Tkinter application)
 
 import sys
@@ -37,10 +37,15 @@ hiddenimports += [
     "app.cloudflared_service",
 ]
 
+native_library_dir = Path(sys.base_prefix) / "Library" / "bin"
+support_binaries = []
+for pattern in ("libmpdec-*.dll", "libssl-*.dll", "libcrypto-*.dll"):
+    support_binaries.extend((str(path), ".") for path in native_library_dir.glob(pattern))
+
 a = Analysis(
     ["setup_gui.py"],
     pathex=["."],
-    binaries=[],
+    binaries=support_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

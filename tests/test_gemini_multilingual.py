@@ -1,335 +1,160 @@
-"""
-tests/test_gemini_multilingual.py — Unit Tests for Language-Neutral GeminiSession & CaptionEvent
-"""
+"""Fixed-model Live Translate configuration and committed text behavior."""
 import asyncio
+
 import pytest
-from unittest.mock import MagicMock
-try:
-    from google.genai import types
-except ImportError:
-    types = None
 
-from app.broadcast import CaptionEvent, CaptionBroadcaster
-from app.gemini_session import (
-    GeminiSession,
-    TranscriptEntry,
-    evaluate_drift_score,
-    _is_goaway_exception,
-    _matches_exception_text,
-)
+from app.config import gemini_model
+from app.gemini_session import GeminiSession, SessionStatus, TranscriptEntry, _is_goaway_exception, _is_quota_error, _matches_exception_text
+from app.text_corrections import NameCorrector
 
 
-def test_default_session_parameters():
-    session = GeminiSession(on_caption=MagicMock())
-    assert session.target_language_code == "en"
-    assert session.expected_source_language == "ko+en"
-    assert session.tag == "Gemini:en"
+def test_translation_configuration_is_empty_transcription_and_selected_output():
+    for target in ("en", "uk", "zh"):
+        session = GeminiSession(on_caption=lambda text: None, target_language_code=target)
+        config = session._build_config()
+        assert config.response_modalities == ["AUDIO"]
+        assert config.input_audio_transcription.model_dump(exclude_none=True) == {}
+        assert config.output_audio_transcription.model_dump(exclude_none=True) == {}
+        assert config.translation_config.target_language_code == target
+        assert config.translation_config.echo_target_language is True
+        assert config.system_instruction is None
+        assert config.session_resumption is None
+        assert config.context_window_compression.sliding_window is not None
+        assert session.current_model == gemini_model()
 
 
-def test_explicit_multilingual_session_parameters():
-    session = GeminiSession(
-        on_caption=MagicMock(),
-        target_language_code="uk",
-        expected_source_language="en",
-    )
-    assert session.target_language_code == "uk"
-    assert session.expected_source_language == "en"
-    assert session.tag == "Gemini:uk"
+def test_committed_source_and_target_receive_only_local_corrections(tmp_path):
+    path = tmp_path / "names.yaml"
+    path.write_text('스타필드 한인 교회: 스타크빌 한인교회\nStarfield: Starkville\n', encoding="utf-8")
+    session = GeminiSession(on_caption=lambda text: None, corrector=NameCorrector(path))
+    session._observe_source_language("ko")
+    session._current_source = "스타필드 한인 교회 주옵소서 주옵소서 주옵소서 주옵소서 주옵소서"
+    session._current_target = "Starfield amen amen amen amen amen"
+    session.flush_current_turn()
+    assert session.transcript[0].source == "스타크빌 한인교회 주옵소서"
+    assert session.transcript[0].target == "Starkville amen"
+    assert session._build_config().input_audio_transcription.model_dump(exclude_none=True) == {}
 
 
-def test_translation_config_receives_target_language_code():
-    session_uk = GeminiSession(
-        on_caption=MagicMock(),
-        target_language_code="uk",
-        expected_source_language="ko",
-    )
-    config = session_uk._build_config("gemini-3.5-live-translate-preview")
-    assert isinstance(config.translation_config, types.TranslationConfig)
-    assert config.translation_config.target_language_code == "uk"
-    assert config.translation_config.echo_target_language is True
+def test_transcript_entry_retains_neutral_and_legacy_access():
+    entry = TranscriptEntry(1.0, "Original", "Translated", "en", "uk")
+    assert entry.source == entry.korean == "Original"
+    assert entry.target == entry.english == "Translated"
+    assert entry.source_lang == "en"
+    assert entry.target_lang == "uk"
 
 
-def test_caption_event_neutral_and_legacy_compatibility():
-    # Construct with neutral fields
-    ev1 = CaptionEvent(
-        kind="commit",
-        source="말씀",
-        target="The Word",
-        source_lang="ko",
-        target_lang="en",
-    )
-    assert ev1.kind == "commit"
-    assert ev1.source == "말씀"
-    assert ev1.target == "The Word"
-    assert ev1.text == "The Word"  # backward compatibility alias
-    assert ev1.ko == "말씀"        # backward compatibility alias
-    assert ev1.source_lang == "ko"
-    assert ev1.target_lang == "en"
-
-    # Construct with legacy kwargs (text, ko)
-    ev2 = CaptionEvent(kind="commit", text="The Grace", ko="은혜")
-    assert ev2.target == "The Grace"
-    assert ev2.source == "은혜"
-    assert ev2.text == "The Grace"
-    assert ev2.ko == "은혜"
+def test_exception_group_and_chained_goaway_are_recognized():
+    assert not _is_goaway_exception(None)
+    assert not _is_goaway_exception(ValueError("Other"))
+    assert _is_goaway_exception(ExceptionGroup("group", [ValueError("Other"), RuntimeError("GoAway")]))
+    wrapper = RuntimeError("wrapper")
+    wrapper.__cause__ = RuntimeError("GoAway")
+    assert _is_goaway_exception(wrapper)
+    assert _matches_exception_text(RuntimeError("1000: normal closure"), "1000")
 
 
-def test_transcript_entry_neutral_and_legacy_compatibility():
-    entry = TranscriptEntry(
-        timestamp=100.0,
-        source="말씀을 듣습니다",
-        target="We hear the Word",
-        source_lang="ko",
-        target_lang="en",
-    )
-    assert entry.source == "말씀을 듣습니다"
-    assert entry.target == "We hear the Word"
-    assert entry.korean == "말씀을 듣습니다"
-    assert entry.english == "We hear the Word"
-    assert entry.source_lang == "ko"
-    assert entry.target_lang == "en"
+@pytest.mark.parametrize("error", [ValueError("Invalid configuration"), RuntimeError("404 NOT_FOUND configured model")])
+def test_configuration_or_missing_model_fails_without_fallback(error):
+    class UnavailableSession(GeminiSession):
+        def __init__(self):
+            super().__init__(on_caption=lambda text: None)
+            self.attempted_models = []
+
+        async def _run_session(self, model, is_reconnect, epoch):
+            self.attempted_models.append(model)
+            raise error
+
+    async def run():
+        session = UnavailableSession()
+        await session._run_with_retry()
+        assert session.state.status == SessionStatus.FAILED
+        assert session.attempted_models == [gemini_model()]
+        assert session._attempt == 0
+        assert session.current_model in session.state.last_event
+
+    asyncio.run(run())
 
 
-def test_evaluate_drift_score_multilingual():
-    # Normal Ukrainian output for Ukrainian session -> score 0
-    score_uk = evaluate_drift_score(
-        input_lang="en",
-        input_text="The grace of God",
-        output_lang="uk",
-        output_text="Благодать Божа",
-        expected_source="en",
-        target_language="uk",
-    )
-    assert score_uk == 0
+def test_goaway_reuses_configured_model_without_catalog_or_fallback():
+    class ReconnectingSession(GeminiSession):
+        def __init__(self):
+            super().__init__(on_caption=lambda text: None)
+            self.attempted_models = []
 
-    # Output not matching target language -> score +2
-    score_wrong_tgt = evaluate_drift_score(
-        input_lang="en",
-        input_text="The grace of God",
-        output_lang="es",  # output is Spanish instead of Ukrainian
-        output_text="La gracia de Dios",
-        expected_source="en",
-        target_language="uk",
-    )
-    assert score_wrong_tgt == 2
+        async def _run_session(self, model, is_reconnect, epoch):
+            self.attempted_models.append(model)
+            if len(self.attempted_models) == 1:
+                raise RuntimeError("GoAway")
+            self._stop_event.set()
+
+    async def run():
+        session = ReconnectingSession()
+        await session._run_with_retry()
+        assert session.attempted_models == [session.current_model, session.current_model]
+        assert session._attempt == 0
+
+    asyncio.run(run())
 
 
-def test_instantiate_non_korean_non_english_session_without_hardcoding():
-    # Instantiate French -> Chinese session
-    session = GeminiSession(
-        on_caption=MagicMock(),
-        target_language_code="zh",
-        expected_source_language="fr",
-    )
-    assert session.target_language_code == "zh"
-    assert session.expected_source_language == "fr"
-    assert session.tag == "Gemini:zh"
-    assert session._current_source == ""
-    assert session._current_target == ""
-    assert session._current_ko == ""  # alias
-    assert session._current_en == ""  # alias
+@pytest.mark.parametrize("error", [
+    RuntimeError("429 RESOURCE_EXHAUSTED"), RuntimeError("BILLING_DISABLED"),
+    RuntimeError("Quota exceeded"), RuntimeError("RATE_LIMIT_EXCEEDED"),
+    ExceptionGroup("receive tasks", [RuntimeError("429 RESOURCE_EXHAUSTED")]),
+])
+def test_quota_and_billing_errors_are_recognized_without_treating_503_as_quota(error):
+    assert _is_quota_error(error)
+    assert not _is_quota_error(RuntimeError("503 UNAVAILABLE"))
 
 
-def test_evaluate_drift_score_any_source():
-    # When expected_source is 'any', any input language is allowed without penalty
-    for in_lang, in_txt in [("ko", "은혜"), ("en", "grace"), ("es", "gracia"), ("ja", "恵み")]:
-        score = evaluate_drift_score(
-            input_lang=in_lang,
-            input_text=in_txt,
-            output_lang="uk",
-            output_text="Благодать",
-            expected_source="any",
-            target_language="uk",
-        )
-        assert score == 0, f"Expected 0 for input {in_lang}, got {score}"
+@pytest.mark.parametrize("after_handshake", [False, True])
+def test_quota_retry_budget_is_finite_at_connect_and_after_handshakes(after_handshake):
+    class QuotaSession(GeminiSession):
+        def __init__(self):
+            super().__init__(on_caption=lambda text: None)
+            self.models = []
+            self.delays = []
+            self._connected_once = after_handshake
 
-    # If output does not match target, still flagged as +2
-    score_wrong = evaluate_drift_score(
-        input_lang="ko",
-        input_text="은혜",
-        output_lang="es",
-        output_text="gracia",
-        expected_source="any",
-        target_language="uk",
-    )
-    assert score_wrong == 2
+        async def _run_session(self, model, is_reconnect, epoch):
+            self.models.append(model)
+            if after_handshake:
+                # A successful handshake resets the general retry counter in
+                # production, but must not reset the separate quota budget.
+                self._attempt = 0
+                self._connected_once = True
+                raise ExceptionGroup("receive tasks", [RuntimeError("429 RESOURCE_EXHAUSTED")])
+            raise RuntimeError("429 RESOURCE_EXHAUSTED")
 
+        async def _wait_before_retry(self, delay):
+            self.delays.append(delay)
 
-def test_evaluate_drift_score_en_to_zh_chinese_output():
-    # Chinese characters output must not be falsely flagged as drift
-    score = evaluate_drift_score(
-        input_lang="en",
-        input_text="Grace and peace",
-        output_lang="zh",
-        output_text="恩典与平安",
-        expected_source="en",
-        target_language="zh",
-    )
-    assert score == 0
+    async def run():
+        session = QuotaSession()
+        await session._run_with_retry()
+        assert session.models == [session.current_model] * 3
+        assert session.delays == [2.0, 5.0]
+        assert session.state.status == SessionStatus.FAILED
+        assert session.state.error_kind == "quota"
+        assert "지출 한도" in session.state.last_event
+        assert "Spending limit" in session.state.last_event
+        assert "Automatic retries stopped" in session.state.last_event
+
+    asyncio.run(run())
 
 
-def test_gemini_session_drift_window_and_threshold():
-    session = GeminiSession(
-        on_caption=MagicMock(),
-        target_language_code="zh",
-        expected_source_language="any",
-        drift_window=2,
-        drift_threshold=3,
-    )
-    assert session._drift_window == 2
-    assert session._drift_threshold == 3
-    assert session._drift_history.maxlen == 2
+def test_server_does_not_schedule_automatic_restart_after_quota_failure():
+    from app import server
+    from app.gemini_session import SessionState
 
-
-def test_evaluate_drift_score_ko_plus_en_bilingual():
-    """Verify 'ko+en' accepts both Korean and English turns with 0 drift, but flags 3rd languages."""
-    # Korean input -> valid
-    score_ko = evaluate_drift_score(
-        input_lang="ko",
-        input_text="하나님의 은혜",
-        output_lang="en",
-        output_text="God's grace",
-        expected_source="ko+en",
-        target_language="en",
-    )
-    assert score_ko == 0
-
-    # English input (e.g. prayer / announcements) -> valid
-    score_en = evaluate_drift_score(
-        input_lang="en",
-        input_text="Let us pray together",
-        output_lang="en",
-        output_text="Let us pray together",
-        expected_source="ko+en",
-        target_language="en",
-    )
-    assert score_en == 0
-
-    # Japanese input -> flagged as drift (+1)
-    score_ja = evaluate_drift_score(
-        input_lang="ja",
-        input_text="おはようございます",
-        output_lang="en",
-        output_text="Good morning",
-        expected_source="ko+en",
-        target_language="en",
-    )
-    assert score_ja == 1
-
-    # Fallback script heuristic: Japanese text when input_lang is None -> flagged (+1)
-    score_script = evaluate_drift_score(
-        input_lang=None,
-        input_text="カタカナ",
-        output_lang="en",
-        output_text="Katakana",
-        expected_source="ko+en",
-        target_language="en",
-    )
-    assert score_script == 1
-
-
-def test_evaluate_drift_score_es_plus_en_multilingual():
-    """Verify 'es+en' accepts Spanish and English input with 0 drift, but flags Japanese (+1)."""
-    # Spanish input -> 0
-    assert evaluate_drift_score(
-        input_lang="es",
-        input_text="Dios les bendiga",
-        output_lang="en",
-        output_text="God bless you",
-        expected_source="es+en",
-        target_language="en",
-    ) == 0
-
-    # English input -> 0
-    assert evaluate_drift_score(
-        input_lang="en",
-        input_text="Amen",
-        output_lang="en",
-        output_text="Amen",
-        expected_source="es+en",
-        target_language="en",
-    ) == 0
-
-    # Japanese input -> +1
-    assert evaluate_drift_score(
-        input_lang="ja",
-        input_text="ありがとう",
-        output_lang="en",
-        output_text="Thank you",
-        expected_source="es+en",
-        target_language="en",
-    ) == 1
-
-
-def test_evaluate_drift_score_any_autodetect():
-    """Verify 'any' continuous auto-detect mode accepts any input language without input drift penalty."""
-    for lang, sample in [("ko", "안녕하세요"), ("es", "Hola"), ("uk", "Привіт"), ("ja", "こんにちは"), ("zh", "你好")]:
-        assert evaluate_drift_score(
-            input_lang=lang,
-            input_text=sample,
-            output_lang="en",
-            output_text="Hello",
-            expected_source="any",
-            target_language="en",
-        ) == 0
-
-
-def test_is_goaway_exception_direct_and_grouped():
-    # Direct exception
-    assert _is_goaway_exception(RuntimeError("GoAway")) is True
-    assert _is_goaway_exception(Exception("Normal error")) is False
-    assert _is_goaway_exception(None) is False
-
-    # ExceptionGroup (Python 3.11 TaskGroup)
-    eg = ExceptionGroup("TaskGroup failures", [RuntimeError("GoAway")])
-    assert _is_goaway_exception(eg) is True
-
-    # Nested ExceptionGroup
-    nested_eg = ExceptionGroup("Outer", [
-        ValueError("other error"),
-        ExceptionGroup("Inner", [RuntimeError("GoAway")])
-    ])
-    assert _is_goaway_exception(nested_eg) is True
-
-    # Chained cause
+    # There is intentionally no running event loop here: creating an automatic
+    # restart task would raise instead of quietly scheduling more paid calls.
+    assert server._auto_restart_task is None or server._auto_restart_task.done()
+    previous = server.manager.get_broadcaster(server.manager.primary_target)
+    was_unavailable = previous._unavailable if previous is not None else False
     try:
-        try:
-            raise RuntimeError("GoAway")
-        except RuntimeError as inner:
-            raise ValueError("wrapper") from inner
-    except ValueError as outer:
-        assert _is_goaway_exception(outer) is True
-
-
-def test_matches_exception_text_close_code_1000():
-    assert _matches_exception_text(Exception("Connection closed with code 1000 OK"), "1000") is True
-    assert _matches_exception_text(Exception("Connection closed with code 1006"), "1000") is False
-
-    eg = ExceptionGroup("group", [Exception("code 1000")])
-    assert _matches_exception_text(eg, "1000") is True
-
-
-def test_reconnect_count_lifecycle():
-    async def _run():
-        session = GeminiSession(on_caption=MagicMock())
-        assert session.state.reconnect_count == 0
-        assert session._reconnect_count == 0
-
-        # Simulate unexpected reconnections
-        session._reconnect_count = 2
-        session._emit(reconnect_count=session._reconnect_count)
-        assert session.state.reconnect_count == 2
-
-        # Pause clean preserves reconnect_count
-        await session.pause_clean()
-        assert session.state.reconnect_count == 2
-        assert session._reconnect_count == 2
-
-        # Stop resets reconnect_count to 0
-        await session.stop()
-        assert session.state.reconnect_count == 0
-        assert session._reconnect_count == 0
-
-    asyncio.run(_run())
-
-
+        server._handle_session_state_change(SessionState(status=SessionStatus.FAILED, error_kind="quota"))
+        assert server._auto_restart_task is None or server._auto_restart_task.done()
+    finally:
+        if previous is not None:
+            previous._unavailable = was_unavailable

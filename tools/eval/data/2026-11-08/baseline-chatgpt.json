@@ -1,0 +1,404 @@
+{
+  "sections": [
+    {
+      "section": "10분부터",
+      "ref_chars": 363,
+      "errors": 203,
+      "cer": 0.559228650137741,
+      "music": false
+    },
+    {
+      "section": "15분부터",
+      "ref_chars": 446,
+      "errors": 77,
+      "cer": 0.1726457399103139,
+      "music": false
+    },
+    {
+      "section": "25분부터",
+      "ref_chars": 668,
+      "errors": 197,
+      "cer": 0.2949101796407186,
+      "music": false
+    },
+    {
+      "section": "30분부터",
+      "ref_chars": 983,
+      "errors": 157,
+      "cer": 0.15971515768056968,
+      "music": false
+    },
+    {
+      "section": "35분부터",
+      "ref_chars": 803,
+      "errors": 40,
+      "cer": 0.049813200498132,
+      "music": false
+    },
+    {
+      "section": "40분부터",
+      "ref_chars": 861,
+      "errors": 281,
+      "cer": 0.32636469221835074,
+      "music": false
+    },
+    {
+      "section": "45분부터",
+      "ref_chars": 1424,
+      "errors": 259,
+      "cer": 0.1818820224719101,
+      "music": false
+    },
+    {
+      "section": "50분부터",
+      "ref_chars": 1451,
+      "errors": 282,
+      "cer": 0.1943487250172295,
+      "music": false
+    },
+    {
+      "section": "55분부터",
+      "ref_chars": 1296,
+      "errors": 328,
+      "cer": 0.25308641975308643,
+      "music": false
+    },
+    {
+      "section": "60분부터",
+      "ref_chars": 1507,
+      "errors": 267,
+      "cer": 0.1771731917717319,
+      "music": false
+    },
+    {
+      "section": "65분부터",
+      "ref_chars": 1695,
+      "errors": 256,
+      "cer": 0.15103244837758112,
+      "music": false
+    },
+    {
+      "section": "70분부터",
+      "ref_chars": 1542,
+      "errors": 215,
+      "cer": 0.13942931258106356,
+      "music": false
+    },
+    {
+      "section": "75분부터",
+      "ref_chars": 1607,
+      "errors": 242,
+      "cer": 0.15059116365899192,
+      "music": false
+    },
+    {
+      "section": "80분부터",
+      "ref_chars": 1536,
+      "errors": 224,
+      "cer": 0.14583333333333334,
+      "music": false
+    },
+    {
+      "section": "85분부터",
+      "ref_chars": 847,
+      "errors": 218,
+      "cer": 0.25737898465171194,
+      "music": false
+    }
+  ],
+  "speech_only_cer": 0.19061600798637618,
+  "facts": [
+    {
+      "id": "church_name",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [
+        "스타트 하니",
+        "스타필드"
+      ],
+      "wrong_en": [
+        "Starfield"
+      ],
+      "note": ""
+    },
+    {
+      "id": "anniversary_44",
+      "ko_found": [
+        "44년"
+      ],
+      "en_found": [
+        "44 years"
+      ],
+      "wrong_ko": [],
+      "wrong_en": [
+        "4 years"
+      ],
+      "note": ""
+    },
+    {
+      "id": "kamika",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [
+        "카미카제"
+      ],
+      "wrong_en": [
+        "Kamikaze"
+      ],
+      "note": ""
+    },
+    {
+      "id": "msu_graduate",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "knoxville_sarang_15",
+      "ko_found": [],
+      "en_found": [
+        "Knoxville"
+      ],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "park_father_passed",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [
+        "수술"
+      ],
+      "wrong_en": [
+        "surgery"
+      ],
+      "note": "Both reference transcripts: his father passed away last Friday. Nov 8 live output said surgery."
+    },
+    {
+      "id": "ephesians_4",
+      "ko_found": [
+        "에베소서 4"
+      ],
+      "en_found": [
+        "Ephesians 4",
+        "Ephesians chapter 4"
+      ],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "ok_hanheum",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "youth_groups",
+      "ko_found": [],
+      "en_found": [
+        "youth"
+      ],
+      "wrong_ko": [
+        "부처님"
+      ],
+      "wrong_en": [
+        "Buddha"
+      ],
+      "note": ""
+    },
+    {
+      "id": "harmony_in_diversity",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "shipwreck",
+      "ko_found": [
+        "파선"
+      ],
+      "en_found": [
+        "shipwreck"
+      ],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "john_stott",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    },
+    {
+      "id": "spurgeon",
+      "ko_found": [],
+      "en_found": [],
+      "wrong_ko": [],
+      "wrong_en": [],
+      "note": ""
+    }
+  ],
+  "english_phrases": [
+    {
+      "phrase": "National Youth Leadership Conference",
+      "words": 4,
+      "in_ko_latin": 0,
+      "in_en": 4
+    },
+    {
+      "phrase": "Youth Retreat",
+      "words": 2,
+      "in_ko_latin": 0,
+      "in_en": 2
+    },
+    {
+      "phrase": "Book of Ephesians chapter",
+      "words": 3,
+      "in_ko_latin": 0,
+      "in_en": 2
+    },
+    {
+      "phrase": "verses",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 1
+    },
+    {
+      "phrase": "through",
+      "words": 1,
+      "in_ko_latin": 1,
+      "in_en": 1
+    },
+    {
+      "phrase": "if there's any problem with the translation just raise your hand so that I could speak some in English",
+      "words": 12,
+      "in_ko_latin": 1,
+      "in_en": 12
+    },
+    {
+      "phrase": "Unity of the Church",
+      "words": 2,
+      "in_ko_latin": 2,
+      "in_en": 2
+    },
+    {
+      "phrase": "instead of trying to be united the Bible tells us to try to keep the unity of the spirit",
+      "words": 9,
+      "in_ko_latin": 4,
+      "in_en": 9
+    },
+    {
+      "phrase": "oneness",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 1
+    },
+    {
+      "phrase": "sameness",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 1
+    },
+    {
+      "phrase": "in love",
+      "words": 1,
+      "in_ko_latin": 1,
+      "in_en": 1
+    },
+    {
+      "phrase": "through the bond of peace",
+      "words": 3,
+      "in_ko_latin": 2,
+      "in_en": 3
+    },
+    {
+      "phrase": "unity of the spirit",
+      "words": 2,
+      "in_ko_latin": 2,
+      "in_en": 2
+    },
+    {
+      "phrase": "The Holy Spirit has bound us with the bond or rope of peace",
+      "words": 6,
+      "in_ko_latin": 4,
+      "in_en": 6
+    },
+    {
+      "phrase": "He is our peace",
+      "words": 1,
+      "in_ko_latin": 1,
+      "in_en": 1
+    },
+    {
+      "phrase": "peace",
+      "words": 1,
+      "in_ko_latin": 1,
+      "in_en": 1
+    },
+    {
+      "phrase": "It is done",
+      "words": 1,
+      "in_ko_latin": 0,
+      "in_en": 1
+    },
+    {
+      "phrase": "living soul",
+      "words": 2,
+      "in_ko_latin": 2,
+      "in_en": 2
+    },
+    {
+      "phrase": "They don't give out the membership if you move to another church in America. You have to go through the membership procedure",
+      "words": 13,
+      "in_ko_latin": 8,
+      "in_en": 13
+    },
+    {
+      "phrase": "letter of transfer",
+      "words": 2,
+      "in_ko_latin": 0,
+      "in_en": 2
+    },
+    {
+      "phrase": "Judeo Christianity",
+      "words": 2,
+      "in_ko_latin": 0,
+      "in_en": 1
+    },
+    {
+      "phrase": "Be eager to maintain",
+      "words": 2,
+      "in_ko_latin": 1,
+      "in_en": 2
+    },
+    {
+      "phrase": "Keep the unity in a visible manner",
+      "words": 4,
+      "in_ko_latin": 2,
+      "in_en": 4
+    },
+    {
+      "phrase": "There is no one no single perfect church on the third",
+      "words": 5,
+      "in_ko_latin": 3,
+      "in_en": 5
+    },
+    {
+      "phrase": "If you love one another, then they all will know that you are my disciples",
+      "words": 7,
+      "in_ko_latin": 2,
+      "in_en": 7
+    }
+  ]
+}

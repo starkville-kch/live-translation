@@ -1,0 +1,12 @@
+{
+  "gemini_reference_chatgpt_hypothesis": {
+    "errors": 1602,
+    "reference_characters": 16780,
+    "cer": 0.09547079856972586
+  },
+  "chatgpt_reference_gemini_hypothesis": {
+    "errors": 2142,
+    "reference_characters": 17029,
+    "cer": 0.1257854248634682
+  }
+}

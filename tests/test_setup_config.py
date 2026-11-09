@@ -292,7 +292,12 @@ def test_cloudflared_embedded_process_lifecycle(monkeypatch, tmp_path):
     from unittest.mock import MagicMock
     from app.cloudflared_service import CloudflaredService
 
-    service = CloudflaredService()
+    class IsolatedService(CloudflaredService):
+        @classmethod
+        def _pid_file_path(cls):
+            return tmp_path / "cloudflared.pid"
+
+    service = IsolatedService()
 
     # Mock binary and token file
     fake_bin = tmp_path / "cloudflared.exe"

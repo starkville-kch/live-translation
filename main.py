@@ -16,7 +16,52 @@ The host/port are read from ``config.yaml`` → ``network`` section.
 Do NOT run ``--reload`` in production; the audio capture thread does not
 survive hot-reload safely.
 """
-from app.server import app  # noqa: F401  — re-exported for `uvicorn main:app`
+from app.startup_timing import complete, phase, timed
+
+if __name__ == "__main__":
+    import atexit
+    atexit.register(complete)
+
+phase("python_main_start")
+
+
+def _verify_recording(wav_path: str) -> None:
+    """Exercise the shipped encoder with a paced PCM fixture, without the API."""
+    import json
+    import time
+    import wave
+    from pathlib import Path
+    from app.logger import log_directory
+    from app.recording import WeeklyRecording
+
+    recorder = WeeklyRecording(log_directory() / "recordings" / "current_week")
+    with wave.open(str(Path(wav_path).resolve()), "rb") as source:
+        rate, channels = source.getframerate(), source.getnchannels()
+        if source.getsampwidth() != 2 or channels not in (1, 2):
+            raise ValueError("Recording verification requires mono/stereo PCM16 WAV")
+        recorder.start()
+        print("Recording verification started", flush=True)
+        while data := source.readframes(rate // 10):
+            time.sleep(len(data) / (rate * channels * 2))
+            recorder.submit(data, rate, channels)
+        recorder.stop()
+    print(json.dumps(recorder.info, ensure_ascii=False), flush=True)
+    if recorder.info["status"] != "saved":
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--verify-recording":
+        if len(sys.argv) != 3:
+            raise SystemExit("Usage: SKC_translation.exe --verify-recording fixture.wav")
+        _verify_recording(sys.argv[2])
+        complete("recording verification completed")
+        raise SystemExit(0)
+
+
+with timed("application_imports"):
+    from app.server import app  # noqa: F401 - re-exported for `uvicorn main:app`
 
 def _port_in_use(port: int) -> bool:
     import socket
@@ -63,11 +108,12 @@ if __name__ == "__main__":
     import threading
     import webbrowser
     import uvicorn
-    from app.config import church_cfg, gemini_api_key, get_app_root, network_cfg
+    from app.config import church_cfg, gemini_api_key, gemini_model, get_app_root, network_cfg
     app_root = get_app_root()
 
     try:
-        gemini_api_key()
+        with timed("operator_key_check"):
+            gemini_api_key()
     except RuntimeError:
         print()
         print("╔══════════════════════════════════════════════════════════════════════╗")
@@ -99,15 +145,7 @@ if __name__ == "__main__":
 
     cfg = network_cfg()
     port = cfg.get("port", 8000)
-
-    from app.tunnel import CloudflareTunnelManager
-    tunnel_mgr = CloudflareTunnelManager(
-        port=port,
-        enabled=cfg.get("enable_tunnel", True),
-        public_url=cfg.get("public_url", ""),
-    )
-    app.state.tunnel_manager = tunnel_mgr
-    tunnel_mgr.start()
+    phase("main_configuration_ready")
 
     base_url = _base_url(cfg)
     admin_url = _admin_url(cfg)
@@ -120,7 +158,9 @@ if __name__ == "__main__":
     browser_url = f"{_format_url('localhost', port)}/admin"
     fallback_url = _format_url("192.168.0.169", port)
 
-    if _port_in_use(port):
+    with timed("port_availability_check"):
+        port_busy = _port_in_use(port)
+    if port_busy:
         print()
         print("╔══════════════════════════════════════════════════╗")
         print(f"║  Port {port} is already in use.                   ║")
@@ -132,14 +172,21 @@ if __name__ == "__main__":
         print("║  (or press Ctrl+C there), then run this again.   ║")
         print("╚══════════════════════════════════════════════════╝")
         print()
-        webbrowser.open(browser_url)
+        with timed("browser_open"):
+            opened = webbrowser.open(browser_url)
+        phase("browser_launch_requested", accepted=opened, existing_server=True)
+        complete("browser launch requested" if opened else "browser launch request declined")
         raise SystemExit(0)
 
     def _open_browser(url: str):
-        import time; time.sleep(2)
-        webbrowser.open(url)
-
-    threading.Thread(target=_open_browser, args=(browser_url,), daemon=True).start()
+        try:
+            with timed("browser_open"):
+                opened = webbrowser.open(url)
+        except Exception:
+            complete("browser launch request failed")
+            raise
+        phase("browser_launch_requested", accepted=opened)
+        complete("browser launch requested" if opened else "browser launch request declined")
 
     W = 72
 
@@ -151,9 +198,8 @@ if __name__ == "__main__":
     if len(banner_title) > W - 4:
         banner_title = banner_title[:W - 7] + "..."
 
-    from app.model_resolver import model_resolver
     from app.operator_auth import is_auth_enabled
-    active_m = model_resolver.active_model
+    active_m = gemini_model()
     auth_str = "Enabled (Password protected)" if is_auth_enabled() else "Disabled (No password set)"
 
     print()
@@ -187,6 +233,15 @@ if __name__ == "__main__":
     from app.server import signal_shutdown
 
     class SKCUvicornServer(uvicorn.Server):
+        async def startup(self, sockets=None) -> None:
+            await super().startup(sockets=sockets)
+            if self.started:
+                phase("server_listening", port=port)
+                threading.Thread(target=_open_browser, args=(browser_url,), daemon=True).start()
+                start_optional = getattr(app.state, "start_optional_services", None)
+                if callable(start_optional):
+                    threading.Thread(target=start_optional, daemon=True, name="SKCOptionalStartup").start()
+
         def handle_exit(self, sig: int, frame) -> None:
             signal_shutdown()
             super().handle_exit(sig, frame)

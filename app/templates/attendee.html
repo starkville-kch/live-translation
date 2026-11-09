@@ -608,6 +608,7 @@ let audioEnabled = false;
 let isAudioConnecting = false;
 let audioWs = null;
 let nextPlayAt = 0;
+const scheduledAudio = new Set();
 const SAMPLE_RATE = 24000;
 
 function updateAudioButton() {
@@ -667,6 +668,8 @@ function playPCM16(arrayBuffer) {
   src.connect(audioCtx.destination);
   const now = audioCtx.currentTime;
   if (nextPlayAt < now) nextPlayAt = now + 0.05;
+  scheduledAudio.add(src);
+  src.onended = () => scheduledAudio.delete(src);
   src.start(nextPlayAt);
   nextPlayAt += buf.duration;
 }
@@ -838,6 +841,10 @@ audioBtn.addEventListener('click', async () => {
 });
 
 function clearAudioQueue() {
+  for (const source of scheduledAudio) {
+    try { source.stop(); } catch (_) {}
+  }
+  scheduledAudio.clear();
   if (audioCtx) {
     nextPlayAt = audioCtx.currentTime;
   }
@@ -910,6 +917,10 @@ function connect() {
       }
       current.textContent = '';
 
+    } else if (msg.kind === 'hidden') {
+      current.textContent = '';
+    } else if (msg.kind === 'audio_clear') {
+      clearAudioQueue();
     } else if (msg.kind === 'paused') {
       isPaused = true;
       current.textContent = '— Paused —';

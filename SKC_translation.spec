@@ -1,5 +1,5 @@
 # SKC_translation.spec — PyInstaller build spec for SKC Live Translation
-# Build:  conda run -n skc_build pyinstaller SKC_translation.spec
+# Build: activate .agent/build_env, then python -m PyInstaller SKC_translation.spec
 # Output: .agent/scratch/exe/dist/SKC_translation.exe  (~70 MB, self-contained)
 #
 # Deploy — copy these 3 files to any folder:
@@ -7,14 +7,28 @@
 #   config.yaml          — device_index, port, model
 #   .env                 — GEMINI_API_KEY=...
 #
-# Build environment setup (one-time):
-#   conda create -n skc_build python=3.11 --yes
-#   conda run -n skc_build pip install google-genai fastapi "uvicorn[standard]" pyaudio numpy \
-#       python-dotenv pyyaml "qrcode[pil]" Pillow sse-starlette scipy zeroconf jinja2 pyinstaller
+# Build environment setup: see docs/BUILD_EXE.md.
 
+import os
 import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+# Hidden imports alone do not fail the build when a package is missing.
+# Require a working encoder before any expensive dependency analysis.
+try:
+    import lameenc
+except ImportError as exc:
+    raise SystemExit(
+        f"MP3 encoder unavailable in build environment ({sys.prefix}): {exc}. "
+        "Activate the project .agent/build_env and install requirements.txt."
+    ) from exc
+encoder = lameenc.Encoder()
+encoder.set_bit_rate(128)
+encoder.set_in_sample_rate(16000)
+encoder.set_channels(1)
+if not encoder.encode(bytes(3200)) + encoder.flush():
+    raise SystemExit("MP3 encoder preflight produced no audio bytes; build stopped.")
 
 block_cipher = None
 
@@ -23,15 +37,15 @@ datas = []
 datas += collect_data_files("google.genai")
 datas += collect_data_files("google.auth")
 datas += collect_data_files("certifi")
-datas += collect_data_files("sse_starlette")
-# Bundle glossary config, PCA logo asset, HTML templates, static assets, and language catalog
-datas += [("config/glossary.yaml", "config"), ("config/config.template.yaml", "config")]
+# Bundle the fixed name corrections, templates, and language catalog.
+datas += [("config/name_corrections.yaml", "config"), ("config/config.template.yaml", "config")]
 datas += [("app/pca-logo-white-small.webp", "app")]
 datas += [("app/templates", "app/templates")]
 datas += [("app/static", "app/static")]
 datas += [("app/data", "app/data")]
 datas += [("CHANGELOG.md", ".")]
 datas += [("how_to_use.html", ".")]
+datas += [("licenses", "licenses")]
 
 
 # ── Hidden imports PyInstaller's static analysis misses ──────────────────────
@@ -40,10 +54,7 @@ hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("anyio")
 hiddenimports += collect_submodules("starlette")
 hiddenimports += collect_submodules("google.genai", filter=lambda name: "tests" not in name)
-hiddenimports += collect_submodules("google.api_core")
 hiddenimports += collect_submodules("google.auth")
-hiddenimports += collect_submodules("grpc")
-hiddenimports += collect_submodules("sse_starlette")
 hiddenimports += collect_submodules("zeroconf")
 hiddenimports += collect_submodules("jinja2")
 hiddenimports += [
@@ -83,6 +94,7 @@ hiddenimports += [
     "app.tunnel",
     "app.cloudflared_service",
     "app.operator_auth",
+    "lameenc",
 ]
 
 # Dynamically discover pyaudio binary extension in active environment
@@ -99,17 +111,24 @@ try:
 except Exception:
     pass
 
+support_binaries = []
+# A venv over Conda must use its base Python's DLLs, not another Conda
+# installation's mingw64 DLLs found earlier on PATH.
+native_library_dir = Path(sys.base_prefix) / "Library" / "bin"
+for pattern in ("libmpdec-*.dll", "libssl-*.dll", "libcrypto-*.dll"):
+    support_binaries.extend((str(path), ".") for path in native_library_dir.glob(pattern))
+
 a = Analysis(
     ["main.py"],
     pathex=["."],
-    binaries=pyaudio_binaries,
+    binaries=pyaudio_binaries + support_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        "pytest", "_pytest", "google.genai.tests",
+        "pytest", "_pytest", "google.genai.tests", "tools",
         "tkinter", "matplotlib", "pandas", "jupyter",
         "IPython", "PyQt5", "PyQt6", "wx",
         "torch", "torchvision", "torchaudio",
@@ -123,13 +142,14 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+onefile = os.environ.get("SKC_BUILD_LAYOUT") != "onedir"
+exe_inputs = [pyz, a.scripts]
+if onefile:
+    exe_inputs.extend([a.binaries, a.zipfiles, a.datas])
+exe_inputs.append([])
+
 exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
+    *exe_inputs,
     name="SKC_translation",
     debug=False,
     bootloader_ignore_signals=False,
@@ -142,6 +162,10 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    onefile=True,
+    exclude_binaries=not onefile,
+    onefile=onefile,
     icon=None,
 )
+
+if not onefile:
+    coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, name="SKC_translation")

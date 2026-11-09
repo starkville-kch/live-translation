@@ -5,6 +5,47 @@ All notable changes to the Starkville Korean Church Live Translation System will
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-11-08
+
+### 제거
+- 음악/발화 분류, 분류 배지·세션 트랙, YouTube 챕터 화면·내보내기·API를 제거했습니다.
+- Live Translate의 언어·어휘 힌트, 주간 용어집 추천·검토·주석, 입력 언어 선택과 자동 감지 UI를 제거했습니다.
+- 모델 자동 탐색·선택·폴백과 자동 언어 이탈 리셋을 제거했습니다. 설정한 모델 하나를 사용하며 사용할 수 없으면 오류를 표시합니다.
+
+### 변경
+- 운영자 화면을 두 열로 정리하고 접속 QR과 이벤트 로그를 오른쪽 통역 언어 아래에 배치했습니다. 좁은 화면에서는 한 열로 표시합니다.
+- `gemini.model`로 모델을 고정하고 출력 언어 선택은 유지합니다. 원문 언어는 자동 감지합니다.
+- 녹음을 캡처 원래 형식의 128 kbps MP3로 바꾸고, 새 녹음 때 21일이 지난 생성 파일만 정리합니다. 번역 일시정지 중에도 녹음하며, 정리 실패는 새 녹음을 중단시키지 않습니다.
+- 중국어 등 다른 원문 언어와 언어 정보가 없는 발화도 자막·음성·전사로 전달합니다. 한국어·영어 외 언어의 숨김·음소거를 제거했으며, 기존 설정의 `expected_source_languages`는 무시합니다. 모델의 오인식 자체를 교정하는 기능은 아닙니다.
+- `config/name_corrections.yaml`의 고정 이름 치환과 5회 이상 연속 단어·짧은 구절 반복 축약을 커밋된 자막과 전사에 적용합니다. Google 입력과 합성 음성은 바꾸지 않습니다.
+
+### 추가
+- 채널별 dBFS와 좌우 상관관계 진단 로그, 서버 수신 시작 후 브라우저 열기를 추가했습니다. `logs/startup.log`는 평상시 실행마다 단계별 시간과 한 줄 요약을 자동 기록하고 고정 크기로 순환합니다.
+- 제공된 전사 평가 도구·두 기준 전사본·사실 목록을 `tools/eval/`에 보존하고, 기준 CER 18.0%·19.1%를 재현했습니다. 이 도구와 자료는 EXE에 포함하지 않습니다.
+- 추가 화면 정리는 승인용 감사 표로만 제안했습니다. 제거한 어휘·언어 힌트의 복원 기준과 원본 용어집을 `/docs/archive/`에 보관했습니다.
+
+### 수정
+- 빌드 배치가 인코더 없는 공유 환경을 선택하던 문제를 수정했습니다. 프로젝트 빌드 환경만 사용하며, MP3 인코더의 실제 바이트 생성 검사에 실패하면 빌드를 중단합니다. Conda 기반 venv의 OpenSSL·decimal DLL도 해당 Python 환경에서 수집합니다. 재빌드한 번역 EXE의 모노·스테레오 녹음, 강제 종료본 디코딩과 일반 시작을 검증했습니다.
+- 출력 상태 안내의 한 줄 공간을 유지해 아래 구역이 움직이지 않도록 했습니다. 이후 원문 언어 차단을 제거했으므로 언어 확인 대기·외국어 감지만으로는 안내가 나타나지 않습니다.
+- 지출 한도·할당량·요청 빈도 제한 오류의 가능한 원인을 한영으로 표시하고, 제한된 백오프 재시도 후 자동 재시작을 멈추도록 했습니다. 입력 녹음은 계속됩니다.
+- MP3 인코더를 녹음 스레드에서 불러오고, 로드 실패의 원래 오류와 저장 폴더 오류를 구분해 로그·상태·한영 경고에 남깁니다. 실제 MP3 쓰기 성공도 한 번 기록하며, 녹음 실패는 번역을 중단시키지 않습니다.
+
+## [3.3.1] - 2026-11-08
+
+### Added
+- Recorded the captured 16 kHz mono audio throughout translation pauses in `logs/recordings/current_week/`. Same-week restarts retain separate WAV segments; a successful new week's recording removes older generated backups. Recording failures do not stop translation.
+- Exported pause-aware session elapsed time, transcript offsets, and recording metadata for manual audio/video alignment. Transcript offsets describe translation arrival, so they require latency adjustment.
+
+### Fixed
+- Restored the expandable network details panel in both local-only and public modes, with keyboard controls and bilingual labels.
+- Kept new audio recording running when weekly cleanup cannot delete a locked older backup; reported the retention failure separately.
+- Made the language-drift threshold reachable for unexpected input languages. The previous two-turn window could never accumulate the required three source-language detections.
+- Allowed sustained uncertain audio to replace stale music/speech labels, and made confidence reflect the displayed label's consensus.
+- Replaced unsupported announcement/sermon inference with estimated acoustic chapter candidates and a visible review warning. Chapter preview and clipboard now follow the selected UI language.
+
+### Changed
+- Set the Google GenAI SDK minimum to the locally verified `2.33.0`; language-hint compatibility depends on SDK version. Hint efficacy for Live Translate remains unverified.
+
 ## [3.3.0] - 2026-11-03
 
 ### Added

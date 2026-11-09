@@ -4,6 +4,8 @@ tests/test_multi_target_logging.py — Tests for Target-Aware Session Logs, Mani
 import asyncio
 import json
 import shutil
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -37,7 +39,7 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
          patch.object(AudioCapture, "stop", MagicMock()):
 
         # Start multi-target session
-        asyncio.run(manager.start(active_targets=["en", "uk"], expected_source_language="ko"))
+        asyncio.run(manager.start(active_targets=["en", "uk"]))
 
         sess_en = manager.sessions["en"]
         sess_uk = manager.sessions["uk"]
@@ -68,8 +70,8 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
         manifest_file = s_dir / "session.json"
         assert manifest_file.exists()
         manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-        assert manifest["spoken_language"] == "ko"
-        assert manifest["expected_source_language"] == "ko"
+        assert manifest["spoken_language"] == "auto"
+        assert "expected_source_language" not in manifest
         assert manifest["active_targets"] == ["en", "uk"]
         assert manifest["total_turns"] == 2
         assert "cost_by_target" in manifest
@@ -95,8 +97,8 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
         assert md_file.exists()
         md_text = md_file.read_text(encoding="utf-8")
         assert "# Translation Transcript" in md_text
-        assert "Spoken language: Korean" in md_text
-        assert "**Spoken — Korean" in md_text
+        assert "Spoken language: Original speech" in md_text
+        assert "**Spoken — Original speech" in md_text
         assert "**English**" in md_text
         assert "**Українська (Ukrainian)**" in md_text
         assert "Hello everyone" in md_text
@@ -106,7 +108,7 @@ def test_target_aware_session_manifest_and_transcripts(tmp_path):
         summary_file = s_dir / "summary.txt"
         assert summary_file.exists()
         summary_text = summary_file.read_text(encoding="utf-8")
-        assert "Spoken:         Korean" in summary_text
+        assert "Spoken:         Original speech" in summary_text
         assert "Active Targets: English, Ukrainian" in summary_text
         assert "Committed turns:2" in summary_text
 
@@ -127,7 +129,7 @@ def test_multi_target_cost_accounting():
     with patch.object(GeminiSession, "start", new_callable=AsyncMock), \
          patch.object(AudioCapture, "start", MagicMock()), \
          patch.object(AudioCapture, "stop", MagicMock()):
-        res_start = client.post("/api/start", json={"targets": ["en", "uk"], "expected_source_language": "ko"})
+        res_start = client.post("/api/start", json={"targets": ["en", "uk"]})
         assert res_start.status_code == 200
 
         res_st = client.get("/api/status")
@@ -147,28 +149,33 @@ def test_multi_target_cost_accounting():
         client.post("/api/stop")
 
 
-def test_glossary_isolation_across_languages():
-    mock_glossary = MagicMock()
-    mock_glossary.correct = MagicMock(side_effect=lambda src, tgt: f"{tgt} (CORRECTED)")
-
-    mgr = manager
-    mgr._glossary = mock_glossary
-
-    # ko -> en session gets glossary
-    sess_en = mgr._create_session_for_target("en", "ko")
-    assert sess_en._glossary is not None
-
-    # ko -> uk session does NOT get ko->en glossary
-    sess_uk = mgr._create_session_for_target("uk", "ko")
-    assert sess_uk._glossary is None
-
-    # en -> uk session does NOT get glossary
-    sess_en_uk = mgr._create_session_for_target("uk", "en")
-    assert sess_en_uk._glossary is None
-
-    # en -> zh session does NOT get glossary
-    sess_en_zh = mgr._create_session_for_target("zh", "en")
-    assert sess_en_zh._glossary is None
+def test_committed_name_corrections_and_multilingual_turn_export(clean_sessions_and_logs):
+    manager._is_running = True
+    manager._start_time = time.monotonic() - 60
+    manager._started_at = datetime.now().astimezone()
+    manager.active_targets = ["en"]
+    session = manager._create_session_for_target("en")
+    manager.sessions = {"en": session}
+    session._observe_source_language("ko")
+    session._current_source = "스타필드 교회"
+    session._current_target = "Starfield Church"
+    session.flush_current_turn()
+    session._observe_source_language("zh")
+    session._current_source = "欢迎"
+    session._current_target = "Welcome"
+    session.flush_current_turn()
+    _write_session_log()
+    session_dir = next((clean_sessions_and_logs / "sessions").iterdir())
+    records = [json.loads(line) for line in (session_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 2
+    assert records[0]["source"]["text"] == "스타크빌 한인교회"
+    assert records[0]["targets"]["en"] == "Starkville Korean Church"
+    assert records[1]["source"] == {"lang": "zh", "text": "欢迎"}
+    assert records[1]["targets"]["en"] == "Welcome"
+    exported = (session_dir / "transcript.md").read_text(encoding="utf-8")
+    assert "欢迎" in exported
+    assert "Welcome" in exported
+    assert "youtube_chapters.json" not in {path.name for path in session_dir.iterdir()}
 
 
 def test_real_api_stop_generates_session_logs(tmp_path):
@@ -182,7 +189,7 @@ def test_real_api_stop_generates_session_logs(tmp_path):
          patch.object(AudioCapture, "stop", MagicMock()):
 
         # Start session via API
-        res_start = client.post("/api/start", json={"targets": ["en"], "expected_source_language": "ko"})
+        res_start = client.post("/api/start", json={"targets": ["en"]})
         assert res_start.status_code == 200
 
         sess_en = manager.sessions["en"]
@@ -217,5 +224,29 @@ def test_empty_session_does_not_export_logs(tmp_path):
         result = _write_session_log()
         assert result is None
         assert not (log_dir / "sessions").exists() or len(list((log_dir / "sessions").glob("*"))) == 0
+
+
+def test_export_keeps_pause_on_service_timeline(clean_sessions_and_logs):
+    manager._is_running = True
+    manager._start_time = time.monotonic() - 120
+    manager._started_at = datetime(2026, 11, 8, 11, tzinfo=timezone.utc)
+    manager._paused_duration_s = 30
+    manager.active_targets = ["en"]
+    session = manager._create_session_for_target("en")
+    manager.sessions = {"en": session}
+    session._transcript = [TranscriptEntry(
+        timestamp=manager.start_monotonic + 100,
+        source="Original", target="Translation", source_lang="ko+en", target_lang="en",
+    )]
+    _write_session_log()
+    session_dir = next((clean_sessions_and_logs / "sessions").iterdir())
+    manifest = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+    turn = json.loads((session_dir / "transcript.jsonl").read_text(encoding="utf-8"))
+    assert 90 <= manifest["runtime_seconds"] < 91
+    assert 120 <= manifest["elapsed_seconds"] < 121
+    assert turn["offset_seconds"] == 100
+    assert turn["timestamp"] == "11:01:40"
+    assert datetime.fromisoformat(manifest["started_at"]).tzinfo is not None
+    assert datetime.fromisoformat(manifest["ended_at"]).tzinfo is not None
 
 

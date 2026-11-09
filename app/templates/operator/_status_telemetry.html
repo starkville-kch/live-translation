@@ -1,4 +1,4 @@
-<!-- Status: Audio Input & Model Selection -->
+<!-- Status: Audio Input, Model Selection & Network Telemetry -->
 <!-- Row 1: Audio Input & Live Level Meter -->
 <div class="stat-row">
   <span class="stat-row-label tooltip">
@@ -18,12 +18,58 @@
       </div>
       <span id="stat-level-val" style="font-size: 11px; font-weight: 700; color: var(--color-navy-900); min-width: 28px; text-align: right; font-family: 'Consolas', monospace;">0%</span>
     </div>
-    <span id="stat-audio-class" class="tooltip" style="font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; background: var(--color-warm-100); color: var(--color-text-muted); white-space: nowrap;">
-      <span data-lang="ko">— 판별 중</span>
-      <span data-lang="en">— Detecting</span>
-      <span class="tooltiptext" data-lang="ko">음성/음악 자동 판별(참고용). 번역을 멈추거나 제어하지 않습니다.</span>
-      <span class="tooltiptext" data-lang="en">Automatic speech/music indicator (informational only). Does not pause or control translation.</span>
-    </span>
+  </div>
+</div>
+
+<!-- Network details remain available in both local-only and public modes. -->
+<div id="telemetry-panel" class="telemetry-panel">
+  <button type="button" id="telemetry-toggle" aria-expanded="false" aria-controls="telemetry-body" onclick="toggleTelemetryDetail()">
+    <span data-lang="ko">네트워크 &amp; 지연 세부 분석</span>
+    <span data-lang="en">Network &amp; Latency Details</span>
+    <span id="telemetry-chevron" aria-hidden="true">▼</span>
+  </button>
+  <div id="telemetry-body" style="display: none;">
+    <div class="telemetry-stat">
+      <span data-lang="ko">Gemini 처리 지연</span>
+      <span data-lang="en">Gemini Processing Latency</span>
+      <strong id="stat-gemini-lat">—</strong>
+    </div>
+    <div id="telemetry-network-grid" style="grid-template-columns: {% if has_public_domain %}1fr 1fr{% else %}1fr{% endif %};">
+      <div id="telemetry-local-box" class="telemetry-network-box">
+        <div class="telemetry-stat">
+          <strong data-lang="ko">현장 Wi-Fi</strong>
+          <strong data-lang="en">Local Wi-Fi</strong>
+          <span id="stat-local-listeners-badge">0</span>
+        </div>
+        <div class="telemetry-stat">
+          <span data-lang="ko">네트워크 RTT</span>
+          <span data-lang="en">Network RTT</span>
+          <strong id="stat-local-rtt">—</strong>
+        </div>
+        <div class="telemetry-stat">
+          <span data-lang="ko">추정 전체 지연</span>
+          <span data-lang="en">Est. Total Delay</span>
+          <strong id="stat-local-est-e2e">—</strong>
+        </div>
+      </div>
+      <div id="telemetry-public-box" class="telemetry-network-box"{% if not has_public_domain %} style="display: none;"{% endif %}>
+        <div class="telemetry-stat">
+          <strong data-lang="ko">공용 HTTPS</strong>
+          <strong data-lang="en">Public HTTPS</strong>
+          <span id="stat-public-listeners-badge">0</span>
+        </div>
+        <div class="telemetry-stat">
+          <span data-lang="ko">네트워크 RTT</span>
+          <span data-lang="en">Network RTT</span>
+          <strong id="stat-public-rtt">—</strong>
+        </div>
+        <div class="telemetry-stat">
+          <span data-lang="ko">추정 전체 지연</span>
+          <span data-lang="en">Est. Total Delay</span>
+          <strong id="stat-public-est-e2e">—</strong>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -37,19 +83,8 @@
   </span>
   <div class="stat-row-content">
     <div class="model-control-group">
-      <select id="model-select">
-        {% if models and models.available_models %}
-          {% for name in models.available_models %}
-            <option value="{{ name }}" {% if name == models.preferred_model or name == models.active_model %}selected{% endif %}
-              data-tag="{% if name == models.fallback_model and name == models.preferred_model %}default_rec{% elif name == models.fallback_model %}default{% elif name == models.preferred_model %}rec{% elif name == models.last_known_good_model %}verified{% else %}new{% endif %}">
-              {{ name }}
-            </option>
-          {% endfor %}
-        {% else %}
-          <option value="gemini-3.5-live-translate-preview" selected data-tag="default_rec">gemini-3.5-live-translate-preview</option>
-        {% endif %}
-      </select>
-      <span id="stat-model-status">✓ Ready</span>
+      <span id="stat-model-name">{{ gemini_cfg.get("model", "gemini-3.5-live-translate-preview") if gemini_cfg else "gemini-3.5-live-translate-preview" }}</span>
+      <span id="stat-model-status"><span data-lang="ko">설정됨</span><span data-lang="en">Configured</span></span>
       <div class="tooltip tooltip-left" style="display: inline-flex; border-bottom: none;">
         <button class="btn" id="btn-test-selected-model">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -60,9 +95,14 @@
           <span data-lang="ko">테스트</span>
           <span data-lang="en">Test</span>
         </button>
-        <span class="tooltiptext" data-lang="ko" style="width: 250px;">선택한 Gemini 모델의 실시간 번역 세션 연결 및 응답 상태를 즉시 테스트합니다.</span>
-        <span class="tooltiptext" data-lang="en" style="width: 250px;">Immediately tests live translation session connectivity and response for the selected Gemini model.</span>
+        <span class="tooltiptext" data-lang="ko" style="width: 250px;">설정된 Gemini 모델의 실시간 번역 세션 연결 및 응답 상태를 즉시 테스트합니다.</span>
+        <span class="tooltiptext" data-lang="en" style="width: 250px;">Immediately tests live translation session connectivity and response for the configured Gemini model.</span>
       </div>
     </div>
   </div>
+</div>
+
+<div id="output-hidden-indicator" class="output-hidden-indicator" role="status" aria-live="polite" aria-hidden="true">
+  <span data-lang="ko">원문 언어 확인 전·예상 밖 언어: 자막 숨김</span>
+  <span data-lang="en">Source unconfirmed/unexpected: captions hidden</span>
 </div>

@@ -1,0 +1,242 @@
+{
+  "comparisons": {
+    "gemini": {
+      "baseline_speech_cer": 0.1803933253873659,
+      "offline_speech_cer": 0.22574493444576876,
+      "delta_percentage_points": 4.535160905840286,
+      "offline_speech_errors": 3788,
+      "reference_speech_chars": 16780,
+      "sections": [
+        {
+          "section": "1. 예배 전 찬양팀 연습 및 장내 준비 [00:00 - 05:35]",
+          "baseline_cer": 0.7957894736842105,
+          "offline_cer": 0.8905263157894737,
+          "ref_chars": 475,
+          "music": true
+        },
+        {
+          "section": "2. 예배 부름 및 환영 인사 [05:36 - 07:05]",
+          "baseline_cer": 0.5093833780160858,
+          "offline_cer": 0.064343163538874,
+          "ref_chars": 373,
+          "music": false
+        },
+        {
+          "section": "3. 교독문: 시편 99편 [07:06 - 08:00]",
+          "baseline_cer": 0.06779661016949153,
+          "offline_cer": 0.0,
+          "ref_chars": 177,
+          "music": false
+        },
+        {
+          "section": "4. 개회 기도 [08:01 - 09:05]",
+          "baseline_cer": 0.10232558139534884,
+          "offline_cer": 0.004651162790697674,
+          "ref_chars": 215,
+          "music": false
+        },
+        {
+          "section": "5. 경배와 찬양 [09:06 - 16:15]",
+          "baseline_cer": 0.6911262798634812,
+          "offline_cer": 0.8771331058020477,
+          "ref_chars": 586,
+          "music": true
+        },
+        {
+          "section": "6. 사도신경 신앙고백 [16:16 - 17:25]",
+          "baseline_cer": 0.09565217391304348,
+          "offline_cer": 0.8565217391304348,
+          "ref_chars": 230,
+          "music": false
+        },
+        {
+          "section": "7. 참회의 기도 및 사죄의 확신 [17:26 - 19:15]",
+          "baseline_cer": 0.36752136752136755,
+          "offline_cer": 0.8518518518518519,
+          "ref_chars": 351,
+          "music": false
+        },
+        {
+          "section": "8. 찬송가 282장: 큰 죄에 빠진 날 위해 [19:16 - 22:04]",
+          "baseline_cer": 0.8514851485148515,
+          "offline_cer": 0.8415841584158416,
+          "ref_chars": 101,
+          "music": true
+        },
+        {
+          "section": "9. 회중 대표 기도 [22:05 - 24:08]",
+          "baseline_cer": 0.036882807852468766,
+          "offline_cer": 0.8780487804878049,
+          "ref_chars": 1681,
+          "music": false
+        },
+        {
+          "section": "10. 봉헌, 특송 및 봉헌 기도 [24:09 - 28:50]",
+          "baseline_cer": 0.3893229166666667,
+          "offline_cer": 0.2890625,
+          "ref_chars": 768,
+          "music": true
+        },
+        {
+          "section": "11. 교회 소식 및 성경 봉독 [28:51 - 30:14]",
+          "baseline_cer": 0.4148471615720524,
+          "offline_cer": 0.4410480349344978,
+          "ref_chars": 458,
+          "music": false
+        },
+        {
+          "section": "12. 설교: 교회의 하나됨 (30:15 - 54:00)",
+          "baseline_cer": 0.18024062933826931,
+          "offline_cer": 0.12147154095326237,
+          "ref_chars": 12966,
+          "music": false
+        },
+        {
+          "section": "13. 설교 후 결단 기도 [54:01 - 55:20]",
+          "baseline_cer": 0.09333333333333334,
+          "offline_cer": 0.02666666666666667,
+          "ref_chars": 225,
+          "music": false
+        },
+        {
+          "section": "14. 파송 찬송: 찬송가 221장 [55:21 - 57:15]",
+          "baseline_cer": 0.7976878612716763,
+          "offline_cer": 0.2658959537572254,
+          "ref_chars": 173,
+          "music": true
+        },
+        {
+          "section": "15. 축도 및 폐회 [57:16 - 58:45]",
+          "baseline_cer": 0.40384615384615385,
+          "offline_cer": 0.07692307692307693,
+          "ref_chars": 104,
+          "music": false
+        }
+      ],
+      "english_latin_words": {
+        "baseline": 75,
+        "offline": 19,
+        "reference": 162
+      }
+    },
+    "chatgpt": {
+      "baseline_speech_cer": 0.19061600798637618,
+      "offline_speech_cer": 0.1985436608139057,
+      "delta_percentage_points": 0.7927652827529524,
+      "offline_speech_errors": 3381,
+      "reference_speech_chars": 17029,
+      "sections": [
+        {
+          "section": "10분부터",
+          "baseline_cer": 0.559228650137741,
+          "offline_cer": 0.09917355371900827,
+          "ref_chars": 363,
+          "music": false
+        },
+        {
+          "section": "15분부터",
+          "baseline_cer": 0.1726457399103139,
+          "offline_cer": 0.026905829596412557,
+          "ref_chars": 446,
+          "music": false
+        },
+        {
+          "section": "25분부터",
+          "baseline_cer": 0.2949101796407186,
+          "offline_cer": 0.8577844311377245,
+          "ref_chars": 668,
+          "music": false
+        },
+        {
+          "section": "30분부터",
+          "baseline_cer": 0.15971515768056968,
+          "offline_cer": 0.8799593082400814,
+          "ref_chars": 983,
+          "music": false
+        },
+        {
+          "section": "35분부터",
+          "baseline_cer": 0.049813200498132,
+          "offline_cer": 0.8580323785803238,
+          "ref_chars": 803,
+          "music": false
+        },
+        {
+          "section": "40분부터",
+          "baseline_cer": 0.32636469221835074,
+          "offline_cer": 0.1672473867595819,
+          "ref_chars": 861,
+          "music": false
+        },
+        {
+          "section": "45분부터",
+          "baseline_cer": 0.1818820224719101,
+          "offline_cer": 0.08426966292134831,
+          "ref_chars": 1424,
+          "music": false
+        },
+        {
+          "section": "50분부터",
+          "baseline_cer": 0.1943487250172295,
+          "offline_cer": 0.06064782908339077,
+          "ref_chars": 1451,
+          "music": false
+        },
+        {
+          "section": "55분부터",
+          "baseline_cer": 0.25308641975308643,
+          "offline_cer": 0.1095679012345679,
+          "ref_chars": 1296,
+          "music": false
+        },
+        {
+          "section": "60분부터",
+          "baseline_cer": 0.1771731917717319,
+          "offline_cer": 0.055739880557398806,
+          "ref_chars": 1507,
+          "music": false
+        },
+        {
+          "section": "65분부터",
+          "baseline_cer": 0.15103244837758112,
+          "offline_cer": 0.12271386430678466,
+          "ref_chars": 1695,
+          "music": false
+        },
+        {
+          "section": "70분부터",
+          "baseline_cer": 0.13942931258106356,
+          "offline_cer": 0.05058365758754864,
+          "ref_chars": 1542,
+          "music": false
+        },
+        {
+          "section": "75분부터",
+          "baseline_cer": 0.15059116365899192,
+          "offline_cer": 0.05040448039825762,
+          "ref_chars": 1607,
+          "music": false
+        },
+        {
+          "section": "80분부터",
+          "baseline_cer": 0.14583333333333334,
+          "offline_cer": 0.059244791666666664,
+          "ref_chars": 1536,
+          "music": false
+        },
+        {
+          "section": "85분부터",
+          "baseline_cer": 0.25737898465171194,
+          "offline_cer": 0.20070838252656434,
+          "ref_chars": 847,
+          "music": false
+        }
+      ],
+      "english_latin_words": {
+        "baseline": 37,
+        "offline": 14,
+        "reference": 88
+      }
+    }
+  }
+}

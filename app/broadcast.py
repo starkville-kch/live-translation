@@ -46,7 +46,7 @@ import time
 from dataclasses import dataclass
 
 from app.events import operator_events
-from app.languages import parse_source_language_codes
+from app.text_corrections import NameCorrector, collapse_repetitions
 from app.logger import server_log
 
 
@@ -107,21 +107,23 @@ class CaptionEvent:
 class CaptionBroadcaster:
     def __init__(
         self,
-        glossary=None,  # glossary: GlossaryCorrector | None
+        corrector: NameCorrector | None = None,
         source_lang: str = "ko",
         target_lang: str = "en",
     ):
         self._clients: list[asyncio.Queue] = []       # SSE caption subscribers
         self._audio_clients: list[asyncio.Queue] = [] # WebSocket audio subscribers
         self._current_line = ""
-        self._current_source = ""   # Source accumulated for this turn (for glossary / transcript)
+        self._current_source = ""   # Source accumulated for this turn (for committed source display)
         self.source_lang = source_lang
         self.target_lang = target_lang
         self._last_token_at: float = 0.0
         self._commit_task: asyncio.Task | None = None
         self._unavailable = False
         self._caption_count = 0
-        self._glossary = glossary
+        self._corrector = corrector or NameCorrector()
+        self._output_hidden = False
+        self._audio_muted = False
         self._rtt_samples_local: list[tuple[float, float]] = []   # (timestamp, rtt_ms)
         self._rtt_samples_public: list[tuple[float, float]] = []  # (timestamp, rtt_ms)
         self._active_clients: dict[str, tuple[str, float]] = {}   # client_id -> (route, timestamp)
@@ -262,6 +264,8 @@ class CaptionBroadcaster:
         self._current_line = ""
         self._current_source = ""
         self._caption_count = 0
+        self._output_hidden = False
+        self._audio_muted = False
         if self._commit_task and not self._commit_task.done():
             self._commit_task.cancel()
 
@@ -286,6 +290,8 @@ class CaptionBroadcaster:
 
     def on_source_delta(self, delta: str) -> None:
         """Source text delta — pushed to all SSE clients."""
+        if self._output_hidden:
+            return
         self._current_source += delta
         self._push(CaptionEvent(
             kind="source",
@@ -298,6 +304,8 @@ class CaptionBroadcaster:
 
 
     def on_caption_delta(self, delta: str) -> None:
+        if self._output_hidden:
+            return
         self._unavailable = False
         self._current_line += delta
         self._caption_count += 1
@@ -310,14 +318,13 @@ class CaptionBroadcaster:
             cut = self._find_split(self._current_line)
             to_commit = self._current_line[:cut].rstrip()
             remainder = self._current_line[cut:].lstrip()
-            if self._glossary and self._current_source and ("ko" in parse_source_language_codes(self.source_lang)) and self.target_lang == "en":
-                to_commit = self._glossary.correct(self._current_source, to_commit)
+            to_commit = self._corrector.correct(to_commit)
             if self._commit_task and not self._commit_task.done():
                 self._commit_task.cancel()
             self._push(CaptionEvent(
                 kind="commit",
                 target=to_commit,
-                source=self._current_source,
+                source=self._corrector.correct(self._current_source),
                 source_lang=self.source_lang,
                 target_lang=self.target_lang,
             ))
@@ -337,7 +344,7 @@ class CaptionBroadcaster:
 
         self._push(CaptionEvent(
             kind="update",
-            target=self._current_line,
+            target=collapse_repetitions(self._current_line),
             source="",
             source_lang=self.source_lang,
             target_lang=self.target_lang,
@@ -377,12 +384,11 @@ class CaptionBroadcaster:
             await asyncio.sleep(PAUSE_THRESHOLD_S)
             if self._current_line:
                 text = self._current_line
-                if self._glossary and self._current_source and ("ko" in parse_source_language_codes(self.source_lang)) and self.target_lang == "en":
-                    text = self._glossary.correct(self._current_source, text)
+                text = self._corrector.correct(text)
                 self._push(CaptionEvent(
                     kind="commit",
                     target=text,
-                    source=self._current_source,
+                    source=self._corrector.correct(self._current_source),
                     source_lang=self.source_lang,
                     target_lang=self.target_lang,
                 ))
@@ -404,6 +410,8 @@ class CaptionBroadcaster:
             pass
 
     def on_audio_chunk(self, pcm: bytes) -> None:
+        if self._audio_muted:
+            return
         for q in self._audio_clients:
             try:
                 q.put_nowait(pcm)
@@ -416,6 +424,22 @@ class CaptionBroadcaster:
                     q.put_nowait(pcm)
                 except asyncio.QueueFull:
                     pass
+
+    def set_output_visibility(self, hidden: bool, muted: bool) -> None:
+        """Drop pending captions and flush audio only when confirmation mutes it."""
+        if hidden and not self._output_hidden:
+            self._current_line = ""
+            self._current_source = ""
+            if self._commit_task and not self._commit_task.done():
+                self._commit_task.cancel()
+            self._push(CaptionEvent(kind="hidden"))
+        elif not hidden and self._output_hidden:
+            self._push(CaptionEvent(kind="visible"))
+        if muted and not self._audio_muted:
+            self.drain_audio_clients()
+            self._push(CaptionEvent(kind="audio_clear"))
+        self._output_hidden = hidden
+        self._audio_muted = muted
 
     def drain_audio_clients(self) -> None:
         """Purge all buffered audio chunks across all connected WebSocket client queues."""

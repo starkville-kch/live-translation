@@ -61,16 +61,26 @@ def test_operator_html_structure_and_accessibility():
     assert "#stat-audio" in css
     assert "text-overflow: ellipsis" in css
 
-    # 8. Check Inline Model Controls, Segmented Pill Drift Control, Playback button, and Dashboard Metrics
+    # 8. Pinned model and output suppression replace removed operator choices.
     assert 'id="btn-refresh-devices"' in html
-    assert 'id="model-select"' in html
+    assert 'id="stat-model-name"' in html
+    assert 'id="model-select"' not in html
     assert 'id="stat-model-status"' in html
     assert 'id="btn-test-selected-model"' in html
 
-    # Drift recovery toggle and raw telemetry breakdown panel are removed to simplify the operator screen
+    # Drift recovery controls remain removed; network details are available on demand.
     assert 'id="drift-manual"' not in html
     assert 'id="drift-auto"' not in html
-    assert 'id="telemetry-panel"' not in html
+    assert 'id="output-hidden-indicator"' in html
+    assert 'id="stat-audio-class"' not in html
+    assert 'id="card-youtube-chapters"' not in html
+    assert 'id="btn-open-glossary"' not in html
+    assert 'id="modal-glossary"' not in html
+    assert 'id="telemetry-panel"' in html
+    assert 'id="telemetry-toggle" aria-expanded="false" aria-controls="telemetry-body"' in html
+    assert 'id="stat-gemini-lat"' in html
+    assert 'id="stat-local-rtt"' in html
+    assert 'id="stat-public-rtt"' in html
     assert 'id="stat-overall-delay"' in html
     assert 'id="stat-attendees"' in html
     assert 'id="stat-cost"' in html
